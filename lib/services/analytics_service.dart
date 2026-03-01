@@ -1,0 +1,145 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/auth_service.dart';
+
+class AnalyticsService {
+  static SupabaseClient get _client => Supabase.instance.client;
+
+  static Future<int> getTotalWorkouts() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final res = await _client
+        .from('training_sessions')
+        .select()
+        .eq('user_id', userId)
+        .eq('completed', true);
+
+    return (res as List).length;
+  }
+
+  static Future<int> getBestStreak() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final res = await _client
+        .from('training_sessions')
+        .select('date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date');
+
+    final dates = (res as List)
+        .map((e) => DateTime.parse(e['date'] as String))
+        .toList();
+
+    if (dates.isEmpty) return 0;
+
+    int streak = 1;
+    int best = 1;
+    for (var i = 1; i < dates.length; i++) {
+      final diff = dates[i].difference(dates[i - 1]).inDays;
+      if (diff == 1) {
+        streak++;
+        if (streak > best) best = streak;
+      } else {
+        streak = 1;
+      }
+    }
+    return best;
+  }
+
+  static Future<Map<String, double>> getExerciseMaxWeight(String exerciseId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id')
+        .eq('exercise_id', exerciseId);
+
+    final weIds = (weRes as List).map((e) => e['id'] as String).toList();
+    if (weIds.isEmpty) return {};
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId);
+
+    final sessionIds = (sessionsRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return {};
+
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, weight')
+        .inFilter('workout_exercise_id', weIds)
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .not('weight', 'is', null);
+
+    final dateMap = {
+      for (var s in sessionsRes as List) s['id'] as String: s['date'] as String
+    };
+
+    final result = <String, double>{};
+    for (final set in setsRes as List) {
+      final sid = set['training_session_id'] as String;
+      final w = (set['weight'] as num).toDouble();
+      final date = dateMap[sid];
+      if (date != null) {
+        final current = result[date] ?? 0;
+        if (w > current) result[date] = w;
+      }
+    }
+    return result;
+  }
+
+  static Future<int> getWorkoutsThisWeek() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final startStr = startOfWeek.toIso8601String().split('T')[0];
+
+    final res = await _client
+        .from('training_sessions')
+        .select()
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', startStr);
+
+    return (res as List).length;
+  }
+
+  static Future<double> getVolumeThisWeek() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final startStr = startOfWeek.toIso8601String().split('T')[0];
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .gte('date', startStr);
+
+    final sessionIds = (sessionsRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return 0;
+
+    final setsRes = await _client
+        .from('sets')
+        .select('weight, reps')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true);
+
+    double volume = 0;
+    for (final s in setsRes as List) {
+      final w = (s['weight'] as num?)?.toDouble() ?? 0;
+      final r = (s['reps'] as int?) ?? 0;
+      volume += w * r;
+    }
+    return volume;
+  }
+}
