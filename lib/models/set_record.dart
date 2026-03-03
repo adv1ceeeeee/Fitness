@@ -5,6 +5,7 @@ class SetRecord {
   final int setNumber;
   final double? weight;
   final int? reps;
+  final int? rpe;
   final bool completed;
 
   SetRecord({
@@ -14,6 +15,7 @@ class SetRecord {
     required this.setNumber,
     this.weight,
     this.reps,
+    this.rpe,
     this.completed = false,
   });
 
@@ -25,6 +27,7 @@ class SetRecord {
       setNumber: json['set_number'] as int,
       weight: (json['weight'] as num?)?.toDouble(),
       reps: json['reps'] as int?,
+      rpe: json['rpe'] as int?,
       completed: json['completed'] as bool? ?? false,
     );
   }
@@ -36,6 +39,7 @@ class SetRecord {
         'set_number': setNumber,
         'weight': weight,
         'reps': reps,
+        'rpe': rpe,
         'completed': completed,
       };
 }

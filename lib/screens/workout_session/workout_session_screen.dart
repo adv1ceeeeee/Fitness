@@ -6,6 +6,24 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/services/training_service.dart';
 
+// ─── Локальная модель одного подхода ────────────────────────────────────────
+
+class _SetData {
+  int reps;
+  int? rpe;
+  bool completed;
+
+  _SetData({required this.reps, this.rpe, this.completed = false});
+
+  _SetData copyWith({int? reps, int? rpe, bool? completed}) => _SetData(
+        reps: reps ?? this.reps,
+        rpe: rpe ?? this.rpe,
+        completed: completed ?? this.completed,
+      );
+}
+
+// ─── Экран тренировки ────────────────────────────────────────────────────────
+
 class WorkoutSessionScreen extends StatefulWidget {
   final String sessionId;
 
@@ -18,14 +36,15 @@ class WorkoutSessionScreen extends StatefulWidget {
 class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   List<WorkoutExercise> _exercises = [];
   int _currentExerciseIndex = 0;
-  int _currentSet = 1;
-  double _weight = 0;
-  int _reps = 8;
   bool _loading = true;
   bool _resting = false;
   int _restSeconds = 90;
   int _initialRestSeconds = 90;
   Timer? _restTimer;
+  bool _goToNextAfterRest = false;
+
+  double _weight = 0;
+  List<_SetData> _sets = [];
 
   @override
   void initState() {
@@ -40,7 +59,6 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   }
 
   Future<void> _loadSession() async {
-    // Get workout from session, then exercises
     final sessionRes = await Supabase.instance.client
         .from('training_sessions')
         .select('workout_id')
@@ -54,11 +72,20 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
       setState(() {
         _exercises = ex;
         _loading = false;
-        if (ex.isNotEmpty) {
-          _restSeconds = ex.first.restSeconds;
-        }
+        if (ex.isNotEmpty) _initExercise(ex[0]);
       });
     }
+  }
+
+  void _initExercise(WorkoutExercise we) {
+    final defaultReps = _parseDefaultReps(we.repsRange);
+    _weight = 0;
+    _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps));
+  }
+
+  int _parseDefaultReps(String range) {
+    final first = range.split('-')[0].trim();
+    return int.tryParse(first) ?? 8;
   }
 
   WorkoutExercise? get _currentExercise {
@@ -66,72 +93,84 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     return _exercises[_currentExerciseIndex];
   }
 
-  bool get _isLastSet {
-    if (_currentExercise == null) return true;
-    return _currentSet >= _currentExercise!.sets;
-  }
+  int get _firstIncompleteIndex => _sets.indexWhere((s) => !s.completed);
 
-  bool get _isLastExercise {
-    return _isLastSet && _currentExerciseIndex >= _exercises.length - 1;
-  }
+  bool get _allSetsCompleted => _sets.every((s) => s.completed);
 
-  Future<void> _completeSet() async {
+  Future<void> _completeSet(int index) async {
     final we = _currentExercise!;
+    final setData = _sets[index];
+
     await TrainingService.saveSet(
       widget.sessionId,
       we.id,
-      _currentSet,
+      index + 1,
       weight: _weight > 0 ? _weight : null,
-      reps: _reps,
+      reps: setData.reps,
+      rpe: setData.rpe,
     );
 
-    if (_isLastExercise && _isLastSet) {
-      await TrainingService.completeSession(widget.sessionId);
-      if (mounted) _showCompletionDialog();
+    setState(() => _sets[index] = setData.copyWith(completed: true));
+
+    final nowAllDone = _sets.every((s) => s.completed);
+    if (!nowAllDone) {
+      _startRest(we.restSeconds, goToNext: false);
       return;
     }
 
-    if (_isLastSet) {
-      final nextRest = _currentExerciseIndex + 1 < _exercises.length
-          ? _exercises[_currentExerciseIndex + 1].restSeconds
-          : 90;
-      setState(() {
-        _currentExerciseIndex++;
-        _currentSet = 1;
-        _resting = true;
-        _restSeconds = nextRest;
-        _initialRestSeconds = nextRest;
-      });
-      _startRestTimer();
+    final isLastExercise = _currentExerciseIndex >= _exercises.length - 1;
+    if (isLastExercise) {
+      await TrainingService.completeSession(widget.sessionId);
+      if (mounted) _showCompletionDialog();
     } else {
-      setState(() {
-        _currentSet++;
-        _resting = true;
-        _restSeconds = we.restSeconds;
-        _initialRestSeconds = we.restSeconds;
-      });
-      _startRestTimer();
+      _startRest(we.restSeconds, goToNext: true);
     }
   }
 
-  void _startRestTimer() {
+  void _startRest(int seconds, {required bool goToNext}) {
     _restTimer?.cancel();
-    var remaining = _restSeconds;
+    _goToNextAfterRest = goToNext;
+    var remaining = seconds;
+    setState(() {
+      _resting = true;
+      _restSeconds = remaining;
+      _initialRestSeconds = seconds;
+    });
     _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       remaining--;
       if (mounted) {
         setState(() => _restSeconds = remaining);
         if (remaining <= 0) {
           t.cancel();
-          setState(() => _resting = false);
+          _onRestEnd();
         }
       }
     });
   }
 
+  void _onRestEnd() {
+    setState(() => _resting = false);
+    if (_goToNextAfterRest) _advanceExercise();
+  }
+
   void _skipRest() {
     _restTimer?.cancel();
-    setState(() => _resting = false);
+    _onRestEnd();
+  }
+
+  void _advanceExercise() {
+    final nextIndex = _currentExerciseIndex + 1;
+    if (nextIndex < _exercises.length) {
+      setState(() {
+        _currentExerciseIndex = nextIndex;
+        _initExercise(_exercises[nextIndex]);
+      });
+    }
+  }
+
+  void _addSet() {
+    final defaultReps = _parseDefaultReps(_currentExercise!.repsRange);
+    setState(() => _sets.add(_SetData(reps: defaultReps)));
   }
 
   void _showCompletionDialog() {
@@ -140,21 +179,13 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.card,
-        title: Text(
+        title: const Text(
           'Тренировка завершена!',
           style: TextStyle(color: AppColors.textPrimary),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '🎉 Отличная работа!',
-              style: TextStyle(
-                fontSize: 18,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
+        content: const Text(
+          '🎉 Отличная работа!',
+          style: TextStyle(fontSize: 18, color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
@@ -162,7 +193,8 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
               Navigator.pop(ctx);
               context.go('/home');
             },
-            child: Text('На главную', style: TextStyle(color: AppColors.accent)),
+            child: const Text('На главную',
+                style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),
@@ -172,105 +204,493 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     if (_exercises.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Тренировка')),
         body: const Center(child: Text('Нет упражнений')),
       );
     }
-
     if (_resting) {
       return _RestScreen(
         initialSeconds: _initialRestSeconds,
         seconds: _restSeconds,
         onSkip: _skipRest,
-        onNext: _skipRest,
       );
     }
 
     final we = _currentExercise!;
-    final ex = we.exercise;
+    final activeIndex = _firstIncompleteIndex;
+    final doneCount = _sets.where((s) => s.completed).length;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('${_currentExerciseIndex + 1}/${_exercises.length}'),
+        title: Text(
+          '${_currentExerciseIndex + 1} / ${_exercises.length}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                ex?.name ?? '?',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      we.exercise?.name ?? '?',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$doneCount из ${_sets.length} подходов выполнено',
+                      style: const TextStyle(
+                          fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Вес
+                    _WeightRow(
+                      weight: _weight,
+                      onChanged: (v) => setState(() => _weight = v),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Шапка столбцов
+                    const Padding(
+                      padding: EdgeInsets.only(left: 44, right: 48),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text('Повт.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 0.5)),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text('RPE',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 0.5)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Блоки подходов
+                    ...List.generate(_sets.length, (i) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _SetBlock(
+                          index: i,
+                          data: _sets[i],
+                          isActive:
+                              i == activeIndex && !_sets[i].completed,
+                          onRepsChanged: (v) => setState(
+                              () => _sets[i] = _sets[i].copyWith(reps: v)),
+                          onRpeChanged: (v) => setState(
+                              () => _sets[i] = _sets[i].copyWith(rpe: v)),
+                          onComplete: _sets[i].completed
+                              ? null
+                              : () => _completeSet(i),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 4),
+
+                    _AddSetButton(onTap: _addSet),
+                    const SizedBox(height: 16),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Подход $_currentSet из ${we.sets}',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: AppColors.textSecondary,
+            ),
+
+            // Кнопка следующего упражнения
+            if (_allSetsCompleted &&
+                _currentExerciseIndex < _exercises.length - 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: ElevatedButton(
+                  onPressed: _advanceExercise,
+                  child: const Text('Следующее упражнение'),
                 ),
               ),
-              const Spacer(),
-              _WeightRepsInput(
-                weight: _weight,
-                reps: _reps,
-                onWeightChanged: (v) => setState(() => _weight = v),
-                onRepsChanged: (v) => setState(() => _reps = v),
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                height: 64,
-                child: ElevatedButton.icon(
-                  onPressed: _completeSet,
-                  icon: const Icon(Icons.check, size: 28),
-                  label: const Text('Выполнил подход'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
 }
 
+// ─── Строка с весом ─────────────────────────────────────────────────────────
+
+class _WeightRow extends StatelessWidget {
+  final double weight;
+  final ValueChanged<double> onChanged;
+
+  const _WeightRow({required this.weight, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final display = weight > 0
+        ? (weight % 1 == 0 ? '${weight.toInt()}' : '$weight')
+        : '—';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(
+        children: [
+          const Text('Вес, кг',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+          const Spacer(),
+          _StepBtn(
+            label: '−2.5',
+            onTap: weight >= 2.5
+                ? () => onChanged((weight - 2.5).clamp(0, 999))
+                : null,
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            width: 64,
+            child: Text(
+              display,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          _StepBtn(
+            label: '+2.5',
+            onTap: () => onChanged(weight + 2.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Блок подхода ────────────────────────────────────────────────────────────
+
+class _SetBlock extends StatelessWidget {
+  final int index;
+  final _SetData data;
+  final bool isActive;
+  final ValueChanged<int> onRepsChanged;
+  final ValueChanged<int?> onRpeChanged;
+  final VoidCallback? onComplete;
+
+  const _SetBlock({
+    required this.index,
+    required this.data,
+    required this.isActive,
+    required this.onRepsChanged,
+    required this.onRpeChanged,
+    this.onComplete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final done = data.completed;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: isActive
+            ? Border.all(color: AppColors.accent, width: 1.5)
+            : done
+                ? Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.25),
+                    width: 1)
+                : null,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Opacity(
+        opacity: done ? 0.55 : 1.0,
+        child: Row(
+          children: [
+            _SetBadge(number: index + 1, done: done, active: isActive),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _Stepper(
+                value: data.reps,
+                min: 1,
+                max: 999,
+                enabled: !done,
+                onChanged: onRepsChanged,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _Stepper(
+                value: data.rpe ?? 0,
+                min: 0,
+                max: 10,
+                enabled: !done,
+                zeroLabel: '—',
+                onChanged: (v) => onRpeChanged(v == 0 ? null : v),
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (!done)
+              GestureDetector(
+                onTap: onComplete,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isActive ? AppColors.accent : AppColors.surface,
+                  ),
+                  child: Icon(Icons.check, size: 20,
+                      color: isActive ? Colors.black : AppColors.textSecondary),
+                ),
+              )
+            else
+              const SizedBox(
+                width: 38,
+                height: 38,
+                child: Center(
+                  child: Icon(Icons.check_circle,
+                      color: AppColors.accent, size: 22),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SetBadge extends StatelessWidget {
+  final int number;
+  final bool done;
+  final bool active;
+
+  const _SetBadge(
+      {required this.number, required this.done, required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: done
+            ? AppColors.accent
+            : active
+                ? AppColors.accent.withValues(alpha: 0.15)
+                : AppColors.surface,
+      ),
+      alignment: Alignment.center,
+      child: done
+          ? const Icon(Icons.check, size: 15, color: Colors.black)
+          : Text(
+              '$number',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: active ? AppColors.accent : AppColors.textSecondary,
+              ),
+            ),
+    );
+  }
+}
+
+// ─── Компактный степпер ──────────────────────────────────────────────────────
+
+class _Stepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final bool enabled;
+  final String? zeroLabel;
+  final ValueChanged<int> onChanged;
+
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.enabled,
+    required this.onChanged,
+    this.zeroLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final display =
+        (value == 0 && zeroLabel != null) ? zeroLabel! : '$value';
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _MiniBtn(
+            icon: Icons.remove,
+            enabled: enabled && value > min,
+            onTap: () => onChanged(value - 1)),
+        const SizedBox(width: 6),
+        SizedBox(
+          width: 32,
+          child: Text(display,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: enabled
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+              )),
+        ),
+        const SizedBox(width: 6),
+        _MiniBtn(
+            icon: Icons.add,
+            enabled: enabled && value < max,
+            onTap: () => onChanged(value + 1)),
+      ],
+    );
+  }
+}
+
+class _MiniBtn extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _MiniBtn(
+      {required this.icon, required this.enabled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 26,
+        height: 26,
+        decoration: const BoxDecoration(
+            shape: BoxShape.circle, color: AppColors.surface),
+        child: Icon(icon,
+            size: 14,
+            color: enabled
+                ? AppColors.textPrimary
+                : AppColors.textSecondary.withValues(alpha: 0.35)),
+      ),
+    );
+  }
+}
+
+// ─── Кнопка «+» добавить подход ──────────────────────────────────────────────
+
+class _AddSetButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddSetButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 46,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: AppColors.accent.withValues(alpha: 0.45), width: 1.2),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add, color: AppColors.accent, size: 18),
+            SizedBox(width: 8),
+            Text('Добавить подход',
+                style: TextStyle(
+                    color: AppColors.accent,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Кнопки шага веса ────────────────────────────────────────────────────────
+
+class _StepBtn extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+
+  const _StepBtn({required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = onTap != null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(10)),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: active
+                    ? AppColors.accent
+                    : AppColors.textSecondary
+                        .withValues(alpha: 0.4))),
+      ),
+    );
+  }
+}
+
+// ─── Экран отдыха ────────────────────────────────────────────────────────────
+
 class _RestScreen extends StatelessWidget {
   final int initialSeconds;
   final int seconds;
   final VoidCallback onSkip;
-  final VoidCallback onNext;
 
   const _RestScreen({
     required this.initialSeconds,
     required this.seconds,
     required this.onSkip,
-    required this.onNext,
   });
 
   @override
   Widget build(BuildContext context) {
     final m = seconds ~/ 60;
     final s = seconds % 60;
-    final timeStr = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    final progress = initialSeconds > 0
-        ? 1 - (seconds / initialSeconds)
-        : 1.0;
+    final timeStr =
+        '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    final progress =
+        initialSeconds > 0 ? 1 - (seconds / initialSeconds) : 1.0;
 
     return Scaffold(
       body: SafeArea(
@@ -286,160 +706,39 @@ class _RestScreen extends StatelessWidget {
                   alignment: Alignment.center,
                   children: [
                     CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 8,
-                      color: AppColors.accent,
-                    ),
-                    Text(
-                      timeStr,
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
+                        value: progress,
+                        strokeWidth: 8,
+                        color: AppColors.accent),
+                    Text(timeStr,
+                        style: const TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary)),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
-              Text(
-                'Отдых',
-                style: TextStyle(
-                  fontSize: 24,
-                  color: AppColors.textSecondary,
-                ),
-              ),
+              const Text('Отдых',
+                  style: TextStyle(
+                      fontSize: 24, color: AppColors.textSecondary)),
               const Spacer(),
               TextButton(
                 onPressed: onSkip,
-                child: Text(
-                  'Пропустить отдых',
-                  style: TextStyle(color: AppColors.accent, fontSize: 18),
-                ),
+                child: const Text('Пропустить',
+                    style:
+                        TextStyle(color: AppColors.accent, fontSize: 18)),
               ),
-              const SizedBox(height: 16),
-              if (seconds <= 0)
+              if (seconds <= 0) ...[
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
-                  height: 56,
                   child: ElevatedButton(
-                    onPressed: onNext,
+                    onPressed: onSkip,
                     child: const Text('Следующий подход'),
                   ),
                 ),
+              ],
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WeightRepsInput extends StatelessWidget {
-  final double weight;
-  final int reps;
-  final ValueChanged<double> onWeightChanged;
-  final ValueChanged<int> onRepsChanged;
-
-  const _WeightRepsInput({
-    required this.weight,
-    required this.reps,
-    required this.onWeightChanged,
-    required this.onRepsChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text('Вес (кг)', style: TextStyle(color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _BigButton(
-              label: '-2.5',
-              onTap: () => onWeightChanged((weight - 2.5).clamp(0, 999)),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: SizedBox(
-                width: 80,
-                child: TextFormField(
-                  key: ValueKey('weight_$weight'),
-                  initialValue: weight > 0 ? weight.toString() : '',
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 28),
-                  decoration: const InputDecoration(
-                    hintText: '0',
-                  ),
-                  onChanged: (v) {
-                    final w = double.tryParse(v.replaceAll(',', '.'));
-                    if (w != null) onWeightChanged(w);
-                  },
-                ),
-              ),
-            ),
-            _BigButton(
-              label: '+2.5',
-              onTap: () => onWeightChanged(weight + 2.5),
-            ),
-          ],
-        ),
-        const SizedBox(height: 32),
-        Text('Повторения', style: TextStyle(color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _BigButton(
-              label: '-1',
-              onTap: () => onRepsChanged((reps - 1).clamp(1, 999)),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                '$reps',
-                style: const TextStyle(fontSize: 32),
-              ),
-            ),
-            _BigButton(
-              label: '+1',
-              onTap: () => onRepsChanged(reps + 1),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _BigButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-
-  const _BigButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.card,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: 64,
-          height: 64,
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppColors.accent,
-            ),
           ),
         ),
       ),

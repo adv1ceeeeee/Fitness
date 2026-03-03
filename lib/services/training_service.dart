@@ -59,7 +59,7 @@ class TrainingService {
       'completed': false,
     }).select().single();
 
-    return TrainingSession.fromJson(res as Map<String, dynamic>);
+    return TrainingSession.fromJson(res);
   }
 
   /// Получить или создать сессию на сегодня
@@ -83,7 +83,7 @@ class TrainingService {
       return session;
     }
 
-    return TrainingSession.fromJson(res as Map<String, dynamic>);
+    return TrainingSession.fromJson(res);
   }
 
   static Future<void> completeSession(String sessionId) async {
@@ -99,6 +99,7 @@ class TrainingService {
     int setNumber, {
     double? weight,
     int? reps,
+    int? rpe,
   }) async {
     await _client.from('sets').insert({
       'training_session_id': sessionId,
@@ -106,6 +107,7 @@ class TrainingService {
       'set_number': setNumber,
       'weight': weight,
       'reps': reps,
+      'rpe': rpe,
       'completed': true,
     });
   }
