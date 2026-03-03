@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/auth_service.dart';
-import 'package:sportwai/services/profile_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -13,46 +12,54 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _nicknameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   bool _isLoading = false;
+  bool _passwordVisible = false;
+  bool _confirmVisible = false;
   String? _errorMessage;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _nicknameController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-      try {
-        final res = await AuthService.signUp(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
-        if (res.user != null) {
-          await ProfileService.createProfileOnSignUp(
-            res.user!.id,
-            res.user!.email,
-          );
-        }
-        if (mounted) context.go('/onboarding-check');
-      } catch (e) {
-        setState(() {
-          _errorMessage =
-              'Не удалось создать аккаунт. Возможно, email уже используется.';
-        });
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final nickname = _nicknameController.text.trim();
+      final res = await AuthService.signUpByNickname(
+        nickname,
+        _passwordController.text,
+      );
+      if (res.session == null && res.user == null) {
+        setState(() => _errorMessage = 'Не удалось создать аккаунт. Попробуйте снова.');
+        return;
       }
+      if (mounted) context.go('/onboarding-check');
+    } catch (e) {
+      final msg = e.toString();
+      String userMsg;
+      if (msg.contains('already registered') ||
+          msg.contains('already exists') ||
+          msg.contains('User already registered')) {
+        userMsg = 'Этот ник уже занят. Придумайте другой.';
+      } else if (msg.contains('Invalid') || msg.contains('API')) {
+        userMsg = 'Ошибка подключения. Проверьте интернет и попробуйте снова.';
+      } else {
+        userMsg = 'Ошибка: $msg';
+      }
+      setState(() => _errorMessage = userMsg);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -74,13 +81,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 24),
-                Text(
+                const Text(
                   'Регистрация',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textPrimary,
                   ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Придумайте ник и пароль. Остальное можно заполнить позже в профиле.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 32),
                 if (_errorMessage != null) ...[
@@ -98,25 +110,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 16),
                 ],
                 TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _nicknameController,
                   decoration: const InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'example@mail.com',
+                    labelText: 'Ник (логин)',
+                    hintText: 'например: ironman_98',
+                    prefixIcon: Icon(Icons.alternate_email),
                   ),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Введите email';
-                    if (!v.contains('@')) return 'Некорректный email';
+                    if (v == null || v.trim().isEmpty) return 'Введите ник';
+                    if (!RegExp(r'^[a-zA-Z0-9_\.]{3,32}$').hasMatch(v.trim())) {
+                      return '3–32 символа: a-z, 0-9, _, .';
+                    }
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
+                  obscureText: !_passwordVisible,
+                  decoration: InputDecoration(
                     labelText: 'Пароль',
                     hintText: 'Минимум 6 символов',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(_passwordVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setState(() => _passwordVisible = !_passwordVisible),
+                    ),
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Введите пароль';
@@ -127,9 +149,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _confirmController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
+                  obscureText: !_confirmVisible,
+                  decoration: InputDecoration(
                     labelText: 'Подтвердите пароль',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(_confirmVisible
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setState(() => _confirmVisible = !_confirmVisible),
+                    ),
                   ),
                   validator: (v) {
                     if (v != _passwordController.text) {

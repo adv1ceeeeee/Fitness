@@ -20,6 +20,8 @@ dependencies:
   share_plus: ^10.0.0
   uuid: ^4.4.0
   connectivity_plus: ^6.0.3
+  flutter_typeahead: ^5.2.0
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

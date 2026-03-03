@@ -59,7 +59,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         actions: [
           TextButton(
             onPressed: _skip,
-            child: Text('Пропустить', style: TextStyle(color: AppColors.accent)),
+            child: const Text('Пропустить', style: TextStyle(color: AppColors.accent)),
           ),
         ],
       ),
@@ -154,7 +154,7 @@ class _Page1 extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Твой пол, возраст, вес',
             style: TextStyle(
               fontSize: 24,
@@ -163,7 +163,7 @@ class _Page1 extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 32),
-          Text('Пол', style: TextStyle(color: AppColors.textSecondary)),
+          const Text('Пол', style: TextStyle(color: AppColors.textSecondary)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -185,7 +185,7 @@ class _Page1 extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          Text('Возраст', style: TextStyle(color: AppColors.textSecondary)),
+          const Text('Возраст', style: TextStyle(color: AppColors.textSecondary)),
           const SizedBox(height: 8),
           TextField(
             controller: ageController,
@@ -195,7 +195,7 @@ class _Page1 extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          Text('Вес (кг)', style: TextStyle(color: AppColors.textSecondary)),
+          const Text('Вес (кг)', style: TextStyle(color: AppColors.textSecondary)),
           const SizedBox(height: 8),
           TextField(
             controller: weightController,
@@ -230,7 +230,7 @@ class _Page2 extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Твоя главная цель',
             style: TextStyle(
               fontSize: 24,
@@ -276,7 +276,7 @@ class _Page3 extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Твой уровень',
             style: TextStyle(
               fontSize: 24,

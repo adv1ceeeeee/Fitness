@@ -16,7 +16,7 @@ class ProfileService {
         .maybeSingle();
 
     if (res == null) return null;
-    return Profile.fromJson(res as Map<String, dynamic>);
+    return Profile.fromJson(res);
   }
 
   static Future<Profile> createProfile(Profile profile) async {
@@ -34,12 +34,25 @@ class ProfileService {
     }).eq('id', userId);
   }
 
-  static Future<void> createProfileOnSignUp(String userId, String? email) async {
-    await _client.from('profiles').insert({
-      'id': userId,
-      'full_name': email?.split('@').first ?? 'User',
-      'created_at': DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
-    });
+  /// Проверяет, свободен ли ник (не занят другим пользователем).
+  static Future<bool> isNicknameAvailable(String nickname) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return false;
+
+    final res = await _client
+        .from('profiles')
+        .select('id')
+        .ilike('nickname', nickname.trim())
+        .neq('id', userId)
+        .maybeSingle();
+
+    return res == null;
+  }
+
+  /// Обновляет email: сохраняет в profiles и инициирует смену в Supabase Auth.
+  /// После вызова пользователю придёт письмо подтверждения на новый адрес.
+  static Future<void> updateEmail(String newEmail) async {
+    await AuthService.updateAuthEmail(newEmail);
+    await updateProfile({'email': newEmail});
   }
 }

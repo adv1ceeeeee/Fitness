@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
+import 'package:sportwai/screens/profile/edit_profile_screen.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 
@@ -22,7 +23,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadProfile();
-    _loadSettings();
   }
 
   Future<void> _loadProfile() async {
@@ -30,26 +30,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() => _profile = p);
   }
 
-  void _loadSettings() {
-    // TODO: load from SharedPreferences
+  String get _displayName {
+    final p = _profile;
+    if (p == null) return AuthService.currentUser?.email ?? 'Пользователь';
+    final parts = [p.firstName, p.lastName].where((s) => s != null && s.isNotEmpty);
+    if (parts.isNotEmpty) return parts.join(' ');
+    return p.nickname ?? AuthService.currentUser?.email ?? 'Пользователь';
   }
 
-  static String _goalDisplay(String? goal) {
-    const map = {
-      'strength': 'Сила',
-      'weight_loss': 'Похудение',
-      'mass_gain': 'Набор массы',
-      'endurance': 'Выносливость',
-    };
-    return map[goal ?? ''] ?? (goal ?? '—');
+  String get _avatarLetter {
+    final name = _displayName;
+    return name.isNotEmpty ? name[0].toUpperCase() : '?';
+  }
+
+  String _formatDate(DateTime? d) {
+    if (d == null) return '—';
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  }
+
+  String _genderLabel(String? g) {
+    if (g == 'male') return 'Мужской';
+    if (g == 'female') return 'Женский';
+    return '—';
+  }
+
+  Future<void> _openEdit() async {
+    if (_profile == null) return;
+    final updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditProfileScreen(profile: _profile!),
+      ),
+    );
+    if (updated == true) _loadProfile();
   }
 
   @override
   Widget build(BuildContext context) {
-    final name = _profile?.fullName ?? AuthService.currentUser?.email ?? 'Пользователь';
-    final weight = _profile?.weight;
-    final goal = _profile?.goal;
-
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
@@ -57,15 +73,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Аватар + имя
               Center(
                 child: Column(
                   children: [
                     CircleAvatar(
                       radius: 50,
-                      backgroundColor: AppColors.accent.withOpacity(0.3),
+                      backgroundColor: AppColors.accent.withValues(alpha: 0.3),
                       child: Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: TextStyle(
+                        _avatarLetter,
+                        style: const TextStyle(
                           fontSize: 36,
                           color: AppColors.accent,
                         ),
@@ -73,28 +90,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      name,
-                      style: TextStyle(
+                      _displayName,
+                      style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    if (weight != null) ...[
+                    if (_profile?.nickname != null) ...[
                       const SizedBox(height: 4),
                       Text(
-                        '${weight.toStringAsFixed(1)} кг',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                    if (goal != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Цель: ${_goalDisplay(goal)}',
-                        style: TextStyle(
+                        '@${_profile!.nickname}',
+                        style: const TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
                         ),
@@ -104,17 +111,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 32),
-              _SectionTitle('Статистика'),
-              _StatCard(
-                label: 'Тренировок всего',
-                value: '—',
+
+              // Личные данные
+              _SectionHeader(
+                title: 'Личные данные',
+                onEdit: _profile != null ? _openEdit : null,
               ),
-              _StatCard(
-                label: 'Лучший стрик',
-                value: '— дней',
+              _InfoCard(
+                children: [
+                  _InfoRow(label: 'Имя', value: _profile?.firstName),
+                  _InfoRow(label: 'Фамилия', value: _profile?.lastName),
+                  _InfoRow(label: 'Отчество', value: _profile?.middleName),
+                  _InfoRow(label: 'Логин (ник)', value: _profile?.nickname),
+                  _InfoRow(label: 'Пол', value: _genderLabel(_profile?.gender)),
+                  _InfoRow(
+                    label: 'Дата рождения',
+                    value: _formatDate(_profile?.birthDate),
+                  ),
+                  _InfoRow(label: 'Город', value: _profile?.city),
+                  _InfoRow(label: 'Email', value: _profile?.email),
+                  _InfoRow(label: 'Телефон', value: _profile?.phone, last: true),
+                ],
               ),
+              if (_profile == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextButton.icon(
+                    onPressed: null,
+                    icon: const Icon(Icons.hourglass_empty, size: 16),
+                    label: const Text('Загрузка данных...'),
+                  ),
+                ),
               const SizedBox(height: 24),
-              _SectionTitle('Настройки'),
+
+              // Статистика
+              const _SectionTitle('Статистика'),
+              const _StatCard(label: 'Тренировок всего', value: '—'),
+              const _StatCard(label: 'Лучший стрик', value: '— дней'),
+              const SizedBox(height: 24),
+
+              // Настройки
+              const _SectionTitle('Настройки'),
               _SettingsRow(
                 label: 'Единицы измерения',
                 trailing: Row(
@@ -152,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Material(
                 color: AppColors.card,
                 borderRadius: BorderRadius.circular(12),
-                child: ListTile(
+                child: const ListTile(
                   leading: Icon(Icons.person_add, color: AppColors.accent),
                   title: Text(
                     'Пригласить тренера',
@@ -189,6 +226,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
+// ─── Виджеты ────────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback? onEdit;
+
+  const _SectionHeader({required this.title, this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          if (onEdit != null)
+            TextButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Изменить'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.accent,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  final List<Widget> children;
+
+  const _InfoCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(children: children),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String? value;
+  final bool last;
+
+  const _InfoRow({required this.label, this.value, this.last = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = (value == null || value!.isEmpty) ? '—' : value!;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 130,
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  text,
+                  style: TextStyle(
+                    color: text == '—'
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!last)
+          const Divider(height: 1, indent: 16, endIndent: 16),
+      ],
+    );
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   final String title;
 
@@ -200,7 +342,7 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
         title,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
@@ -228,17 +370,13 @@ class _StatCard extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label,
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
+              Text(label,
+                  style: const TextStyle(color: AppColors.textSecondary)),
+              Text(value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  )),
             ],
           ),
         ),
@@ -265,10 +403,8 @@ class _SettingsRow extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label,
-                style: TextStyle(color: AppColors.textPrimary),
-              ),
+              Text(label,
+                  style: const TextStyle(color: AppColors.textPrimary)),
               trailing,
             ],
           ),
