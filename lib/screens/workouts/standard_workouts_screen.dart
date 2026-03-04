@@ -81,6 +81,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
   void _showPreview(Map<String, dynamic> program) {
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       backgroundColor: AppColors.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

@@ -103,6 +103,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void _showAvatarPicker() {
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       backgroundColor: AppColors.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
