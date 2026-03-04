@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/pin_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -18,6 +19,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   bool _passwordVisible = false;
   bool _confirmVisible = false;
+  bool _rememberDevice = false;
   String? _errorMessage;
 
   @override
@@ -44,7 +46,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() => _errorMessage = 'Не удалось создать аккаунт. Попробуйте снова.');
         return;
       }
-      if (mounted) context.go('/onboarding-check');
+      if (mounted) {
+        if (_rememberDevice) {
+          context.go('/pin-setup');
+        } else {
+          context.go('/onboarding-check');
+        }
+      }
     } catch (e) {
       final msg = e.toString();
       String userMsg;
@@ -168,7 +176,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  value: _rememberDevice,
+                  onChanged: (v) => setState(() => _rememberDevice = v),
+                  activeThumbColor: AppColors.accent,
+                  activeTrackColor: AppColors.accent.withValues(alpha: 0.4),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Запомнить меня на этом устройстве',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Войдете по PIN-коду при следующем запуске',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 SizedBox(
                   height: 56,
                   child: ElevatedButton(
