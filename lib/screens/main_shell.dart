@@ -202,13 +202,18 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     if (!state.isActive) return;
 
     final durationSeconds = state.elapsed.inSeconds;
+    final sessionId = state.sessionId!;
+    final workoutId = state.workoutId!;
+
     _stopTicker();
+    // Stop provider immediately so a second tap cannot push another summary screen.
+    ref.read(activeSessionProvider.notifier).stop();
 
     context.push(
       '/session-summary',
       extra: {
-        'sessionId': state.sessionId!,
-        'workoutId': state.workoutId!,
+        'sessionId': sessionId,
+        'workoutId': workoutId,
         'durationSeconds': durationSeconds,
       },
     );

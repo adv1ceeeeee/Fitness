@@ -153,11 +153,10 @@ class TrainingService {
     int? reps,
     int? rpe,
   }) async {
-    final updates = <String, dynamic>{
-      'rpe': rpe, // explicit null clears the field
-    };
-    if (weight != null) updates['weight'] = weight;
-    if (reps != null) updates['reps'] = reps;
-    await _client.from('sets').update(updates).eq('id', setId);
+    await _client.from('sets').update({
+      'weight': weight,
+      'reps': reps,
+      'rpe': rpe,
+    }).eq('id', setId);
   }
 }

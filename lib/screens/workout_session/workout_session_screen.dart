@@ -199,6 +199,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
+              ref.read(activeSessionProvider.notifier).stop();
               context.go('/home');
             },
             child: const Text(
@@ -334,7 +335,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
                           onRepsChanged: (v) => setState(
                               () => _sets[i] = _sets[i].copyWith(reps: v)),
                           onRpeChanged: (v) => setState(
-                              () => _sets[i] = _sets[i].copyWith(rpe: v)),
+                              () => _sets[i].rpe = v),
                           onComplete: _sets[i].completed
                               ? null
                               : () => _completeSet(i),
