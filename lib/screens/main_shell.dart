@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -24,7 +26,6 @@ class MainShell extends ConsumerStatefulWidget {
 class _MainShellState extends ConsumerState<MainShell> {
   int _currentIndex = 0;
 
-  // 4 tabs: Home, Workouts — [FAB] — Analytics, Profile
   final _routes = ['/home', '/workouts', '/analytics', '/profile'];
 
   @override
@@ -57,52 +58,82 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true, // body renders behind the glass bottom bar
       body: widget.child,
       floatingActionButton: _PlayStopFab(location: widget.location),
-      floatingActionButtonLocation:
-          FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: BottomAppBar(
-        color: AppColors.card,
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8,
-        padding: EdgeInsets.zero,
-        height: 60,
-        child: Row(
-          children: [
-            Expanded(
-              child: _NavItem(
-                icon: Icons.home_rounded,
-                label: 'Главная',
-                isSelected: _currentIndex == 0,
-                onTap: () => _onTap(0),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: _GlassNavBar(
+        currentIndex: _currentIndex,
+        onTap: _onTap,
+      ),
+    );
+  }
+}
+
+// ─── Glass navigation bar ────────────────────────────────────────────────────
+
+class _GlassNavBar extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  const _GlassNavBar({required this.currentIndex, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: Container(
+          color: const Color(0xCC000000),
+          child: SizedBox(
+            height: 56 + bottomPadding,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomPadding),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _NavItem(
+                      icon: CupertinoIcons.house,
+                      activeIcon: CupertinoIcons.house_fill,
+                      label: 'Главная',
+                      isSelected: currentIndex == 0,
+                      onTap: () => onTap(0),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      icon: CupertinoIcons.flame,
+                      activeIcon: CupertinoIcons.flame_fill,
+                      label: 'Программы',
+                      isSelected: currentIndex == 1,
+                      onTap: () => onTap(1),
+                    ),
+                  ),
+                  const SizedBox(width: 76), // FAB center space
+                  Expanded(
+                    child: _NavItem(
+                      icon: CupertinoIcons.chart_bar,
+                      activeIcon: CupertinoIcons.chart_bar_fill,
+                      label: 'Аналитика',
+                      isSelected: currentIndex == 2,
+                      onTap: () => onTap(2),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      icon: CupertinoIcons.person,
+                      activeIcon: CupertinoIcons.person_fill,
+                      label: 'Профиль',
+                      isSelected: currentIndex == 3,
+                      onTap: () => onTap(3),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Expanded(
-              child: _NavItem(
-                icon: Icons.fitness_center_rounded,
-                label: 'Программы',
-                isSelected: _currentIndex == 1,
-                onTap: () => _onTap(1),
-              ),
-            ),
-            const SizedBox(width: 80), // FAB notch space
-            Expanded(
-              child: _NavItem(
-                icon: Icons.analytics_rounded,
-                label: 'Аналитика',
-                isSelected: _currentIndex == 2,
-                onTap: () => _onTap(2),
-              ),
-            ),
-            Expanded(
-              child: _NavItem(
-                icon: Icons.person_rounded,
-                label: 'Профиль',
-                isSelected: _currentIndex == 3,
-                onTap: () => _onTap(3),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -154,8 +185,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       return;
     }
 
-    final session =
-        await TrainingService.getOrCreateTodaySession(workout.id);
+    final session = await TrainingService.getOrCreateTodaySession(workout.id);
     if (!mounted || session == null) return;
 
     ref.read(activeSessionProvider.notifier).start(
@@ -189,7 +219,6 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     final session = ref.watch(activeSessionProvider);
     final isActive = session.isActive;
 
-    // Sync ticker with provider state on rebuild
     if (isActive && _ticker == null) _startTicker();
     if (!isActive && _ticker != null) _stopTicker();
 
@@ -197,21 +226,24 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          width: 64,
-          height: 64,
+          width: 60,
+          height: 60,
           child: FloatingActionButton(
             heroTag: 'playStopFab',
             onPressed: isActive ? _onStopTap : _onPlayTap,
-            backgroundColor: isActive ? AppColors.error : AppColors.accent,
-            elevation: 4,
+            backgroundColor:
+                isActive ? AppColors.error : AppColors.accent,
+            elevation: 0,
             shape: const CircleBorder(),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: Icon(
-                isActive ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                isActive
+                    ? CupertinoIcons.stop_fill
+                    : CupertinoIcons.play_fill,
                 key: ValueKey(isActive),
-                color: Colors.black,
-                size: 32,
+                color: Colors.white,
+                size: 26,
               ),
             ),
           ),
@@ -236,12 +268,14 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
 
 class _NavItem extends StatelessWidget {
   final IconData icon;
+  final IconData activeIcon;
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _NavItem({
     required this.icon,
+    required this.activeIcon,
     required this.label,
     required this.isSelected,
     required this.onTap,
@@ -255,36 +289,37 @@ class _NavItem extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? AppColors.accent.withValues(alpha: 0.12)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: AnimatedScale(
-              scale: isSelected ? 1.1 : 1.0,
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              child: Icon(
-                icon,
-                size: 24,
-                color: isSelected ? AppColors.accent : AppColors.textSecondary,
-              ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            child: Icon(
+              isSelected ? activeIcon : icon,
+              key: ValueKey(isSelected),
+              size: 24,
+              color: isSelected ? AppColors.accent : AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 3),
-          AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
+          Text(
+            label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 10,
-              color: isSelected ? AppColors.accent : AppColors.textSecondary,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              fontWeight:
+                  isSelected ? FontWeight.w600 : FontWeight.w400,
+              color:
+                  isSelected ? AppColors.accent : AppColors.textSecondary,
             ),
-            child: Text(label, textAlign: TextAlign.center),
+          ),
+          const SizedBox(height: 2),
+          // iOS-style selection dot
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: isSelected ? 4 : 0,
+            height: isSelected ? 4 : 0,
+            decoration: const BoxDecoration(
+              color: AppColors.accent,
+              shape: BoxShape.circle,
+            ),
           ),
         ],
       ),
