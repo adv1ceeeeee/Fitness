@@ -44,6 +44,7 @@ class AppRouter {
       return null;
     },
     routes: [
+      // ── Auth & onboarding (no bottom nav) ─────────────────────────────────
       GoRoute(
         path: '/',
         builder: (context, state) => const WelcomeScreen(),
@@ -64,6 +65,16 @@ class AppRouter {
         path: '/onboarding-check',
         builder: (context, state) => const OnboardingCheckScreen(),
       ),
+      GoRoute(
+        path: '/pin-setup',
+        builder: (context, state) => const PinSetupScreen(),
+      ),
+      GoRoute(
+        path: '/pin-login',
+        builder: (context, state) => const PinLoginScreen(),
+      ),
+
+      // ── All post-auth screens wrapped in MainShell (bottom nav always visible)
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) => MainShell(
@@ -71,6 +82,7 @@ class AppRouter {
           child: child,
         ),
         routes: [
+          // Tab roots
           GoRoute(
             path: '/home',
             pageBuilder: (context, state) => const NoTransitionPage(
@@ -95,6 +107,16 @@ class AppRouter {
               child: ProfileScreen(),
             ),
           ),
+
+          // Secondary screens — bottom nav stays visible
+          GoRoute(
+            path: '/calendar',
+            builder: (context, state) => const CalendarScreen(),
+          ),
+          GoRoute(
+            path: '/today',
+            builder: (context, state) => const TodayScreen(),
+          ),
           GoRoute(
             path: '/session/:sessionId',
             builder: (context, state) {
@@ -102,45 +124,29 @@ class AppRouter {
               return WorkoutSessionScreen(sessionId: sessionId);
             },
           ),
+          GoRoute(
+            path: '/session-summary',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>;
+              return SessionSummaryScreen(
+                sessionId: extra['sessionId'] as String,
+                workoutId: extra['workoutId'] as String,
+                durationSeconds: extra['durationSeconds'] as int,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/workouts/create',
+            builder: (context, state) => const CreateWorkoutScreen(),
+          ),
+          GoRoute(
+            path: '/workouts/:id/exercises',
+            builder: (context, state) {
+              final id = state.pathParameters['id']!;
+              return AddExercisesScreen(workoutId: id);
+            },
+          ),
         ],
-      ),
-      GoRoute(
-        path: '/calendar',
-        builder: (context, state) => const CalendarScreen(),
-      ),
-      GoRoute(
-        path: '/session-summary',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>;
-          return SessionSummaryScreen(
-            sessionId: extra['sessionId'] as String,
-            workoutId: extra['workoutId'] as String,
-            durationSeconds: extra['durationSeconds'] as int,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/pin-setup',
-        builder: (context, state) => const PinSetupScreen(),
-      ),
-      GoRoute(
-        path: '/pin-login',
-        builder: (context, state) => const PinLoginScreen(),
-      ),
-      GoRoute(
-        path: '/workouts/create',
-        builder: (context, state) => const CreateWorkoutScreen(),
-      ),
-      GoRoute(
-        path: '/workouts/:id/exercises',
-        builder: (context, state) {
-          final id = state.pathParameters['id']!;
-          return AddExercisesScreen(workoutId: id);
-        },
-      ),
-      GoRoute(
-        path: '/today',
-        builder: (context, state) => const TodayScreen(),
       ),
     ],
   );
