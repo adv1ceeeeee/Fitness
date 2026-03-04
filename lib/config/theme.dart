@@ -193,6 +193,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
+        // iOS-style: label stays inside, never floats above the border.
+        // Eliminates the top-clearance that OutlineInputBorder reserves for
+        // the floating label, so icon and text are perfectly centred.
+        floatingLabelBehavior: FloatingLabelBehavior.never,
         labelStyle: const TextStyle(color: AppColors.textSecondary),
         hintStyle: const TextStyle(color: AppColors.textSecondary),
         border: OutlineInputBorder(
