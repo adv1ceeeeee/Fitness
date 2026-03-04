@@ -65,47 +65,44 @@ class _MainShellState extends ConsumerState<MainShell> {
         color: AppColors.card,
         shape: const CircularNotchedRectangle(),
         notchMargin: 8,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Left: Home, Workouts
-              Row(
-                children: [
-                  _NavItem(
-                    icon: Icons.home_rounded,
-                    label: 'Главная',
-                    isSelected: _currentIndex == 0,
-                    onTap: () => _onTap(0),
-                  ),
-                  _NavItem(
-                    icon: Icons.fitness_center_rounded,
-                    label: 'Программы',
-                    isSelected: _currentIndex == 1,
-                    onTap: () => _onTap(1),
-                  ),
-                ],
+        padding: EdgeInsets.zero,
+        height: 60,
+        child: Row(
+          children: [
+            Expanded(
+              child: _NavItem(
+                icon: Icons.home_rounded,
+                label: 'Главная',
+                isSelected: _currentIndex == 0,
+                onTap: () => _onTap(0),
               ),
-              // Right: Analytics, Profile
-              Row(
-                children: [
-                  _NavItem(
-                    icon: Icons.analytics_rounded,
-                    label: 'Аналитика',
-                    isSelected: _currentIndex == 2,
-                    onTap: () => _onTap(2),
-                  ),
-                  _NavItem(
-                    icon: Icons.person_rounded,
-                    label: 'Профиль',
-                    isSelected: _currentIndex == 3,
-                    onTap: () => _onTap(3),
-                  ),
-                ],
+            ),
+            Expanded(
+              child: _NavItem(
+                icon: Icons.fitness_center_rounded,
+                label: 'Программы',
+                isSelected: _currentIndex == 1,
+                onTap: () => _onTap(1),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 80), // FAB notch space
+            Expanded(
+              child: _NavItem(
+                icon: Icons.analytics_rounded,
+                label: 'Аналитика',
+                isSelected: _currentIndex == 2,
+                onTap: () => _onTap(2),
+              ),
+            ),
+            Expanded(
+              child: _NavItem(
+                icon: Icons.person_rounded,
+                label: 'Профиль',
+                isSelected: _currentIndex == 3,
+                onTap: () => _onTap(3),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -255,45 +252,41 @@ class _NavItem extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.accent.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedScale(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? AppColors.accent.withValues(alpha: 0.12)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: AnimatedScale(
               scale: isSelected ? 1.1 : 1.0,
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeInOut,
               child: Icon(
                 icon,
-                size: 26,
-                color:
-                    isSelected ? AppColors.accent : AppColors.textSecondary,
+                size: 24,
+                color: isSelected ? AppColors.accent : AppColors.textSecondary,
               ),
             ),
-            const SizedBox(height: 4),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                fontSize: 11,
-                color: isSelected
-                    ? AppColors.accent
-                    : AppColors.textSecondary,
-                fontWeight:
-                    isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
-              child: Text(label),
+          ),
+          const SizedBox(height: 3),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            style: TextStyle(
+              fontSize: 10,
+              color: isSelected ? AppColors.accent : AppColors.textSecondary,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
             ),
-          ],
-        ),
+            child: Text(label, textAlign: TextAlign.center),
+          ),
+        ],
       ),
     );
   }

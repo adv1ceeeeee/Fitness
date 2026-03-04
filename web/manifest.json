@@ -1,6 +1,6 @@
 {
-    "name": "sportwai",
-    "short_name": "sportwai",
+    "name": "Sportify",
+    "short_name": "Sportify",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

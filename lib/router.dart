@@ -95,6 +95,13 @@ class AppRouter {
               child: ProfileScreen(),
             ),
           ),
+          GoRoute(
+            path: '/session/:sessionId',
+            builder: (context, state) {
+              final sessionId = state.pathParameters['sessionId']!;
+              return WorkoutSessionScreen(sessionId: sessionId);
+            },
+          ),
         ],
       ),
       GoRoute(
@@ -134,13 +141,6 @@ class AppRouter {
       GoRoute(
         path: '/today',
         builder: (context, state) => const TodayScreen(),
-      ),
-      GoRoute(
-        path: '/session/:sessionId',
-        builder: (context, state) {
-          final sessionId = state.pathParameters['sessionId']!;
-          return WorkoutSessionScreen(sessionId: sessionId);
-        },
       ),
     ],
   );

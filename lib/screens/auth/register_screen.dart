@@ -212,6 +212,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         : const Text('Создать аккаунт'),
                   ),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Уже есть аккаунт?',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                    ),
+                    TextButton(
+                      onPressed: () => context.pushReplacement('/login'),
+                      child: const Text(
+                        'Войти',
+                        style: TextStyle(color: AppColors.accent, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

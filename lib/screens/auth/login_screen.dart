@@ -167,6 +167,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     );
                   },
                 ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Нет аккаунта?',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                    ),
+                    TextButton(
+                      onPressed: () => context.pushReplacement('/register'),
+                      child: const Text(
+                        'Создать',
+                        style: TextStyle(color: AppColors.accent, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

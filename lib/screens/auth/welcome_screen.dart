@@ -16,7 +16,7 @@ class WelcomeScreen extends StatelessWidget {
             children: [
               const Spacer(flex: 3),
               const Text(
-                'SportWAI',
+                'Sportify',
                 style: TextStyle(
                   fontSize: 42,
                   fontWeight: FontWeight.bold,
@@ -80,7 +80,7 @@ class WelcomeScreen extends StatelessWidget {
                               backgroundColor: AppColors.accent,
                               foregroundColor: Colors.black,
                             ),
-                            child: const Text('Войти'),
+                            child: const Text('Войти с паролем'),
                           ),
                         ),
                       ],
