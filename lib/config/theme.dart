@@ -1,5 +1,23 @@
 import 'package:flutter/material.dart';
 
+/// Responsive sizing helpers.
+/// Usage: `context.rPad` — horizontal screen padding
+///        `context.rH(56)` — height scaled to screen height
+///        `context.rW(24)` — width scaled to screen width
+extension ResponsiveContext on BuildContext {
+  double get _w => MediaQuery.sizeOf(this).width;
+  double get _h => MediaQuery.sizeOf(this).height;
+
+  /// Horizontal padding: 6% of screen width, min 16, max 28
+  double get rPad => (_w * 0.062).clamp(16.0, 28.0);
+
+  /// Scale a reference height (designed for 844px tall screen)
+  double rH(double ref) => (ref * _h / 844.0).clamp(ref * 0.8, ref * 1.2);
+
+  /// Scale a reference width (designed for 390px wide screen)
+  double rW(double ref) => (ref * _w / 390.0).clamp(ref * 0.75, ref * 1.3);
+}
+
 class AppColors {
   // ── Backgrounds ─────────────────────────────────────────────────────────────
   static const Color background = Color(0xFF000000); // true black (OLED)

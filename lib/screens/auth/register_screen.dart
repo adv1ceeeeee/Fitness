@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/auth_service.dart';
-import 'package:sportwai/services/pin_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -82,7 +81,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(context.rPad),
           child: Form(
             key: _formKey,
             child: Column(

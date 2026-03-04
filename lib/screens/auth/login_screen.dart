@@ -83,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(context.rPad),
           child: Form(
             key: _formKey,
             child: Column(

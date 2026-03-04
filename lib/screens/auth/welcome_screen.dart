@@ -11,7 +11,7 @@ class WelcomeScreen extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: context.rPad),
           child: Column(
             children: [
               const Spacer(flex: 3),
