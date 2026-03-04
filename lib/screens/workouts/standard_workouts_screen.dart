@@ -96,7 +96,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
             children: [
               Text(
                 program['name'] as String,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
@@ -105,10 +105,10 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
               const SizedBox(height: 8),
               Text(
                 '$daysCount раза в неделю',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 16),
-              Text(
+              const Text(
                 'Упражнения:',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
@@ -120,7 +120,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
                       '• ${e['name']} — ${e['sets']}x${e['reps']}',
-                      style: TextStyle(color: AppColors.textSecondary),
+                      style: const TextStyle(color: AppColors.textSecondary),
                     ),
                   )),
               const SizedBox(height: 24),
@@ -168,7 +168,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                         color: AppColors.accent.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(
+                      child: const Icon(
                         Icons.list_alt_rounded,
                         color: AppColors.accent,
                         size: 28,
@@ -181,7 +181,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                         children: [
                           Text(
                             p['name'] as String,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w600,
                               color: AppColors.textPrimary,
@@ -190,7 +190,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                           const SizedBox(height: 4),
                           Text(
                             '$daysCount раза в неделю',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 14,
                               color: AppColors.textSecondary,
                             ),
@@ -198,7 +198,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                    const Icon(Icons.chevron_right, color: AppColors.textSecondary),
                   ],
                 ),
               ),

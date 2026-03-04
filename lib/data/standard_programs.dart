@@ -1,5 +1,6 @@
 /// Стандартные программы тренировок.
 /// Структура: название, дни недели, список упражнений (имя для поиска, sets, reps, rest).
+library;
 
 const List<Map<String, dynamic>> standardPrograms = [
   {

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/auth_service.dart';
@@ -50,9 +51,23 @@ class ProfileService {
   }
 
   /// Обновляет email: сохраняет в profiles и инициирует смену в Supabase Auth.
-  /// После вызова пользователю придёт письмо подтверждения на новый адрес.
   static Future<void> updateEmail(String newEmail) async {
     await AuthService.updateAuthEmail(newEmail);
     await updateProfile({'email': newEmail});
+  }
+
+  /// Загружает аватарку в Supabase Storage и возвращает публичный URL.
+  /// Требует bucket "avatars" с публичным доступом в Supabase Dashboard.
+  static Future<String> uploadAvatar(File imageFile) async {
+    final userId = AuthService.currentUser!.id;
+    final path = '$userId.jpg';
+
+    await _client.storage.from('avatars').upload(
+          path,
+          imageFile,
+          fileOptions: const FileOptions(upsert: true, contentType: 'image/jpeg'),
+        );
+
+    return _client.storage.from('avatars').getPublicUrl(path);
   }
 }

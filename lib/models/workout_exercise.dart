@@ -8,6 +8,8 @@ class WorkoutExercise {
   final int sets;
   final String repsRange;
   final int restSeconds;
+  final double? targetWeight;
+  final int? targetRpe;
   Exercise? exercise;
 
   WorkoutExercise({
@@ -18,6 +20,8 @@ class WorkoutExercise {
     required this.sets,
     required this.repsRange,
     required this.restSeconds,
+    this.targetWeight,
+    this.targetRpe,
     this.exercise,
   });
 
@@ -30,6 +34,8 @@ class WorkoutExercise {
       sets: json['sets'] as int,
       repsRange: json['reps_range'] as String? ?? '8-12',
       restSeconds: json['rest_seconds'] as int? ?? 90,
+      targetWeight: (json['target_weight'] as num?)?.toDouble(),
+      targetRpe: json['target_rpe'] as int?,
       exercise: json['exercises'] != null
           ? Exercise.fromJson(json['exercises'] as Map<String, dynamic>)
           : null,
@@ -44,5 +50,7 @@ class WorkoutExercise {
         'sets': sets,
         'reps_range': repsRange,
         'rest_seconds': restSeconds,
+        'target_weight': targetWeight,
+        'target_rpe': targetRpe,
       };
 }

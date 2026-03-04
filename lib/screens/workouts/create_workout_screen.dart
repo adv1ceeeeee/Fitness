@@ -13,10 +13,12 @@ class CreateWorkoutScreen extends StatefulWidget {
 class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   final _nameController = TextEditingController();
   final Set<int> _selectedDays = {};
+  int _cycleWeeks = 8;
   bool _isLoading = false;
   String? _error;
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  static const _cycleOptions = [4, 6, 8, 12, 16];
 
   @override
   void dispose() {
@@ -54,9 +56,10 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
       final workout = await WorkoutService.createWorkout(
         name,
         _selectedDays.toList()..sort(),
+        cycleWeeks: _cycleWeeks,
       );
       if (mounted) {
-        context.go('/workouts/${workout.id}/exercises');
+        context.pushReplacement('/workouts/${workout.id}/exercises');
       }
     } catch (e) {
       setState(() {
@@ -71,18 +74,19 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Новая программа'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            const Text(
               'Название программы',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -92,28 +96,22 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            Text(
+            const Text(
               'Дни тренировок',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
             Row(
               children: List.generate(7, (i) {
-                final day = i; // 0=Mon, 6=Sun
-                final selected = _selectedDays.contains(day);
+                final selected = _selectedDays.contains(i);
                 return Expanded(
                   child: Padding(
                     padding: EdgeInsets.only(right: i < 6 ? 8 : 0),
                     child: Material(
-                      color: selected
-                          ? AppColors.accent
-                          : AppColors.card,
+                      color: selected ? AppColors.accent : AppColors.card,
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
-                        onTap: () => _toggleDay(day),
+                        onTap: () => _toggleDay(i),
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 16),
@@ -134,12 +132,32 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                 );
               }),
             ),
+            const SizedBox(height: 24),
+            const Text(
+              'Длительность цикла',
+              style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: _cycleOptions.map((w) {
+                final sel = _cycleWeeks == w;
+                return ChoiceChip(
+                  label: Text('$w нед.'),
+                  selected: sel,
+                  onSelected: (_) => setState(() => _cycleWeeks = w),
+                  selectedColor: AppColors.accent,
+                  checkmarkColor: Colors.black,
+                  labelStyle: TextStyle(
+                    color: sel ? Colors.black : AppColors.textPrimary,
+                    fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                );
+              }).toList(),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 16),
-              Text(
-                _error!,
-                style: const TextStyle(color: AppColors.error),
-              ),
+              Text(_error!, style: const TextStyle(color: AppColors.error)),
             ],
             const SizedBox(height: 32),
             SizedBox(

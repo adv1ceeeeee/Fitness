@@ -78,7 +78,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               children: [
                 Text(
                   'Привет, $name!',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                     color: AppColors.textPrimary,
@@ -87,7 +87,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Твоя цель: ${_goalDisplay(goal)}',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     color: AppColors.textSecondary,
                   ),
@@ -98,7 +98,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   totalWorkouts: _totalWorkouts,
                 ),
                 const SizedBox(height: 24),
-                Text(
+                const Text(
                   'Статистика за неделю',
                   style: TextStyle(
                     fontSize: 18,
@@ -125,7 +125,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ],
                 ),
                 const SizedBox(height: 32),
-                Text(
+                const Text(
                   'Поделиться прогрессом',
                   style: TextStyle(
                     fontSize: 18,
@@ -145,12 +145,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       );
                     },
                     borderRadius: BorderRadius.circular(16),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
+                    child: const Padding(
+                      padding: EdgeInsets.all(20),
                       child: Row(
                         children: [
                           Icon(Icons.share, color: AppColors.accent, size: 32),
-                          const SizedBox(width: 16),
+                          SizedBox(width: 16),
                           Text(
                             'Создать картинку с достижениями',
                             style: TextStyle(
@@ -194,11 +194,11 @@ class _StreakCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text('🔥', style: const TextStyle(fontSize: 32)),
+              const Text('🔥', style: TextStyle(fontSize: 32)),
               const SizedBox(width: 12),
               Text(
                 'Стрик: $streak дней',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
@@ -209,7 +209,7 @@ class _StreakCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             'Тренировок всего: $totalWorkouts',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 16,
               color: AppColors.textSecondary,
             ),
@@ -239,7 +239,7 @@ class _StatBox extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               color: AppColors.textSecondary,
             ),
@@ -247,7 +247,7 @@ class _StatBox extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             value,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,

@@ -94,7 +94,7 @@ class _NoWorkoutToday extends StatelessWidget {
               color: AppColors.textSecondary.withOpacity(0.5),
             ),
             const SizedBox(height: 24),
-            Text(
+            const Text(
               'Сегодня нет запланированной тренировки',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -103,7 +103,7 @@ class _NoWorkoutToday extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Создайте программу и выберите дни тренировок',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -114,7 +114,7 @@ class _NoWorkoutToday extends StatelessWidget {
             const SizedBox(height: 24),
             TextButton(
               onPressed: () => context.go('/workouts'),
-              child: Text(
+              child: const Text(
                 'Перейти к программам',
                 style: TextStyle(color: AppColors.accent, fontSize: 16),
               ),
@@ -156,7 +156,7 @@ class _WorkoutContent extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.fitness_center_rounded,
                         size: 40,
                         color: AppColors.accent,
@@ -164,7 +164,7 @@ class _WorkoutContent extends StatelessWidget {
                       const SizedBox(width: 16),
                       Text(
                         workout.name,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                           color: AppColors.textPrimary,
@@ -176,7 +176,7 @@ class _WorkoutContent extends StatelessWidget {
                 const SizedBox(height: 24),
                 Text(
                   'Упражнения (${exercises.length})',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
@@ -206,7 +206,7 @@ class _WorkoutContent extends StatelessWidget {
                               ),
                               child: Text(
                                 '$i',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.accent,
                                 ),
@@ -219,7 +219,7 @@ class _WorkoutContent extends StatelessWidget {
                                 children: [
                                   Text(
                                     ex?.name ?? '?',
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                       color: AppColors.textPrimary,
@@ -227,7 +227,7 @@ class _WorkoutContent extends StatelessWidget {
                                   ),
                                   Text(
                                     '${we.sets} x ${we.repsRange}',
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       fontSize: 14,
                                       color: AppColors.textSecondary,
                                     ),

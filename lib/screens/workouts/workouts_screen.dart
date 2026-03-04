@@ -47,7 +47,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Мои программы тренировок',
                     style: TextStyle(
                       fontSize: 24,
@@ -121,11 +121,11 @@ class _MyProgramsTab extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Row(
+                child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.add, color: AppColors.accent, size: 28),
-                    const SizedBox(width: 12),
+                    SizedBox(width: 12),
                     Text(
                       'Создать программу',
                       style: TextStyle(
@@ -141,9 +141,9 @@ class _MyProgramsTab extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           if (workouts.isEmpty)
-            Center(
+            const Center(
               child: Padding(
-                padding: const EdgeInsets.all(32),
+                padding: EdgeInsets.all(32),
                 child: Text(
                   'Пока нет программ.\nСоздайте первую!',
                   textAlign: TextAlign.center,
@@ -188,7 +188,7 @@ class _WorkoutCard extends StatelessWidget {
                     color: AppColors.accent.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
+                  child: const Icon(
                     Icons.fitness_center_rounded,
                     color: AppColors.accent,
                     size: 28,
@@ -201,7 +201,7 @@ class _WorkoutCard extends StatelessWidget {
                     children: [
                       Text(
                         workout.name,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
@@ -210,7 +210,7 @@ class _WorkoutCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         '${workout.daysPerWeek} тренировок в неделю',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
                         ),
@@ -218,7 +218,7 @@ class _WorkoutCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(Icons.chevron_right, color: AppColors.textSecondary),
+                const Icon(Icons.chevron_right, color: AppColors.textSecondary),
               ],
             ),
           ),

@@ -93,6 +93,30 @@ class TrainingService {
         .eq('id', sessionId);
   }
 
+  /// Получить все сессии пользователя в диапазоне дат
+  static Future<List<TrainingSession>> getSessionsByDateRange(
+    DateTime from,
+    DateTime to,
+  ) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final fromStr = from.toIso8601String().split('T')[0];
+    final toStr = to.toIso8601String().split('T')[0];
+
+    final res = await _client
+        .from('training_sessions')
+        .select('id, workout_id, date, completed')
+        .eq('user_id', userId)
+        .gte('date', fromStr)
+        .lte('date', toStr)
+        .order('date');
+
+    return (res as List)
+        .map((e) => TrainingSession.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   static Future<void> saveSet(
     String sessionId,
     String workoutExerciseId,

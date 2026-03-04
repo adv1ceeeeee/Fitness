@@ -38,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 'Привет, $name!',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
@@ -49,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => context.push('/today'),
               ),
               const SizedBox(height: 24),
-              Text(
+              const Text(
                 'Быстрые действия',
                 style: TextStyle(
                   fontSize: 18,
@@ -111,14 +111,14 @@ class _TodayCard extends StatelessWidget {
                       color: AppColors.accent.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.today_rounded,
                       color: AppColors.accent,
                       size: 28,
                     ),
                   ),
                   const SizedBox(width: 16),
-                  Expanded(
+                  const Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -130,7 +130,7 @@ class _TodayCard extends StatelessWidget {
                             color: AppColors.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: 4),
                         Text(
                           'Нажми, чтобы начать',
                           style: TextStyle(
@@ -141,7 +141,7 @@ class _TodayCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textSecondary),
+                  const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textSecondary),
                 ],
               ),
             ],
@@ -179,7 +179,7 @@ class _ActionCard extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 label,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   color: AppColors.textPrimary,
                 ),

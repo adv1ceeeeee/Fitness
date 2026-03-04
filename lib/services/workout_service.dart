@@ -23,16 +23,21 @@ class WorkoutService {
         .toList();
   }
 
-  static Future<Workout> createWorkout(String name, List<int> days) async {
+  static Future<Workout> createWorkout(
+    String name,
+    List<int> days, {
+    int cycleWeeks = 8,
+  }) async {
     final userId = AuthService.currentUser!.id;
     final res = await _client.from('workouts').insert({
       'user_id': userId,
       'name': name,
       'days': days,
       'is_standard': false,
+      'cycle_weeks': cycleWeeks,
     }).select().single();
 
-    return Workout.fromJson(res as Map<String, dynamic>);
+    return Workout.fromJson(res);
   }
 
   static Future<void> addExerciseToWorkout(
@@ -41,6 +46,8 @@ class WorkoutService {
     int sets = 3,
     String repsRange = '8-12',
     int restSeconds = 90,
+    double? targetWeight,
+    int? targetRpe,
   }) async {
     final maxOrder = await _client
         .from('workout_exercises')
@@ -59,6 +66,8 @@ class WorkoutService {
       'sets': sets,
       'reps_range': repsRange,
       'rest_seconds': restSeconds,
+      if (targetWeight != null) 'target_weight': targetWeight,
+      if (targetRpe != null) 'target_rpe': targetRpe,
     });
   }
 
@@ -79,7 +88,21 @@ class WorkoutService {
     final res =
         await _client.from('workouts').select().eq('id', id).maybeSingle();
     if (res == null) return null;
-    return Workout.fromJson(res as Map<String, dynamic>);
+    return Workout.fromJson(res);
+  }
+
+  static Future<void> updateWorkout(
+    String id, {
+    String? name,
+    List<int>? days,
+    int? cycleWeeks,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (name != null) updates['name'] = name;
+    if (days != null) updates['days'] = days;
+    if (cycleWeeks != null) updates['cycle_weeks'] = cycleWeeks;
+    if (updates.isEmpty) return;
+    await _client.from('workouts').update(updates).eq('id', id);
   }
 
   static Future<void> reorderExercises(
@@ -92,7 +115,8 @@ class WorkoutService {
     }
   }
 
-  static Future<void> removeExerciseFromWorkout(String workoutExerciseId) async {
+  static Future<void> removeExerciseFromWorkout(
+      String workoutExerciseId) async {
     await _client
         .from('workout_exercises')
         .delete()
@@ -104,12 +128,16 @@ class WorkoutService {
     int? sets,
     String? repsRange,
     int? restSeconds,
+    double? targetWeight,
+    int? targetRpe,
   }) async {
     final updates = <String, dynamic>{};
     if (sets != null) updates['sets'] = sets;
     if (repsRange != null) updates['reps_range'] = repsRange;
     if (restSeconds != null) updates['rest_seconds'] = restSeconds;
-    if (updates.isEmpty) return;
+    // null значение явно затирает поле (передаём null чтобы удалить)
+    updates['target_weight'] = targetWeight;
+    updates['target_rpe'] = targetRpe;
     await _client.from('workout_exercises').update(updates).eq('id', id);
   }
 }

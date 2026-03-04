@@ -5,6 +5,7 @@ import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/screens/profile/edit_profile_screen.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/widgets/avatar_widget.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -77,16 +78,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Center(
                 child: Column(
                   children: [
-                    CircleAvatar(
+                    AvatarWidget(
+                      avatarUrl: _profile?.avatarUrl,
                       radius: 50,
-                      backgroundColor: AppColors.accent.withValues(alpha: 0.3),
-                      child: Text(
-                        _avatarLetter,
-                        style: const TextStyle(
-                          fontSize: 36,
-                          color: AppColors.accent,
-                        ),
-                      ),
+                      fallbackLetter: _avatarLetter,
                     ),
                     const SizedBox(height: 16),
                     Text(

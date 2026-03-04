@@ -173,6 +173,42 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     setState(() => _sets.add(_SetData(reps: defaultReps)));
   }
 
+  void _confirmExit() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text(
+          'Прервать тренировку?',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: const Text(
+          'Текущий прогресс будет сохранён.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Продолжить',
+              style: TextStyle(color: AppColors.accent),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.go('/home');
+            },
+            child: const Text(
+              'Выйти',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showCompletionDialog() {
     showDialog(
       context: context,
@@ -217,6 +253,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
         initialSeconds: _initialRestSeconds,
         seconds: _restSeconds,
         onSkip: _skipRest,
+        onExit: _confirmExit,
       );
     }
 
@@ -226,6 +263,10 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: _confirmExit,
+        ),
         title: Text(
           '${_currentExerciseIndex + 1} / ${_exercises.length}',
           style: const TextStyle(fontWeight: FontWeight.bold),
@@ -676,11 +717,13 @@ class _RestScreen extends StatelessWidget {
   final int initialSeconds;
   final int seconds;
   final VoidCallback onSkip;
+  final VoidCallback onExit;
 
   const _RestScreen({
     required this.initialSeconds,
     required this.seconds,
     required this.onSkip,
+    required this.onExit,
   });
 
   @override
@@ -693,6 +736,13 @@ class _RestScreen extends StatelessWidget {
         initialSeconds > 0 ? 1 - (seconds / initialSeconds) : 1.0;
 
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: onExit,
+        ),
+        title: const Text('Отдых'),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),

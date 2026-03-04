@@ -14,7 +14,7 @@ class WelcomeScreen extends StatelessWidget {
           child: Column(
             children: [
               const Spacer(flex: 3),
-              Text(
+              const Text(
                 'SportWAI',
                 style: TextStyle(
                   fontSize: 42,
@@ -24,7 +24,7 @@ class WelcomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
+              const Text(
                 'Твои тренировки — под контролем',
                 style: TextStyle(
                   fontSize: 16,

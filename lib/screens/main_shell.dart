@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
-import 'package:sportwai/screens/home/home_screen.dart';
-import 'package:sportwai/screens/workouts/workouts_screen.dart';
-import 'package:sportwai/screens/analytics/analytics_screen.dart';
-import 'package:sportwai/screens/profile/profile_screen.dart';
 
 class MainShell extends StatefulWidget {
   final String location;
@@ -23,12 +19,24 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
-  final _routes = ['/home', '/workouts', '/analytics', '/profile'];
+  final _routes = ['/home', '/workouts', '/calendar', '/analytics', '/profile'];
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final idx = _routes.indexOf(widget.location);
+  void initState() {
+    super.initState();
+    _syncIndex(widget.location);
+  }
+
+  @override
+  void didUpdateWidget(MainShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.location != widget.location) {
+      _syncIndex(widget.location);
+    }
+  }
+
+  void _syncIndex(String location) {
+    final idx = _routes.indexOf(location);
     if (idx >= 0 && idx != _currentIndex) {
       setState(() => _currentIndex = idx);
     }
@@ -49,7 +57,7 @@ class _MainShellState extends State<MainShell> {
           color: AppColors.card,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               blurRadius: 8,
               offset: const Offset(0, -2),
             ),
@@ -74,16 +82,22 @@ class _MainShellState extends State<MainShell> {
                   onTap: () => _onTap(1),
                 ),
                 _NavItem(
-                  icon: Icons.analytics_rounded,
-                  label: 'Аналитика',
+                  icon: Icons.calendar_month_rounded,
+                  label: 'Календарь',
                   isSelected: _currentIndex == 2,
                   onTap: () => _onTap(2),
                 ),
                 _NavItem(
-                  icon: Icons.person_rounded,
-                  label: 'Профиль',
+                  icon: Icons.analytics_rounded,
+                  label: 'Аналитика',
                   isSelected: _currentIndex == 3,
                   onTap: () => _onTap(3),
+                ),
+                _NavItem(
+                  icon: Icons.person_rounded,
+                  label: 'Профиль',
+                  isSelected: _currentIndex == 4,
+                  onTap: () => _onTap(4),
                 ),
               ],
             ),
@@ -109,27 +123,41 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.accent.withValues(alpha: 0.12)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 26,
-              color: isSelected ? AppColors.accent : AppColors.textSecondary,
+            AnimatedScale(
+              scale: isSelected ? 1.1 : 1.0,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              child: Icon(
+                icon,
+                size: 26,
+                color: isSelected ? AppColors.accent : AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 200),
               style: TextStyle(
                 fontSize: 12,
                 color: isSelected ? AppColors.accent : AppColors.textSecondary,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
               ),
+              child: Text(label),
             ),
           ],
         ),
