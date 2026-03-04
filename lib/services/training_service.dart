@@ -2,7 +2,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
-import 'package:sportwai/models/set_record.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class TrainingService {
@@ -134,5 +133,31 @@ class TrainingService {
       'rpe': rpe,
       'completed': true,
     });
+  }
+
+  /// Returns all sets for a session joined with exercise name and order.
+  static Future<List<Map<String, dynamic>>> getSessionSets(
+      String sessionId) async {
+    final res = await _client
+        .from('sets')
+        .select('*, workout_exercises(order, reps_range, sets, exercises(name))')
+        .eq('training_session_id', sessionId)
+        .order('set_number');
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Update individual fields of a recorded set.
+  static Future<void> updateSet(
+    String setId, {
+    double? weight,
+    int? reps,
+    int? rpe,
+  }) async {
+    final updates = <String, dynamic>{
+      'rpe': rpe, // explicit null clears the field
+    };
+    if (weight != null) updates['weight'] = weight;
+    if (reps != null) updates['reps'] = reps;
+    await _client.from('sets').update(updates).eq('id', setId);
   }
 }

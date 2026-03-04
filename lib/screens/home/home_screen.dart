@@ -77,6 +77,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              _ActionCard(
+                icon: Icons.calendar_month_rounded,
+                label: 'Календарь тренировок',
+                onTap: () => context.push('/calendar'),
+                fullWidth: true,
+              ),
             ],
           ),
         ),
@@ -156,11 +163,13 @@ class _ActionCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool fullWidth;
 
   const _ActionCard({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.fullWidth = false,
   });
 
   @override
@@ -173,20 +182,35 @@ class _ActionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Icon(icon, size: 32, color: AppColors.accent),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textPrimary,
+          child: fullWidth
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 28, color: AppColors.accent),
+                    const SizedBox(width: 12),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  children: [
+                    Icon(icon, size: 32, color: AppColors.accent),
+                    const SizedBox(height: 12),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
         ),
       ),
     );

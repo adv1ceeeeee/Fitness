@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/training_service.dart';
 
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   final String location;
   final Widget child;
 
@@ -13,13 +18,14 @@ class MainShell extends StatefulWidget {
   });
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends ConsumerState<MainShell> {
   int _currentIndex = 0;
 
-  final _routes = ['/home', '/workouts', '/calendar', '/analytics', '/profile'];
+  // 4 tabs: Home, Workouts — [FAB] — Analytics, Profile
+  final _routes = ['/home', '/workouts', '/analytics', '/profile'];
 
   @override
   void initState() {
@@ -52,61 +58,184 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: widget.child,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 8,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                  icon: Icons.home_rounded,
-                  label: 'Главная',
-                  isSelected: _currentIndex == 0,
-                  onTap: () => _onTap(0),
-                ),
-                _NavItem(
-                  icon: Icons.fitness_center_rounded,
-                  label: 'Программы',
-                  isSelected: _currentIndex == 1,
-                  onTap: () => _onTap(1),
-                ),
-                _NavItem(
-                  icon: Icons.calendar_month_rounded,
-                  label: 'Календарь',
-                  isSelected: _currentIndex == 2,
-                  onTap: () => _onTap(2),
-                ),
-                _NavItem(
-                  icon: Icons.analytics_rounded,
-                  label: 'Аналитика',
-                  isSelected: _currentIndex == 3,
-                  onTap: () => _onTap(3),
-                ),
-                _NavItem(
-                  icon: Icons.person_rounded,
-                  label: 'Профиль',
-                  isSelected: _currentIndex == 4,
-                  onTap: () => _onTap(4),
-                ),
-              ],
-            ),
+      floatingActionButton: _PlayStopFab(location: widget.location),
+      floatingActionButtonLocation:
+          FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: BottomAppBar(
+        color: AppColors.card,
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Left: Home, Workouts
+              Row(
+                children: [
+                  _NavItem(
+                    icon: Icons.home_rounded,
+                    label: 'Главная',
+                    isSelected: _currentIndex == 0,
+                    onTap: () => _onTap(0),
+                  ),
+                  _NavItem(
+                    icon: Icons.fitness_center_rounded,
+                    label: 'Программы',
+                    isSelected: _currentIndex == 1,
+                    onTap: () => _onTap(1),
+                  ),
+                ],
+              ),
+              // Right: Analytics, Profile
+              Row(
+                children: [
+                  _NavItem(
+                    icon: Icons.analytics_rounded,
+                    label: 'Аналитика',
+                    isSelected: _currentIndex == 2,
+                    onTap: () => _onTap(2),
+                  ),
+                  _NavItem(
+                    icon: Icons.person_rounded,
+                    label: 'Профиль',
+                    isSelected: _currentIndex == 3,
+                    onTap: () => _onTap(3),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 }
+
+// ─── Play / Stop FAB ─────────────────────────────────────────────────────────
+
+class _PlayStopFab extends ConsumerStatefulWidget {
+  final String location;
+
+  const _PlayStopFab({required this.location});
+
+  @override
+  ConsumerState<_PlayStopFab> createState() => _PlayStopFabState();
+}
+
+class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
+  Timer? _ticker;
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _stopTicker() {
+    _ticker?.cancel();
+    _ticker = null;
+  }
+
+  Future<void> _onPlayTap() async {
+    final workout = await TrainingService.getTodayWorkout();
+    if (!mounted) return;
+
+    if (workout == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сегодня тренировок нет. Добавьте программу.'),
+        ),
+      );
+      return;
+    }
+
+    final session =
+        await TrainingService.getOrCreateTodaySession(workout.id);
+    if (!mounted || session == null) return;
+
+    ref.read(activeSessionProvider.notifier).start(
+          sessionId: session.id,
+          workoutId: workout.id,
+          workoutName: workout.name,
+        );
+    _startTicker();
+    context.push('/session/${session.id}');
+  }
+
+  void _onStopTap() {
+    final state = ref.read(activeSessionProvider);
+    if (!state.isActive) return;
+
+    final durationSeconds = state.elapsed.inSeconds;
+    _stopTicker();
+
+    context.push(
+      '/session-summary',
+      extra: {
+        'sessionId': state.sessionId!,
+        'workoutId': state.workoutId!,
+        'durationSeconds': durationSeconds,
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(activeSessionProvider);
+    final isActive = session.isActive;
+
+    // Sync ticker with provider state on rebuild
+    if (isActive && _ticker == null) _startTicker();
+    if (!isActive && _ticker != null) _stopTicker();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 64,
+          height: 64,
+          child: FloatingActionButton(
+            heroTag: 'playStopFab',
+            onPressed: isActive ? _onStopTap : _onPlayTap,
+            backgroundColor: isActive ? AppColors.error : AppColors.accent,
+            elevation: 4,
+            shape: const CircleBorder(),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                isActive ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                key: ValueKey(isActive),
+                color: Colors.black,
+                size: 32,
+              ),
+            ),
+          ),
+        ),
+        if (isActive) ...[
+          const SizedBox(height: 2),
+          Text(
+            session.elapsedFormatted,
+            style: const TextStyle(
+              color: AppColors.error,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─── Nav item ─────────────────────────────────────────────────────────────────
 
 class _NavItem extends StatelessWidget {
   final IconData icon;
@@ -129,7 +258,7 @@ class _NavItem extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? AppColors.accent.withValues(alpha: 0.12)
@@ -146,16 +275,20 @@ class _NavItem extends StatelessWidget {
               child: Icon(
                 icon,
                 size: 26,
-                color: isSelected ? AppColors.accent : AppColors.textSecondary,
+                color:
+                    isSelected ? AppColors.accent : AppColors.textSecondary,
               ),
             ),
             const SizedBox(height: 4),
             AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 200),
               style: TextStyle(
-                fontSize: 12,
-                color: isSelected ? AppColors.accent : AppColors.textSecondary,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                fontSize: 11,
+                color: isSelected
+                    ? AppColors.accent
+                    : AppColors.textSecondary,
+                fontWeight:
+                    isSelected ? FontWeight.w600 : FontWeight.w400,
               ),
               child: Text(label),
             ),

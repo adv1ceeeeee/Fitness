@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout_exercise.dart';
+import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/services/training_service.dart';
 
 // ─── Локальная модель одного подхода ────────────────────────────────────────
@@ -24,16 +26,17 @@ class _SetData {
 
 // ─── Экран тренировки ────────────────────────────────────────────────────────
 
-class WorkoutSessionScreen extends StatefulWidget {
+class WorkoutSessionScreen extends ConsumerStatefulWidget {
   final String sessionId;
 
   const WorkoutSessionScreen({super.key, required this.sessionId});
 
   @override
-  State<WorkoutSessionScreen> createState() => _WorkoutSessionScreenState();
+  ConsumerState<WorkoutSessionScreen> createState() =>
+      _WorkoutSessionScreenState();
 }
 
-class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
+class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   List<WorkoutExercise> _exercises = [];
   int _currentExerciseIndex = 0;
   bool _loading = true;
@@ -120,8 +123,7 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
 
     final isLastExercise = _currentExerciseIndex >= _exercises.length - 1;
     if (isLastExercise) {
-      await TrainingService.completeSession(widget.sessionId);
-      if (mounted) _showCompletionDialog();
+      if (mounted) _goToSummary();
     } else {
       _startRest(we.restSeconds, goToNext: true);
     }
@@ -209,31 +211,18 @@ class _WorkoutSessionScreenState extends State<WorkoutSessionScreen> {
     );
   }
 
-  void _showCompletionDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: const Text(
-          'Тренировка завершена!',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: const Text(
-          '🎉 Отличная работа!',
-          style: TextStyle(fontSize: 18, color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.go('/home');
-            },
-            child: const Text('На главную',
-                style: TextStyle(color: AppColors.accent)),
-          ),
-        ],
-      ),
+  void _goToSummary() {
+    final sessionState = ref.read(activeSessionProvider);
+    final durationSeconds = sessionState.isActive
+        ? sessionState.elapsed.inSeconds
+        : 0;
+    context.pushReplacement(
+      '/session-summary',
+      extra: {
+        'sessionId': widget.sessionId,
+        'workoutId': sessionState.workoutId ?? '',
+        'durationSeconds': durationSeconds,
+      },
     );
   }
 

@@ -16,6 +16,7 @@ import 'package:sportwai/screens/analytics/analytics_screen.dart';
 import 'package:sportwai/screens/auth/pin_setup_screen.dart';
 import 'package:sportwai/screens/auth/pin_login_screen.dart';
 import 'package:sportwai/screens/calendar/calendar_screen.dart';
+import 'package:sportwai/screens/workout_session/session_summary_screen.dart';
 import 'package:sportwai/screens/main_shell.dart';
 import 'package:sportwai/screens/onboarding/onboarding_check_screen.dart';
 
@@ -83,12 +84,6 @@ class AppRouter {
             ),
           ),
           GoRoute(
-            path: '/calendar',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: CalendarScreen(),
-            ),
-          ),
-          GoRoute(
             path: '/analytics',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: AnalyticsScreen(),
@@ -101,6 +96,21 @@ class AppRouter {
             ),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/calendar',
+        builder: (context, state) => const CalendarScreen(),
+      ),
+      GoRoute(
+        path: '/session-summary',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>;
+          return SessionSummaryScreen(
+            sessionId: extra['sessionId'] as String,
+            workoutId: extra['workoutId'] as String,
+            durationSeconds: extra['durationSeconds'] as int,
+          );
+        },
       ),
       GoRoute(
         path: '/pin-setup',
