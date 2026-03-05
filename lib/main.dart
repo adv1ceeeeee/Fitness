@@ -5,6 +5,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/app_config.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/router.dart';
 
 void main() async {
@@ -38,15 +39,18 @@ void main() async {
   );
 }
 
-class SportifyApp extends StatelessWidget {
+class SportifyApp extends ConsumerWidget {
   const SportifyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp.router(
       title: 'Sportify',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
       routerConfig: AppRouter.router,
       // Clamp system text-scale so large-accessibility settings don't break layouts
       builder: (context, child) {

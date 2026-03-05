@@ -23,7 +23,6 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String _searchQuery = '';
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-  static const _cycleOptions = [4, 6, 8, 12, 16];
 
   @override
   void initState() {
@@ -116,26 +115,106 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   }),
                 ),
                 const SizedBox(height: 16),
-                const Text('Длительность цикла',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  children: _cycleOptions.map((w) {
-                    final sel = cycleWeeks == w;
-                    return ChoiceChip(
-                      label: Text('$w нед.'),
-                      selected: sel,
-                      onSelected: (_) =>
-                          setDialogState(() => cycleWeeks = w),
-                      selectedColor: AppColors.accent,
-                      checkmarkColor: Colors.black,
-                      labelStyle: TextStyle(
-                        color: sel ? Colors.black : AppColors.textPrimary,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Длительность цикла',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    if (cycleWeeks > 16)
+                      Text('$cycleWeeks нед.',
+                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onDoubleTap: () async {
+                    final ctrl = TextEditingController(text: '$cycleWeeks');
+                    final result = await showDialog<int>(
+                      context: ctx,
+                      builder: (dctx) => AlertDialog(
+                        title: const Text('Длительность цикла'),
+                        content: TextField(
+                          controller: ctrl,
+                          keyboardType: TextInputType.number,
+                          autofocus: true,
+                          decoration: const InputDecoration(suffixText: 'нед.'),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+                          TextButton(
+                            onPressed: () {
+                              final v = int.tryParse(ctrl.text.trim());
+                              if (v != null && v >= 1) Navigator.pop(dctx, v);
+                            },
+                            child: const Text('OK'),
+                          ),
+                        ],
                       ),
                     );
-                  }).toList(),
+                    ctrl.dispose();
+                    if (result != null) setDialogState(() => cycleWeeks = result);
+                  },
+                  child: LayoutBuilder(
+                    builder: (lctx, constraints) {
+                      const min = 4.0;
+                      const max = 16.0;
+                      const pad = 24.0;
+                      final sv = cycleWeeks.clamp(4, 16).toDouble();
+                      final thumbX = pad + (sv - min) / (max - min) * (constraints.maxWidth - pad * 2);
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 28),
+                            child: SliderTheme(
+                              data: SliderTheme.of(lctx).copyWith(
+                                activeTrackColor: AppColors.accent,
+                                inactiveTrackColor: AppColors.surface,
+                                thumbColor: AppColors.accent,
+                                overlayColor: AppColors.accent.withValues(alpha: 0.12),
+                              ),
+                              child: Slider(
+                                value: sv,
+                                min: min,
+                                max: max,
+                                divisions: 12,
+                                onChanged: (v) => setDialogState(() => cycleWeeks = v.round()),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: thumbX - 24,
+                            top: 0,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '$cycleWeeks нед.',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: const [
+                      Text('4 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                      Text('16 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -173,16 +252,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     required String initialRepsRange,
     required int initialRest,
     required double? initialTargetWeight,
-    required int? initialTargetRpe,
-    required Future<void> Function(
-            int sets, String repsRange, int rest, double? tw, int? trpe)
-        onSave,
+    required Future<void> Function(int sets, String repsRange, int rest, double? tw) onSave,
     required String saveLabel,
   }) {
     int sets = initialSets;
     int restSeconds = initialRest;
     double? targetWeight = initialTargetWeight;
-    int? targetRpe = initialTargetRpe;
     final repsController = TextEditingController(text: initialRepsRange);
     final weightController = TextEditingController(
         text: targetWeight != null ? targetWeight.toString() : '');
@@ -196,151 +271,223 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 24,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+        builder: (ctx, setModalState) {
+          Future<void> editRestManually() async {
+            final ctrl = TextEditingController(text: '$restSeconds');
+            final result = await showDialog<int>(
+              context: ctx,
+              builder: (dctx) => AlertDialog(
+                title: const Text('Отдых'),
+                content: TextField(
+                  controller: ctrl,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: const InputDecoration(suffixText: 'сек.', hintText: 'Например: 150'),
                 ),
-                const SizedBox(height: 20),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+                  TextButton(
+                    onPressed: () {
+                      final v = int.tryParse(ctrl.text.trim());
+                      if (v != null && v >= 0) Navigator.pop(dctx, v);
+                    },
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+            ctrl.dispose();
+            if (result != null) setModalState(() => restSeconds = result);
+          }
 
-                // Подходы
-                const Text('Подходы',
-                    style: TextStyle(color: AppColors.textSecondary)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _NumberButton(
-                      label: '-',
-                      onTap: () {
-                        if (sets > 1) setModalState(() => sets--);
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Подходы
+                  const Text('Подходы',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      _NumberButton(
+                        label: '-',
+                        onTap: () {
+                          if (sets > 1) setModalState(() => sets--);
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          '$sets',
+                          style: const TextStyle(
+                              fontSize: 24, color: AppColors.textPrimary),
+                        ),
+                      ),
+                      _NumberButton(
+                        label: '+',
+                        onTap: () => setModalState(() => sets++),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Повторения
+                  const Text('Повторения',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: repsController,
+                    keyboardType: TextInputType.text,
+                    decoration: const InputDecoration(hintText: '8-12 или 5'),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Целевой вес
+                  const Text('Целевой вес (кг)',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: weightController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (v) {
+                      targetWeight = double.tryParse(v.replaceAll(',', '.'));
+                    },
+                    decoration: const InputDecoration(hintText: 'Не обязательно'),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Отдых — слайдер
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Отдых',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      if (restSeconds > 120)
+                        Text('$restSeconds сек.',
+                            style: const TextStyle(
+                                fontSize: 13, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  GestureDetector(
+                    onDoubleTap: editRestManually,
+                    child: LayoutBuilder(
+                      builder: (lctx, constraints) {
+                        const sliderPadding = 24.0;
+                        const min = 0.0;
+                        const max = 120.0;
+                        final sliderVal = restSeconds.clamp(0, 120).toDouble();
+                        final trackWidth = constraints.maxWidth - sliderPadding * 2;
+                        final thumbX = sliderPadding + (sliderVal - min) / (max - min) * trackWidth;
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 28),
+                              child: SliderTheme(
+                                data: SliderTheme.of(lctx).copyWith(
+                                  activeTrackColor: AppColors.accent,
+                                  inactiveTrackColor: AppColors.surface,
+                                  thumbColor: AppColors.accent,
+                                  overlayColor: AppColors.accent.withValues(alpha: 0.12),
+                                ),
+                                child: Slider(
+                                  value: sliderVal,
+                                  min: min,
+                                  max: max,
+                                  divisions: 24,
+                                  onChanged: (v) => setModalState(() => restSeconds = v.round()),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: thumbX - 24,
+                              top: 0,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${restSeconds}с',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
                       },
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Text(
-                        '$sets',
-                        style: const TextStyle(
-                            fontSize: 24, color: AppColors.textPrimary),
-                      ),
-                    ),
-                    _NumberButton(
-                      label: '+',
-                      onTap: () => setModalState(() => sets++),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // Повторения
-                const Text('Повторения',
-                    style: TextStyle(color: AppColors.textSecondary)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: repsController,
-                  keyboardType: TextInputType.text,
-                  decoration: const InputDecoration(hintText: '8-12 или 5'),
-                ),
-                const SizedBox(height: 20),
-
-                // Целевой вес
-                const Text('Целевой вес (кг)',
-                    style: TextStyle(color: AppColors.textSecondary)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: weightController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  onChanged: (v) {
-                    targetWeight = double.tryParse(v.replaceAll(',', '.'));
-                  },
-                  decoration: const InputDecoration(
-                    hintText: 'Не обязательно',
                   ),
-                ),
-                const SizedBox(height: 20),
-
-                // Отдых
-                const Text('Отдых (сек)',
-                    style: TextStyle(color: AppColors.textSecondary)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [60, 90, 120].map((sec) {
-                    final sel = restSeconds == sec;
-                    return ChoiceChip(
-                      label: Text('$sec'),
-                      selected: sel,
-                      onSelected: (_) =>
-                          setModalState(() => restSeconds = sec),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 20),
-
-                // Целевой RPE
-                const Text('Целевой RPE (0–10)',
-                    style: TextStyle(color: AppColors.textSecondary)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [null, 6, 7, 8, 9, 10].map((v) {
-                    final sel = targetRpe == v;
-                    final label = v == null ? '—' : '$v';
-                    return ChoiceChip(
-                      label: Text(label),
-                      selected: sel,
-                      onSelected: (_) =>
-                          setModalState(() => targetRpe = v),
-                      selectedColor: AppColors.accent,
-                      checkmarkColor: Colors.black,
-                      labelStyle: TextStyle(
-                        color: sel ? Colors.black : AppColors.textPrimary,
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await onSave(
-                        sets,
-                        repsController.text.trim().isNotEmpty
-                            ? repsController.text.trim()
-                            : '8-12',
-                        restSeconds,
-                        targetWeight,
-                        targetRpe,
-                      );
-                      _load();
-                    },
-                    child: Text(saveLabel),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: const [
+                        Text('0с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        Text('120с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Center(
+                    child: Text(
+                      'Дважды нажмите для ручного ввода',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary.withValues(alpha: 0.6)),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await onSave(
+                          sets,
+                          repsController.text.trim().isNotEmpty
+                              ? repsController.text.trim()
+                              : '8-12',
+                          restSeconds,
+                          targetWeight,
+                        );
+                        _load();
+                      },
+                      child: Text(saveLabel),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -444,7 +591,27 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ..._programExercises.map((we) => _ProgramExerciseCard(
+                  ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    onReorder: (oldIndex, newIndex) {
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex--;
+                        final item = _programExercises.removeAt(oldIndex);
+                        _programExercises.insert(newIndex, item);
+                      });
+                      WorkoutService.reorderExercises(
+                        widget.workoutId,
+                        _programExercises.map((e) => e.id).toList(),
+                      );
+                    },
+                    children: _programExercises.asMap().entries.map((entry) {
+                      final i = entry.key;
+                      final we = entry.value;
+                      return _ProgramExerciseCard(
+                        key: ValueKey(we.id),
+                        dragIndex: i,
                         workoutExercise: we,
                         onEdit: () => _showExerciseSettingsSheet(
                           title: we.exercise?.name ?? '?',
@@ -452,24 +619,23 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                           initialRepsRange: we.repsRange,
                           initialRest: we.restSeconds,
                           initialTargetWeight: we.targetWeight,
-                          initialTargetRpe: we.targetRpe,
                           saveLabel: 'Сохранить',
-                          onSave: (s, r, rest, tw, trpe) =>
+                          onSave: (s, r, rest, tw) =>
                               WorkoutService.updateWorkoutExercise(
                             we.id,
                             sets: s,
                             repsRange: r,
                             restSeconds: rest,
                             targetWeight: tw,
-                            targetRpe: trpe,
                           ),
                         ),
                         onDelete: () async {
-                          await WorkoutService.removeExerciseFromWorkout(
-                              we.id);
+                          await WorkoutService.removeExerciseFromWorkout(we.id);
                           _load();
                         },
-                      )),
+                      );
+                    }).toList(),
+                  ),
                   const Divider(height: 24),
                 ],
 
@@ -512,9 +678,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                               initialRepsRange: '8-12',
                               initialRest: 90,
                               initialTargetWeight: null,
-                              initialTargetRpe: null,
                               saveLabel: 'Добавить в программу',
-                              onSave: (s, r, rest, tw, trpe) =>
+                              onSave: (s, r, rest, tw) =>
                                   WorkoutService.addExerciseToWorkout(
                                 widget.workoutId,
                                 ex.id,
@@ -522,7 +687,6 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                 repsRange: r,
                                 restSeconds: rest,
                                 targetWeight: tw,
-                                targetRpe: trpe,
                               ),
                             ),
                           ),
@@ -543,10 +707,13 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
 class _ProgramExerciseCard extends StatelessWidget {
   final WorkoutExercise workoutExercise;
+  final int dragIndex;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _ProgramExerciseCard({
+    super.key,
+    required this.dragIndex,
     required this.workoutExercise,
     required this.onEdit,
     required this.onDelete,
@@ -572,6 +739,14 @@ class _ProgramExerciseCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
+              ReorderableDragStartListener(
+                index: dragIndex,
+                child: const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: Icon(Icons.drag_handle,
+                      color: AppColors.textSecondary, size: 22),
+                ),
+              ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

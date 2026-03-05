@@ -91,7 +91,7 @@ class _NoWorkoutToday extends StatelessWidget {
             Icon(
               Icons.fitness_center_rounded,
               size: 80,
-              color: AppColors.textSecondary.withOpacity(0.5),
+              color: AppColors.textSecondary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 24),
             const Text(
@@ -201,7 +201,7 @@ class _WorkoutContent extends StatelessWidget {
                               height: 36,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: AppColors.accent.withOpacity(0.2),
+                                color: AppColors.accent.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(

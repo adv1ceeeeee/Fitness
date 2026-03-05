@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/data/standard_programs.dart';
+import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/services/workout_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -45,7 +49,67 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       'level': _level,
     });
 
+    if (!mounted) return;
+
+    final shouldAdd = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _RecommendationSheet(
+        program: standardPrograms[_recommendedIndex()],
+      ),
+    );
+
+    if (shouldAdd == true && mounted) {
+      await _addProgram(standardPrograms[_recommendedIndex()]);
+    }
+
     if (mounted) context.go('/home');
+  }
+
+  int _recommendedIndex() {
+    switch (_goal) {
+      case 'strength':
+        return 3;
+      case 'weight_loss':
+        return 1;
+      case 'mass_gain':
+        return 2;
+      case 'endurance':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  Future<void> _addProgram(Map<String, dynamic> program) async {
+    try {
+      final exercises = await ExerciseService.getExercises();
+      final workout = await WorkoutService.createWorkout(
+        program['name'] as String,
+        (program['days'] as List).cast<int>(),
+      );
+      for (final ex in program['exercises'] as List) {
+        final name = ex['name'] as String;
+        Exercise? found;
+        try {
+          found = exercises.firstWhere(
+            (e) => e.name.toLowerCase().contains(name.toLowerCase()),
+          );
+        } catch (_) {}
+        if (found != null) {
+          await WorkoutService.addExerciseToWorkout(
+            workout.id,
+            found.id,
+            sets: ex['sets'] as int? ?? 3,
+            repsRange: ex['reps'] as String? ?? '8-12',
+            restSeconds: ex['rest'] as int? ?? 90,
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   void _skip() {
@@ -101,7 +165,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       shape: BoxShape.circle,
                       color: _currentPage == i
                           ? AppColors.accent
-                          : AppColors.textSecondary.withOpacity(0.5),
+                          : AppColors.textSecondary.withValues(alpha: 0.5),
                     ),
                   );
                 }),
@@ -316,7 +380,7 @@ class _ChoiceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? AppColors.accent.withOpacity(0.3) : AppColors.card,
+      color: selected ? AppColors.accent.withValues(alpha: 0.3) : AppColors.card,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -354,7 +418,7 @@ class _GoalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? AppColors.accent.withOpacity(0.3) : AppColors.card,
+      color: selected ? AppColors.accent.withValues(alpha: 0.3) : AppColors.card,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -376,6 +440,71 @@ class _GoalCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _RecommendationSheet extends StatelessWidget {
+  final Map<String, dynamic> program;
+
+  const _RecommendationSheet({required this.program});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = program['name'] as String;
+    final days = (program['days'] as List).length;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Рекомендуем программу',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            name,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$days тренировок в неделю',
+            style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Добавить программу'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text(
+                'Пропустить',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -155,6 +155,32 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   Timer? _ticker;
 
   @override
+  void initState() {
+    super.initState();
+    _checkOpenSession();
+  }
+
+  Future<void> _checkOpenSession() async {
+    // Only recover if no session is already active in provider
+    if (ref.read(activeSessionProvider).isActive) return;
+    final open = await TrainingService.getOpenSession();
+    if (open == null || !mounted) return;
+    final sessionId = open['id'] as String;
+    final workoutId = open['workout_id'] as String;
+    final workoutName =
+        (open['workouts'] as Map<String, dynamic>?)?['name'] as String? ??
+            'Тренировка';
+    final createdAt = DateTime.tryParse(open['created_at'] as String? ?? '');
+    ref.read(activeSessionProvider.notifier).start(
+          sessionId: sessionId,
+          workoutId: workoutId,
+          workoutName: workoutName,
+          startTime: createdAt,
+        );
+    _startTicker();
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
     super.dispose();

@@ -1,7 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
-import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class WorkoutService {
@@ -139,5 +138,11 @@ class WorkoutService {
     updates['target_weight'] = targetWeight;
     updates['target_rpe'] = targetRpe;
     await _client.from('workout_exercises').update(updates).eq('id', id);
+  }
+
+  /// Delete a workout and all its exercises.
+  static Future<void> deleteWorkout(String id) async {
+    await _client.from('workout_exercises').delete().eq('workout_id', id);
+    await _client.from('workouts').delete().eq('id', id);
   }
 }

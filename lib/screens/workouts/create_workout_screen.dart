@@ -18,12 +18,45 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   String? _error;
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-  static const _cycleOptions = [4, 6, 8, 12, 16];
 
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _editCycleManually() async {
+    final controller = TextEditingController(text: '$_cycleWeeks');
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Длительность цикла'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: const InputDecoration(
+            suffixText: 'нед.',
+            hintText: 'Например: 20',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = int.tryParse(controller.text.trim());
+              if (v != null && v >= 1) Navigator.pop(ctx, v);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result != null) setState(() => _cycleWeeks = result);
   }
 
   void _toggleDay(int day) {
@@ -133,27 +166,95 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               }),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Длительность цикла',
-              style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: _cycleOptions.map((w) {
-                final sel = _cycleWeeks == w;
-                return ChoiceChip(
-                  label: Text('$w нед.'),
-                  selected: sel,
-                  onSelected: (_) => setState(() => _cycleWeeks = w),
-                  selectedColor: AppColors.accent,
-                  checkmarkColor: Colors.black,
-                  labelStyle: TextStyle(
-                    color: sel ? Colors.black : AppColors.textPrimary,
-                    fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Длительность цикла',
+                  style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+                ),
+                if (_cycleWeeks > 16)
+                  Text(
+                    '$_cycleWeeks нед.',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                );
-              }).toList(),
+              ],
+            ),
+            const SizedBox(height: 4),
+            GestureDetector(
+              onDoubleTap: _editCycleManually,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const sliderPadding = 24.0;
+                  const min = 4.0;
+                  const max = 16.0;
+                  final sliderVal = _cycleWeeks.clamp(4, 16).toDouble();
+                  final trackWidth = constraints.maxWidth - sliderPadding * 2;
+                  final thumbX = sliderPadding + (sliderVal - min) / (max - min) * trackWidth;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 28),
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            activeTrackColor: AppColors.accent,
+                            inactiveTrackColor: AppColors.surface,
+                            thumbColor: AppColors.accent,
+                            overlayColor: AppColors.accent.withValues(alpha: 0.12),
+                          ),
+                          child: Slider(
+                            value: sliderVal,
+                            min: min,
+                            max: max,
+                            divisions: 12,
+                            onChanged: (v) => setState(() => _cycleWeeks = v.round()),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: thumbX - 24,
+                        top: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$_cycleWeeks нед.',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Text('4 нед.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  Text('16 нед.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Center(
+              child: Text(
+                'Дважды нажмите для ручного ввода',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary.withValues(alpha: 0.6)),
+              ),
             ),
             if (_error != null) ...[
               const SizedBox(height: 16),

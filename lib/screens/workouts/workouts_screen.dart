@@ -35,6 +35,11 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
     if (mounted) setState(() => _workouts = list);
   }
 
+  Future<void> _deleteWorkout(String id) async {
+    await WorkoutService.deleteWorkout(id);
+    await _loadWorkouts();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -76,6 +81,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                   _MyProgramsTab(
                     workouts: _workouts,
                     onRefresh: _loadWorkouts,
+                    onDelete: _deleteWorkout,
                     onCreateTap: () async {
                       await context.push('/workouts/create');
                       _loadWorkouts();
@@ -98,12 +104,14 @@ class _MyProgramsTab extends StatelessWidget {
   final VoidCallback onRefresh;
   final VoidCallback onCreateTap;
   final void Function(Workout) onWorkoutTap;
+  final Future<void> Function(String id) onDelete;
 
   const _MyProgramsTab({
     required this.workouts,
     required this.onRefresh,
     required this.onCreateTap,
     required this.onWorkoutTap,
+    required this.onDelete,
   });
 
   @override
@@ -114,7 +122,7 @@ class _MyProgramsTab extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24),
         children: [
           Material(
-            color: AppColors.accent.withOpacity(0.2),
+            color: AppColors.accent.withValues(alpha: 0.2),
             borderRadius: BorderRadius.circular(16),
             child: InkWell(
               onTap: onCreateTap,
@@ -152,9 +160,46 @@ class _MyProgramsTab extends StatelessWidget {
               ),
             )
           else
-            ...workouts.map((w) => _WorkoutCard(
-                  workout: w,
-                  onTap: () => onWorkoutTap(w),
+            ...workouts.map((w) => Dismissible(
+                  key: ValueKey(w.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.error,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: Colors.white),
+                  ),
+                  confirmDismiss: (_) => showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: AppColors.card,
+                      title: const Text('Удалить программу?',
+                          style: TextStyle(color: AppColors.textPrimary)),
+                      content: Text(w.name,
+                          style: const TextStyle(color: AppColors.textSecondary)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Отмена',
+                              style: TextStyle(color: AppColors.accent)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Удалить',
+                              style: TextStyle(color: AppColors.error)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  onDismissed: (_) => onDelete(w.id),
+                  child: _WorkoutCard(
+                    workout: w,
+                    onTap: () => onWorkoutTap(w),
+                  ),
                 )),
         ],
       ),
@@ -185,7 +230,7 @@ class _WorkoutCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.accent.withOpacity(0.2),
+                    color: AppColors.accent.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(

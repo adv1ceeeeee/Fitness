@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sportwai/providers/settings_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
@@ -38,6 +39,7 @@ class WorkoutSessionScreen extends ConsumerStatefulWidget {
 
 class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   List<WorkoutExercise> _exercises = [];
+  Map<String, double> _personalBests = {};
   int _currentExerciseIndex = 0;
   bool _loading = true;
   bool _resting = false;
@@ -71,9 +73,16 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
     final workoutId = sessionRes['workout_id'] as String;
     final ex = await TrainingService.getWorkoutExercisesForToday(workoutId);
 
+    final pbs = <String, double>{};
+    for (final e in ex) {
+      final pb = await TrainingService.getPersonalBest(e.exerciseId);
+      if (pb != null) pbs[e.exerciseId] = pb;
+    }
+
     if (mounted) {
       setState(() {
         _exercises = ex;
+        _personalBests = pbs;
         _loading = false;
         if (ex.isNotEmpty) _initExercise(ex[0]);
       });
@@ -114,6 +123,24 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
     );
 
     setState(() => _sets[index] = setData.copyWith(completed: true));
+
+    // Personal record check
+    if (_weight > 0) {
+      final exerciseId = we.exerciseId;
+      final prev = _personalBests[exerciseId];
+      if (prev == null || _weight > prev) {
+        _personalBests[exerciseId] = _weight;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Личный рекорд! 🏆'),
+              backgroundColor: Color(0xFF30D158),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    }
 
     final nowAllDone = _sets.every((s) => s.completed);
     if (!nowAllDone) {
@@ -370,16 +397,20 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
 // ─── Строка с весом ─────────────────────────────────────────────────────────
 
-class _WeightRow extends StatelessWidget {
+class _WeightRow extends ConsumerWidget {
   final double weight;
   final ValueChanged<double> onChanged;
 
   const _WeightRow({required this.weight, required this.onChanged});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final useKg = ref.watch(useKgProvider);
+    final displayWeight = kgToDisplay(weight, useKg);
     final display = weight > 0
-        ? (weight % 1 == 0 ? '${weight.toInt()}' : '$weight')
+        ? (displayWeight % 1 == 0
+            ? '${displayWeight.toInt()}'
+            : '$displayWeight')
         : '—';
 
     return Container(
@@ -390,8 +421,8 @@ class _WeightRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
-          const Text('Вес, кг',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+          Text('Вес, ${weightLabel(useKg)}',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
           const Spacer(),
           _StepBtn(
             label: '−2.5',

@@ -159,4 +159,65 @@ class TrainingService {
       'rpe': rpe,
     }).eq('id', setId);
   }
+
+  /// Find the first incomplete (not completed) session for today.
+  /// Returns null if none found. Used for session recovery on app restart.
+  static Future<Map<String, dynamic>?> getOpenSession() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    return await _client
+        .from('training_sessions')
+        .select('id, workout_id, created_at, workouts(name)')
+        .eq('user_id', userId)
+        .eq('date', today)
+        .eq('completed', false)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+  }
+
+  /// Returns the personal best weight (kg) ever logged for a given exercise,
+  /// or null if the exercise has never been tracked with weight.
+  static Future<double?> getPersonalBest(String exerciseId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+
+    // Find all workout_exercise IDs for this exercise
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id')
+        .eq('exercise_id', exerciseId);
+
+    final weIds =
+        (weRes as List).map((e) => e['id'] as String).toList();
+    if (weIds.isEmpty) return null;
+
+    // Find user's session IDs
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId);
+
+    final sessIds =
+        (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessIds.isEmpty) return null;
+
+    // Get max weight across all sets
+    final setsRes = await _client
+        .from('sets')
+        .select('weight')
+        .inFilter('workout_exercise_id', weIds)
+        .inFilter('training_session_id', sessIds)
+        .eq('completed', true)
+        .not('weight', 'is', null)
+        .order('weight', ascending: false)
+        .limit(1)
+        .maybeSingle();
+
+    if (setsRes == null) return null;
+    return (setsRes['weight'] as num?)?.toDouble();
+  }
 }

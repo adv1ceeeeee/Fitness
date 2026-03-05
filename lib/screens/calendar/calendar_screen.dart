@@ -25,6 +25,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   // date → список (workoutId, isCompleted)
   Map<DateTime, List<_DayEvent>> _events = {};
 
+  // Double-tap detection
+  DateTime? _lastTappedDay;
+  DateTime? _lastTapTime;
+
   @override
   void initState() {
     super.initState();
@@ -99,17 +103,124 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events[_dayOnly(day)] ?? [];
 
   void _onDaySelected(DateTime selected, DateTime focused) {
+    final now = DateTime.now();
+    final isDoubleTap = _lastTappedDay != null &&
+        isSameDay(_lastTappedDay!, selected) &&
+        _lastTapTime != null &&
+        now.difference(_lastTapTime!).inMilliseconds < 400;
+
+    _lastTappedDay = selected;
+    _lastTapTime = now;
+
     setState(() {
       _selectedDay = selected;
       _focusedDay = focused;
     });
 
-    final evs = _eventsFor(selected);
-    if (evs.isEmpty) return;
+    if (isDoubleTap) {
+      _showDayActions(selected);
+    }
+  }
 
-    // Находим первое событие и переходим к программе
-    final ev = evs.first;
-    context.push('/workouts/${ev.workoutId}/exercises');
+  void _showDayActions(DateTime day) {
+    final events = _eventsFor(day);
+    final isFuture = _dayOnly(day).isAfter(_dayOnly(DateTime.now()));
+    final dateStr = '${day.day}.${day.month.toString().padLeft(2, '0')}.${day.year}';
+
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              dateStr,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Существующие тренировки
+            if (events.isNotEmpty) ...[
+              const Text(
+                'Тренировки',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              ...events.map((ev) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          context.push('/workouts/${ev.workoutId}/exercises');
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: ev.completed
+                                      ? AppColors.accent
+                                      : AppColors.accent.withValues(alpha: 0.45),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _workoutName(ev.workoutId),
+                                  style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                              const Icon(Icons.tune,
+                                  size: 18, color: AppColors.textSecondary),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )),
+              const SizedBox(height: 8),
+            ],
+
+            // Создать программу (всегда, если будущая дата или нет событий)
+            if (isFuture || events.isEmpty)
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    context.push('/workouts/create');
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Создать программу'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _workoutName(String workoutId) {
@@ -128,9 +239,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ? const Center(child: CircularProgressIndicator())
             : Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-                    child: const Align(
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 20, 24, 0),
+                    child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Календарь',
@@ -161,7 +272,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           const TextStyle(color: AppColors.textPrimary),
                       weekendTextStyle:
                           const TextStyle(color: AppColors.textPrimary),
-                      selectedDecoration: BoxDecoration(
+                      selectedDecoration: const BoxDecoration(
                         color: AppColors.accent,
                         shape: BoxShape.circle,
                       ),
@@ -216,7 +327,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Row(
                       children: [
-                        _LegendDot(color: AppColors.accent, label: 'Выполнено'),
+                        const _LegendDot(color: AppColors.accent, label: 'Выполнено'),
                         const SizedBox(width: 16),
                         _LegendDot(
                           color: AppColors.accent.withValues(alpha: 0.35),

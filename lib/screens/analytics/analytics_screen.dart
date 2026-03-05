@@ -1,4 +1,6 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/analytics_service.dart';
@@ -19,6 +21,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   double _volumeThisWeek = 0;
   bool _loading = true;
 
+  List<Map<String, dynamic>> _trackedExercises = [];
+  Map<String, dynamic>? _selectedExercise;
+  Map<String, double> _exerciseProgress = {};
+  bool _loadingChart = false;
+
   @override
   void initState() {
     super.initState();
@@ -32,6 +39,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final streak = await AnalyticsService.getBestStreak();
     final weekCount = await AnalyticsService.getWorkoutsThisWeek();
     final volume = await AnalyticsService.getVolumeThisWeek();
+    final tracked = await AnalyticsService.getTrackedExercises();
 
     if (mounted) {
       setState(() {
@@ -40,9 +48,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _bestStreak = streak;
         _workoutsThisWeek = weekCount;
         _volumeThisWeek = volume;
+        _trackedExercises = tracked;
         _loading = false;
       });
     }
+  }
+
+  Future<void> _loadExerciseProgress(String exerciseId) async {
+    if (!mounted) return;
+    setState(() => _loadingChart = true);
+    final data = await AnalyticsService.getExerciseMaxWeight(exerciseId);
+    if (mounted) setState(() { _exerciseProgress = data; _loadingChart = false; });
   }
 
   static String _goalDisplay(String? goal) {
@@ -126,6 +142,81 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
                 const SizedBox(height: 32),
                 const Text(
+                  'Прогресс по упражнению',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_trackedExercises.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Завершите тренировку с весом,\nчтобы увидеть прогресс',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  )
+                else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: DropdownButton<Map<String, dynamic>>(
+                      value: _selectedExercise,
+                      hint: const Text('Выберите упражнение',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      isExpanded: true,
+                      underline: const SizedBox.shrink(),
+                      dropdownColor: AppColors.card,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                      items: _trackedExercises
+                          .map((ex) => DropdownMenuItem(
+                                value: ex,
+                                child: Text(ex['name'] as String),
+                              ))
+                          .toList(),
+                      onChanged: (ex) {
+                        setState(() {
+                          _selectedExercise = ex;
+                          _exerciseProgress = {};
+                        });
+                        if (ex != null) {
+                          _loadExerciseProgress(ex['id'] as String);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_selectedExercise != null)
+                    _loadingChart
+                        ? const SizedBox(
+                            height: 180,
+                            child: Center(
+                                child: CircularProgressIndicator()))
+                        : _exerciseProgress.isEmpty
+                            ? Container(
+                                height: 80,
+                                alignment: Alignment.center,
+                                child: const Text('Нет данных',
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary)),
+                              )
+                            : _ProgressChart(data: _exerciseProgress),
+                ],
+                const SizedBox(height: 32),
+                const Text(
                   'Поделиться прогрессом',
                   style: TextStyle(
                     fontSize: 18,
@@ -139,10 +230,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   borderRadius: BorderRadius.circular(16),
                   child: InkWell(
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Скоро: генерация картинки для шеринга')),
-                      );
+                      final name = _profile?.fullName?.split(' ').first ?? 'Атлет';
+                      final text =
+                          'Мои достижения в Sportify:\n'
+                          '🔥 Стрик: $_bestStreak дней\n'
+                          '💪 Тренировок всего: $_totalWorkouts\n'
+                          '📅 За неделю: $_workoutsThisWeek тренировок\n'
+                          '🏋 Объём за неделю: ${_volumeThisWeek.toStringAsFixed(0)} кг\n'
+                          '\nПрисоединяйся, $name тренируется в Sportify!';
+                      Share.share(text);
                     },
                     borderRadius: BorderRadius.circular(16),
                     child: const Padding(
@@ -254,6 +350,111 @@ class _StatBox extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ProgressChart extends StatelessWidget {
+  final Map<String, double> data;
+
+  const _ProgressChart({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = data.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    final spots = List.generate(
+      sorted.length,
+      (i) => FlSpot(i.toDouble(), sorted[i].value),
+    );
+
+    final minY = sorted.map((e) => e.value).reduce((a, b) => a < b ? a : b);
+    final maxY = sorted.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final yPad = maxY == minY ? 5.0 : (maxY - minY) * 0.2;
+
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: LineChart(
+        LineChartData(
+          minY: minY - yPad,
+          maxY: maxY + yPad,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) => const FlLine(
+              color: Color(0xFF2C2C2E),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (value, meta) => Text(
+                  value.toStringAsFixed(0),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: sorted.length <= 6 ? 1 : (sorted.length / 4).ceilToDouble(),
+                getTitlesWidget: (value, meta) {
+                  final idx = value.toInt();
+                  if (idx < 0 || idx >= sorted.length) return const SizedBox.shrink();
+                  final parts = sorted[idx].key.split('-');
+                  final label = parts.length >= 3 ? '${parts[2]}.${parts[1]}' : sorted[idx].key;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              color: AppColors.accent,
+              barWidth: 2.5,
+              dotData: FlDotData(
+                show: true,
+                getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+                  radius: 4,
+                  color: AppColors.accent,
+                  strokeWidth: 0,
+                ),
+              ),
+              belowBarData: BarAreaData(
+                show: true,
+                color: AppColors.accent.withValues(alpha: 0.15),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

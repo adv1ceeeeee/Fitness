@@ -76,13 +76,17 @@ class AnalyticsService {
         .eq('completed', true)
         .not('weight', 'is', null);
 
-    final dateMap = {
-      for (var s in sessionsRes as List) s['id'] as String: s['date'] as String
-    };
+    final dateMap = <String, String>{};
+    for (final s in sessionsRes as List) {
+      final id = s['id'] as String?;
+      final date = s['date'] as String?;
+      if (id != null && date != null) dateMap[id] = date;
+    }
 
     final result = <String, double>{};
     for (final set in setsRes as List) {
-      final sid = set['training_session_id'] as String;
+      final sid = set['training_session_id'] as String?;
+      if (sid == null) continue;
       final w = (set['weight'] as num).toDouble();
       final date = dateMap[sid];
       if (date != null) {
@@ -109,6 +113,53 @@ class AnalyticsService {
         .gte('date', startStr);
 
     return (res as List).length;
+  }
+
+  /// Returns exercises the user has ever logged a weighted set for.
+  /// Each map has 'id' and 'name'.
+  static Future<List<Map<String, dynamic>>> getTrackedExercises() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId);
+    final sessIds = (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessIds.isEmpty) return [];
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id')
+        .inFilter('training_session_id', sessIds)
+        .eq('completed', true)
+        .not('weight', 'is', null);
+
+    final weIds = (setsRes as List)
+        .map((e) => e['workout_exercise_id'] as String)
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return [];
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('exercise_id, exercises(id, name)')
+        .inFilter('id', weIds);
+
+    final seen = <String>{};
+    final result = <Map<String, dynamic>>[];
+    for (final we in weRes as List) {
+      final ex = we['exercises'] as Map<String, dynamic>?;
+      if (ex != null) {
+        final id = ex['id'] as String;
+        if (seen.add(id)) {
+          result.add({'id': id, 'name': ex['name'] as String});
+        }
+      }
+    }
+    result.sort((a, b) =>
+        (a['name'] as String).compareTo(b['name'] as String));
+    return result;
   }
 
   static Future<double> getVolumeThisWeek() async {

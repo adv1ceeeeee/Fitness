@@ -1,34 +1,47 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
+import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/screens/profile/edit_profile_screen.dart';
+import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/widgets/avatar_widget.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Profile? _profile;
-  bool _useKg = true;
-  bool _darkTheme = true;
   bool _notifications = true;
+  int _totalWorkouts = 0;
+  int _bestStreak = 0;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadStats();
   }
 
   Future<void> _loadProfile() async {
     final p = await ProfileService.getProfile();
     if (mounted) setState(() => _profile = p);
+  }
+
+  Future<void> _loadStats() async {
+    final total = await AnalyticsService.getTotalWorkouts();
+    final streak = await AnalyticsService.getBestStreak();
+    if (mounted) setState(() {
+      _totalWorkouts = total;
+      _bestStreak = streak;
+    });
   }
 
   String get _displayName {
@@ -141,37 +154,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               // Статистика
               const _SectionTitle('Статистика'),
-              const _StatCard(label: 'Тренировок всего', value: '—'),
-              const _StatCard(label: 'Лучший стрик', value: '— дней'),
+              _StatCard(label: 'Тренировок всего', value: '$_totalWorkouts'),
+              _StatCard(label: 'Лучший стрик', value: '$_bestStreak дней'),
               const SizedBox(height: 24),
 
               // Настройки
               const _SectionTitle('Настройки'),
               _SettingsRow(
                 label: 'Единицы измерения',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('кг'),
-                      selected: _useKg,
-                      onSelected: (_) => setState(() => _useKg = true),
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('фунты'),
-                      selected: !_useKg,
-                      onSelected: (_) => setState(() => _useKg = false),
-                    ),
-                  ],
-                ),
+                trailing: Builder(builder: (context) {
+                  final useKg = ref.watch(useKgProvider);
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('кг'),
+                        selected: useKg,
+                        onSelected: (_) =>
+                            ref.read(useKgProvider.notifier).setUseKg(true),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('фунты'),
+                        selected: !useKg,
+                        onSelected: (_) =>
+                            ref.read(useKgProvider.notifier).setUseKg(false),
+                      ),
+                    ],
+                  );
+                }),
               ),
               _SettingsRow(
                 label: 'Тёмная тема',
-                trailing: Switch(
-                  value: _darkTheme,
-                  onChanged: (v) => setState(() => _darkTheme = v),
-                ),
+                trailing: Builder(builder: (context) {
+                  final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
+                  return Switch(
+                    value: isDark,
+                    onChanged: (v) =>
+                        ref.read(themeModeProvider.notifier).setDark(v),
+                  );
+                }),
               ),
               _SettingsRow(
                 label: 'Уведомления',

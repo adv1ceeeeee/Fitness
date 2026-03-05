@@ -36,12 +36,13 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     required String sessionId,
     required String workoutId,
     required String workoutName,
+    DateTime? startTime,
   }) {
     state = ActiveSessionState(
       sessionId: sessionId,
       workoutId: workoutId,
       workoutName: workoutName,
-      startTime: DateTime.now(),
+      startTime: startTime ?? DateTime.now(),
     );
   }
 
