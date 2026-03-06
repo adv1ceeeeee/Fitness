@@ -47,6 +47,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   int _initialRestSeconds = 90;
   Timer? _restTimer;
   bool _goToNextAfterRest = false;
+  DateTime? _restStartedAt;
+  int _lastRestSeconds = 0;
 
   double _weight = 0;
   List<_SetData> _sets = [];
@@ -120,7 +122,9 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
       weight: _weight > 0 ? _weight : null,
       reps: setData.reps,
       rpe: setData.rpe,
+      restSeconds: _lastRestSeconds > 0 ? _lastRestSeconds : null,
     );
+    _lastRestSeconds = 0;
 
     setState(() => _sets[index] = setData.copyWith(completed: true));
 
@@ -159,6 +163,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   void _startRest(int seconds, {required bool goToNext}) {
     _restTimer?.cancel();
     _goToNextAfterRest = goToNext;
+    _restStartedAt = DateTime.now();
     var remaining = seconds;
     setState(() {
       _resting = true;
@@ -178,6 +183,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   }
 
   void _onRestEnd() {
+    if (_restStartedAt != null) {
+      _lastRestSeconds =
+          DateTime.now().difference(_restStartedAt!).inSeconds;
+      _restStartedAt = null;
+    }
     setState(() => _resting = false);
     if (_goToNextAfterRest) _advanceExercise();
   }

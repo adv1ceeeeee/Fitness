@@ -19,6 +19,7 @@ import 'package:sportwai/screens/calendar/calendar_screen.dart';
 import 'package:sportwai/screens/workout_session/session_summary_screen.dart';
 import 'package:sportwai/screens/main_shell.dart';
 import 'package:sportwai/screens/onboarding/onboarding_check_screen.dart';
+import 'package:sportwai/screens/profile/body_metrics_screen.dart';
 
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -145,6 +146,10 @@ class AppRouter {
               final id = state.pathParameters['id']!;
               return AddExercisesScreen(workoutId: id);
             },
+          ),
+          GoRoute(
+            path: '/body-metrics',
+            builder: (context, state) => const BodyMetricsScreen(),
           ),
         ],
       ),

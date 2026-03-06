@@ -85,11 +85,14 @@ class TrainingService {
     return TrainingSession.fromJson(res);
   }
 
-  static Future<void> completeSession(String sessionId) async {
-    await _client
-        .from('training_sessions')
-        .update({'completed': true})
-        .eq('id', sessionId);
+  static Future<void> completeSession(
+    String sessionId, {
+    int? durationSeconds,
+  }) async {
+    await _client.from('training_sessions').update({
+      'completed': true,
+      if (durationSeconds != null) 'duration_seconds': durationSeconds,
+    }).eq('id', sessionId);
   }
 
   /// Получить все сессии пользователя в диапазоне дат
@@ -123,6 +126,7 @@ class TrainingService {
     double? weight,
     int? reps,
     int? rpe,
+    int? restSeconds,
   }) async {
     await _client.from('sets').insert({
       'training_session_id': sessionId,
@@ -132,6 +136,7 @@ class TrainingService {
       'reps': reps,
       'rpe': rpe,
       'completed': true,
+      if (restSeconds != null) 'rest_seconds': restSeconds,
     });
   }
 

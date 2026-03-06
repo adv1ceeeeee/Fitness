@@ -7,6 +7,7 @@ import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/screens/profile/edit_profile_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/widgets/avatar_widget.dart';
 
@@ -22,12 +23,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _notifications = true;
   int _totalWorkouts = 0;
   int _bestStreak = 0;
+  Map<String, dynamic>? _latestMetrics;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _loadStats();
+    _loadMetrics();
   }
 
   Future<void> _loadProfile() async {
@@ -38,10 +41,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _loadStats() async {
     final total = await AnalyticsService.getTotalWorkouts();
     final streak = await AnalyticsService.getBestStreak();
-    if (mounted) setState(() {
-      _totalWorkouts = total;
-      _bestStreak = streak;
-    });
+    if (mounted) {
+      setState(() {
+        _totalWorkouts = total;
+        _bestStreak = streak;
+      });
+    }
+  }
+
+  Future<void> _loadMetrics() async {
+    final m = await BodyMetricsService.getLatest();
+    if (mounted) setState(() => _latestMetrics = m);
   }
 
   String get _displayName {
@@ -160,6 +170,42 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
               // Настройки
               const _SectionTitle('Настройки'),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => context.push('/body-metrics'),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Параметры тела',
+                              style: TextStyle(color: AppColors.textPrimary)),
+                          Row(
+                            children: [
+                              Text(
+                                _latestMetrics?['weight_kg'] != null
+                                    ? '${(_latestMetrics!['weight_kg'] as num).toStringAsFixed(1)} кг'
+                                    : 'Не указано',
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.chevron_right,
+                                  color: AppColors.textSecondary, size: 18),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               _SettingsRow(
                 label: 'Единицы измерения',
                 trailing: Builder(builder: (context) {

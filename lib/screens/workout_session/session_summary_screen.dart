@@ -100,7 +100,10 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         }
       }
       // Mark session complete
-      await TrainingService.completeSession(widget.sessionId);
+      await TrainingService.completeSession(
+        widget.sessionId,
+        durationSeconds: widget.durationSeconds,
+      );
       // Clear global session state
       ref.read(activeSessionProvider.notifier).stop();
       if (mounted) context.go('/home');

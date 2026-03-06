@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -26,6 +27,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Map<String, double> _exerciseProgress = {};
   bool _loadingChart = false;
 
+  Map<String, double> _bodyWeightData = {};
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +43,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final weekCount = await AnalyticsService.getWorkoutsThisWeek();
     final volume = await AnalyticsService.getVolumeThisWeek();
     final tracked = await AnalyticsService.getTrackedExercises();
+    final bodyHistory = await BodyMetricsService.getHistory();
+
+    final bodyWeightData = <String, double>{};
+    for (final row in bodyHistory) {
+      final date = row['date'] as String?;
+      final w = row['weight_kg'];
+      if (date != null && w != null) {
+        bodyWeightData[date] = (w as num).toDouble();
+      }
+    }
 
     if (mounted) {
       setState(() {
@@ -49,6 +62,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _workoutsThisWeek = weekCount;
         _volumeThisWeek = volume;
         _trackedExercises = tracked;
+        _bodyWeightData = bodyWeightData;
         _loading = false;
       });
     }
@@ -140,6 +154,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 32),
+                const Text(
+                  'Динамика веса тела',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_bodyWeightData.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Добавьте замеры в разделе\n«Параметры тела» в профиле',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    ),
+                  )
+                else
+                  _ProgressChart(data: _bodyWeightData),
                 const SizedBox(height: 32),
                 const Text(
                   'Прогресс по упражнению',
