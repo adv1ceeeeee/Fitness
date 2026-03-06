@@ -779,6 +779,7 @@ class _RestScreen extends StatelessWidget {
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               SizedBox(
                 width: 200,
@@ -802,7 +803,7 @@ class _RestScreen extends StatelessWidget {
               const Text('Отдых',
                   style: TextStyle(
                       fontSize: 24, color: AppColors.textSecondary)),
-              const Spacer(),
+              const SizedBox(height: 48),
               TextButton(
                 onPressed: onSkip,
                 child: const Text('Пропустить',
