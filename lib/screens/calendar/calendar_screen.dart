@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/models/workout.dart';
+import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
@@ -106,18 +108,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _addOnetimeSession(DateTime day) async {
-    if (_workouts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сначала создайте программу тренировок')),
-      );
-      return;
-    }
-
     final events = _eventsFor(day);
     final cyclicEvent = events.where((e) => e.planned).firstOrNull;
 
     if (cyclicEvent != null) {
-      // Conflict: a cyclic workout is already planned for this day
       final cyclicName = _workoutName(cyclicEvent.workoutId);
       if (!mounted) return;
       await showModalBottomSheet(
@@ -135,12 +129,36 @@ class _CalendarScreenState extends State<CalendarScreen> {
           },
           onCreateOnetime: () async {
             Navigator.pop(ctx);
-            await _pickAndSchedule(day);
+            await _pickOrBuildSession(day);
           },
         ),
       );
     } else {
-      await _pickAndSchedule(day);
+      await _pickOrBuildSession(day);
+    }
+  }
+
+  /// Shows either a two-option picker (from program / from exercises) or goes
+  /// straight to the exercise builder if the user has no saved programs.
+  Future<void> _pickOrBuildSession(DateTime day) async {
+    if (_workouts.isNotEmpty) {
+      final choice = await showModalBottomSheet<String>(
+        context: context,
+        useRootNavigator: true,
+        backgroundColor: AppColors.card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => const _AddTypeSheet(),
+      );
+      if (!mounted || choice == null) return;
+      if (choice == 'from_program') {
+        await _pickAndSchedule(day);
+      } else {
+        await _buildAndSchedule(day);
+      }
+    } else {
+      await _buildAndSchedule(day);
     }
   }
 
@@ -156,6 +174,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
     if (workoutId == null || !mounted) return;
     await _scheduleAndRefresh(workoutId, day);
+  }
+
+  Future<void> _buildAndSchedule(DateTime day) async {
+    final workoutId = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _ExerciseBuilderSheet(date: day),
+    );
+    if (workoutId == null || !mounted) return;
+    // Session was already created inside the sheet; just reload
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Тренировка запланирована'),
+        backgroundColor: Color(0xFF30D158),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    await _load(silent: true);
   }
 
   Future<void> _scheduleAndRefresh(String workoutId, DateTime day) async {
@@ -389,15 +430,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           day: day,
                           events: _eventsFor(day),
                           isToday: true),
-                      // 2.5x bigger selected circle
-                      selectedBuilder: (ctx, day, focused) =>
-                          Transform.scale(
-                        scale: 1.6,
-                        child: _DayCell(
-                          day: day,
-                          events: _eventsFor(day),
-                          isSelected: true,
-                        ),
+                      selectedBuilder: (ctx, day, focused) => _DayCell(
+                        day: day,
+                        events: _eventsFor(day),
+                        isSelected: true,
                       ),
                       outsideBuilder: (ctx, day, focused) =>
                           _DayCell(day: day, events: const [], outside: true),
@@ -723,6 +759,362 @@ class _WorkoutPickerSheet extends StatelessWidget {
   }
 }
 
+// ─── Add-type picker (from program vs from exercises) ────────────────────────
+
+class _AddTypeSheet extends StatelessWidget {
+  const _AddTypeSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Тип тренировки',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _sheetBtn(
+            context,
+            icon: Icons.calendar_month_outlined,
+            label: 'Из программы тренировок',
+            sub: 'Выбрать готовую программу',
+            value: 'from_program',
+          ),
+          const SizedBox(height: 8),
+          _sheetBtn(
+            context,
+            icon: Icons.fitness_center_outlined,
+            label: 'Собрать из упражнений',
+            sub: 'Выбрать упражнения вручную',
+            value: 'from_exercises',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sheetBtn(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String sub,
+    required String value,
+  }) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: () => Navigator.pop(context, value),
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, size: 22, color: AppColors.accent),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        )),
+                    const SizedBox(height: 2),
+                    Text(sub,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        )),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Exercise builder sheet ───────────────────────────────────────────────────
+
+class _ExerciseBuilderSheet extends StatefulWidget {
+  final DateTime date;
+
+  const _ExerciseBuilderSheet({required this.date});
+
+  @override
+  State<_ExerciseBuilderSheet> createState() => _ExerciseBuilderSheetState();
+}
+
+class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
+  List<Exercise> _exercises = [];
+  final Set<String> _selectedIds = {};
+  bool _loading = true;
+  bool _saving = false;
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExercises();
+  }
+
+  Future<void> _loadExercises() async {
+    final list = await ExerciseService.getExercises();
+    if (mounted) setState(() { _exercises = list; _loading = false; });
+  }
+
+  List<Exercise> get _filtered {
+    if (_search.isEmpty) return _exercises;
+    final q = _search.toLowerCase();
+    return _exercises.where((e) => e.name.toLowerCase().contains(q)).toList();
+  }
+
+  Future<void> _confirm() async {
+    if (_selectedIds.isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      final workout = await WorkoutService.createWorkout(
+        'Разовая тренировка',
+        [],
+        cycleWeeks: 0,
+      );
+      for (final id in _selectedIds) {
+        await WorkoutService.addExerciseToWorkout(workout.id, id);
+      }
+      await TrainingService.scheduleSession(workout.id, widget.date);
+      if (mounted) Navigator.pop(context, workout.id);
+    } catch (_) {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final byCategory = <String, List<Exercise>>{};
+    for (final e in _filtered) {
+      byCategory.putIfAbsent(e.category, () => []).add(e);
+    }
+    final categories = byCategory.keys.toList()..sort();
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (ctx, scrollCtrl) {
+        return Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Выберите упражнения',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (_selectedIds.isNotEmpty)
+                    Text(
+                      '${_selectedIds.length} выбрано',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: TextField(
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Поиск упражнений...',
+                  hintStyle: const TextStyle(color: AppColors.textSecondary),
+                  prefixIcon: const Icon(Icons.search,
+                      color: AppColors.textSecondary, size: 20),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (v) => setState(() => _search = v),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filtered.isEmpty
+                      ? const Center(
+                          child: Text('Ничего не найдено',
+                              style: TextStyle(
+                                  color: AppColors.textSecondary)),
+                        )
+                      : ListView.builder(
+                          controller: scrollCtrl,
+                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
+                          itemCount: categories.length,
+                          itemBuilder: (_, i) {
+                            final cat = categories[i];
+                            final items = byCategory[cat]!;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 8),
+                                  child: Text(
+                                    Exercise.categoryDisplayName(cat),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                                ...items.map((ex) {
+                                  final selected =
+                                      _selectedIds.contains(ex.id);
+                                  return Padding(
+                                    padding:
+                                        const EdgeInsets.only(bottom: 6),
+                                    child: Material(
+                                      color: selected
+                                          ? AppColors.accent
+                                              .withValues(alpha: 0.12)
+                                          : AppColors.surface,
+                                      borderRadius:
+                                          BorderRadius.circular(12),
+                                      child: InkWell(
+                                        onTap: () => setState(() {
+                                          if (selected) {
+                                            _selectedIds.remove(ex.id);
+                                          } else {
+                                            _selectedIds.add(ex.id);
+                                          }
+                                        }),
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 16, vertical: 12),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  ex.name,
+                                                  style: TextStyle(
+                                                    color: selected
+                                                        ? AppColors.accent
+                                                        : AppColors
+                                                            .textPrimary,
+                                                    fontWeight: selected
+                                                        ? FontWeight.w600
+                                                        : FontWeight.w400,
+                                                  ),
+                                                ),
+                                              ),
+                                              Icon(
+                                                selected
+                                                    ? Icons.check_circle
+                                                    : Icons.circle_outlined,
+                                                color: selected
+                                                    ? AppColors.accent
+                                                    : AppColors.textSecondary,
+                                                size: 20,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            );
+                          },
+                        ),
+            ),
+            // Confirm button
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  24, 8, 24, MediaQuery.of(context).padding.bottom + 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed:
+                      (_selectedIds.isEmpty || _saving) ? null : _confirm,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    disabledBackgroundColor:
+                        AppColors.accent.withValues(alpha: 0.3),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text(
+                          _selectedIds.isEmpty
+                              ? 'Выберите упражнения'
+                              : 'Создать тренировку (${_selectedIds.length})',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 // ─── Виджеты ─────────────────────────────────────────────────────────────────
 
 class _DayCell extends StatelessWidget {
@@ -751,60 +1143,75 @@ class _DayCell extends StatelessWidget {
     final hasCompleted = events.any((e) => e.completed);
     final hasPlanned = events.any((e) => e.planned);
 
+    // Selected circle is independently sized so the text stays at 14px
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          '${day.day}',
+          style: TextStyle(
+            fontSize: 14,
+            color: outside
+                ? AppColors.textSecondary.withValues(alpha: 0.4)
+                : isSelected
+                    ? Colors.black
+                    : AppColors.textPrimary,
+          ),
+        ),
+        if (hasCompleted || hasPlanned) ...[
+          const SizedBox(height: 2),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasCompleted)
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.black : AppColors.accent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              if (hasCompleted && hasPlanned) const SizedBox(width: 2),
+              if (hasPlanned && !hasCompleted)
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.black.withValues(alpha: 0.5)
+                        : AppColors.accent.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+
+    if (isSelected) {
+      return Center(
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: const BoxDecoration(
+            color: AppColors.accent,
+            shape: BoxShape.circle,
+          ),
+          child: Center(child: content),
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: bgColor,
         shape: BoxShape.circle,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '${day.day}',
-            style: TextStyle(
-              fontSize: 14,
-              color: outside
-                  ? AppColors.textSecondary.withValues(alpha: 0.4)
-                  : isSelected
-                      ? Colors.black
-                      : AppColors.textPrimary,
-            ),
-          ),
-          if (hasCompleted || hasPlanned) ...[
-            const SizedBox(height: 2),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (hasCompleted)
-                  Container(
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.black
-                          : AppColors.accent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                if (hasCompleted && hasPlanned)
-                  const SizedBox(width: 2),
-                if (hasPlanned && !hasCompleted)
-                  Container(
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.black.withValues(alpha: 0.5)
-                          : AppColors.accent.withValues(alpha: 0.5),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
+      child: Center(child: content),
     );
   }
 }
