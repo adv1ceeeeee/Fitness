@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
@@ -16,11 +17,17 @@ class AddExercisesScreen extends StatefulWidget {
   State<AddExercisesScreen> createState() => _AddExercisesScreenState();
 }
 
+// Desired category display order
+const _categoryOrder = [
+  'Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио',
+];
+
 class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Workout? _workout;
   List<WorkoutExercise> _programExercises = [];
   List<Exercise> _allExercises = [];
   String _searchQuery = '';
+  Timer? _searchDebounce;
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -28,6 +35,44 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _searchQuery = value);
+    });
+  }
+
+  List<Exercise> get _filteredFlat {
+    if (_searchQuery.isEmpty) return _allExercises;
+    return _allExercises
+        .where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .toList();
+  }
+
+  /// Grouped by category when no search active.
+  List<MapEntry<String, List<Exercise>>> get _groupedExercises {
+    final groups = <String, List<Exercise>>{};
+    for (final ex in _allExercises) {
+      final cat = Exercise.categoryDisplayName(ex.category);
+      groups.putIfAbsent(cat, () => []).add(ex);
+    }
+    return groups.entries.toList()
+      ..sort((a, b) {
+        final ia = _categoryOrder.indexOf(a.key);
+        final ib = _categoryOrder.indexOf(b.key);
+        if (ia == -1 && ib == -1) return a.key.compareTo(b.key);
+        if (ia == -1) return 1;
+        if (ib == -1) return -1;
+        return ia.compareTo(ib);
+      });
   }
 
   Future<void> _load() async {
@@ -43,12 +88,6 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     }
   }
 
-  List<Exercise> get _filteredExercises {
-    if (_searchQuery.isEmpty) return _allExercises;
-    return _allExercises
-        .where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
-  }
 
   void _showEditWorkoutDialog() {
     if (_workout == null) return;
@@ -492,6 +531,44 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     );
   }
 
+  List<Widget> _buildExerciseTiles(List<Exercise> exercises) {
+    return exercises.map((ex) => Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          leading: const Icon(Icons.fitness_center, color: AppColors.accent),
+          title: Text(ex.name,
+              style: const TextStyle(color: AppColors.textPrimary)),
+          subtitle: Text(
+            Exercise.categoryDisplayName(ex.category),
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.add, color: AppColors.accent),
+            onPressed: () => _showExerciseSettingsSheet(
+              title: ex.name,
+              initialSets: 3,
+              initialRepsRange: '8-12',
+              initialRest: 90,
+              initialTargetWeight: null,
+              saveLabel: 'Добавить в программу',
+              onSave: (s, r, rest, tw) => WorkoutService.addExerciseToWorkout(
+                widget.workoutId,
+                ex.id,
+                sets: s,
+                repsRange: r,
+                restSeconds: rest,
+                targetWeight: tw,
+              ),
+            ),
+          ),
+        ),
+      ),
+    )).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final workout = _workout;
@@ -562,7 +639,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextField(
-              onChanged: (v) => setState(() => _searchQuery = v),
+              onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'Поиск упражнений',
                 prefixIcon: const Icon(Icons.search),
@@ -652,47 +729,13 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                ..._filteredExercises.map((ex) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Material(
-                        color: AppColors.card,
-                        borderRadius: BorderRadius.circular(12),
-                        child: ListTile(
-                          leading: const Icon(Icons.fitness_center,
-                              color: AppColors.accent),
-                          title: Text(ex.name,
-                              style: const TextStyle(
-                                  color: AppColors.textPrimary)),
-                          subtitle: Text(
-                            Exercise.categoryDisplayName(ex.category),
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary),
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.add,
-                                color: AppColors.accent),
-                            onPressed: () => _showExerciseSettingsSheet(
-                              title: ex.name,
-                              initialSets: 3,
-                              initialRepsRange: '8-12',
-                              initialRest: 90,
-                              initialTargetWeight: null,
-                              saveLabel: 'Добавить в программу',
-                              onSave: (s, r, rest, tw) =>
-                                  WorkoutService.addExerciseToWorkout(
-                                widget.workoutId,
-                                ex.id,
-                                sets: s,
-                                repsRange: r,
-                                restSeconds: rest,
-                                targetWeight: tw,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    )),
+                if (_searchQuery.isNotEmpty)
+                  ..._buildExerciseTiles(_filteredFlat)
+                else
+                  for (final group in _groupedExercises) ...[
+                    _CategoryHeader(label: group.key),
+                    ..._buildExerciseTiles(group.value),
+                  ],
                 const SizedBox(height: 16),
               ],
             ),
@@ -809,6 +852,30 @@ class _NumberButton extends StatelessWidget {
           height: 48,
           alignment: Alignment.center,
           child: Text(label, style: const TextStyle(fontSize: 24)),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Заголовок категории упражнений ──────────────────────────────────────────
+
+class _CategoryHeader extends StatelessWidget {
+  final String label;
+
+  const _CategoryHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.accent,
+          letterSpacing: 0.5,
         ),
       ),
     );

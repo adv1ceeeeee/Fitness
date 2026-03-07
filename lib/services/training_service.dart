@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
@@ -67,22 +68,25 @@ class TrainingService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
-    final today = DateTime.now().toIso8601String().split('T')[0];
+    try {
+      final today = DateTime.now().toIso8601String().split('T')[0];
 
-    var res = await _client
-        .from('training_sessions')
-        .select()
-        .eq('user_id', userId)
-        .eq('workout_id', workoutId)
-        .eq('date', today)
-        .maybeSingle();
+      final res = await _client
+          .from('training_sessions')
+          .select()
+          .eq('user_id', userId)
+          .eq('workout_id', workoutId)
+          .eq('date', today)
+          .maybeSingle();
 
-    if (res == null) {
-      final session = await createSession(workoutId);
-      return session;
+      if (res == null) {
+        return await createSession(workoutId);
+      }
+      return TrainingSession.fromJson(res);
+    } catch (e) {
+      debugPrint('[TrainingService.getOrCreateTodaySession] error: $e');
+      return null;
     }
-
-    return TrainingSession.fromJson(res);
   }
 
   static Future<void> completeSession(
@@ -128,16 +132,20 @@ class TrainingService {
     int? rpe,
     int? restSeconds,
   }) async {
-    await _client.from('sets').insert({
-      'training_session_id': sessionId,
-      'workout_exercise_id': workoutExerciseId,
-      'set_number': setNumber,
-      'weight': weight,
-      'reps': reps,
-      'rpe': rpe,
-      'completed': true,
-      if (restSeconds != null) 'rest_seconds': restSeconds,
-    });
+    try {
+      await _client.from('sets').insert({
+        'training_session_id': sessionId,
+        'workout_exercise_id': workoutExerciseId,
+        'set_number': setNumber,
+        'weight': weight,
+        'reps': reps,
+        'rpe': rpe,
+        'completed': true,
+        if (restSeconds != null) 'rest_seconds': restSeconds,
+      });
+    } catch (e) {
+      debugPrint('[TrainingService.saveSet] error: $e');
+    }
   }
 
   /// Returns all sets for a session joined with exercise name and order.

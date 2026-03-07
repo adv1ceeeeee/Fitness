@@ -162,6 +162,72 @@ class AnalyticsService {
     return result;
   }
 
+  /// Returns the most recent completed weighted set for each exercise in the list.
+  /// Result map key = exerciseId, value = {weight: double, reps: int, date: String}.
+  static Future<Map<String, Map<String, dynamic>>> getLastSetsForExercises(
+      List<String> exerciseIds) async {
+    if (exerciseIds.isEmpty) return {};
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercise_id')
+        .inFilter('exercise_id', exerciseIds);
+
+    final weToExercise = <String, String>{};
+    for (final row in weRes as List) {
+      weToExercise[row['id'] as String] = row['exercise_id'] as String;
+    }
+    if (weToExercise.isEmpty) return {};
+
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(30);
+
+    final sessionIds = (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return {};
+
+    final sessionDates = <String, String>{
+      for (final s in sessRes as List)
+        s['id'] as String: s['date'] as String,
+    };
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id, weight, reps, training_session_id')
+        .inFilter('workout_exercise_id', weToExercise.keys.toList())
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .not('weight', 'is', null);
+
+    final setsBySession = <String, List<Map<String, dynamic>>>{};
+    for (final set in setsRes as List) {
+      final sessId = set['training_session_id'] as String;
+      setsBySession.putIfAbsent(sessId, () => []).add(set as Map<String, dynamic>);
+    }
+
+    final result = <String, Map<String, dynamic>>{};
+    for (final sessionId in sessionIds) {
+      if (result.length == exerciseIds.length) break;
+      for (final set in setsBySession[sessionId] ?? []) {
+        final weId = set['workout_exercise_id'] as String;
+        final exId = weToExercise[weId];
+        if (exId == null || result.containsKey(exId)) continue;
+        result[exId] = {
+          'weight': (set['weight'] as num).toDouble(),
+          'reps': (set['reps'] as int?) ?? 0,
+          'date': sessionDates[sessionId] ?? '',
+        };
+      }
+    }
+    return result;
+  }
+
   static Future<double> getVolumeThisWeek() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;

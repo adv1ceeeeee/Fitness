@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 
@@ -38,9 +40,13 @@ class WorkoutSessionScreen extends ConsumerStatefulWidget {
       _WorkoutSessionScreenState();
 }
 
-class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
+class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
+    with WidgetsBindingObserver {
   List<WorkoutExercise> _exercises = [];
   Map<String, double> _personalBests = {};
+  Map<String, Map<String, dynamic>> _lastSets = {};
+  int _completedSetsBefore = 0;
+  int _totalExpectedSets = 0;
   int _currentExerciseIndex = 0;
   bool _loading = true;
   bool _resting = false;
@@ -48,24 +54,50 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   Timer? _restTimer;
   bool _goToNextAfterRest = false;
   DateTime? _restStartedAt;
+  DateTime? _pausedAt;
   int _lastRestSeconds = 0;
 
   List<_SetData> _sets = [];
   List<TextEditingController> _weightControllers = [];
 
+  double get _progressValue {
+    if (_totalExpectedSets == 0) return 0.0;
+    final done = _completedSetsBefore + _sets.where((s) => s.completed).length;
+    return (done / _totalExpectedSets).clamp(0.0, 1.0);
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSession();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _restTimer?.cancel();
     for (final c in _weightControllers) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused && _resting) {
+      _restTimer?.cancel();
+      _pausedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed && _resting) {
+      if (_pausedAt != null) {
+        final elapsed = DateTime.now().difference(_pausedAt!).inSeconds;
+        _restSeconds += elapsed;
+        _pausedAt = null;
+      }
+      _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (mounted) setState(() => _restSeconds++);
+      });
+    }
   }
 
   Future<void> _loadSession() async {
@@ -77,17 +109,25 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
     final workoutId = sessionRes['workout_id'] as String;
     final ex = await TrainingService.getWorkoutExercisesForToday(workoutId);
+    final exerciseIds = ex.map((e) => e.exerciseId).toList();
+
+    // Load personal bests and last sets concurrently
+    final pbFutures = ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
+    final lastSetsFuture = AnalyticsService.getLastSetsForExercises(exerciseIds);
+    final pbValues = await Future.wait(pbFutures);
+    final lastSets = await lastSetsFuture;
 
     final pbs = <String, double>{};
-    for (final e in ex) {
-      final pb = await TrainingService.getPersonalBest(e.exerciseId);
-      if (pb != null) pbs[e.exerciseId] = pb;
+    for (var i = 0; i < ex.length; i++) {
+      if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
     }
 
     if (mounted) {
       setState(() {
         _exercises = ex;
         _personalBests = pbs;
+        _lastSets = lastSets;
+        _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
         _loading = false;
         if (ex.isNotEmpty) _initExercise(ex[0]);
       });
@@ -96,10 +136,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
   void _initExercise(WorkoutExercise we) {
     final defaultReps = _parseDefaultReps(we.repsRange);
+    final lastWeight = _lastSets[we.exerciseId]?['weight'] as double?;
+    final lastWeightText = lastWeight != null
+        ? lastWeight.toStringAsFixed(lastWeight % 1 == 0 ? 0 : 1)
+        : '';
     for (final c in _weightControllers) {
       c.dispose();
     }
-    _weightControllers = List.generate(we.sets, (_) => TextEditingController());
+    _weightControllers = List.generate(
+        we.sets, (_) => TextEditingController(text: lastWeightText));
     _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps));
   }
 
@@ -119,6 +164,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
   Future<void> _completeSet(int index) async {
     if (_sets[index].completed) return;
+    HapticFeedback.lightImpact();
     final we = _currentExercise!;
     final setData = _sets[index];
     final restSecondsToSave = _lastRestSeconds > 0 ? _lastRestSeconds : null;
@@ -195,6 +241,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   }
 
   void _onRestEnd() {
+    HapticFeedback.mediumImpact();
     if (_restStartedAt != null) {
       _lastRestSeconds =
           DateTime.now().difference(_restStartedAt!).inSeconds;
@@ -214,6 +261,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
     final nextIndex = _currentExerciseIndex + 1;
     if (nextIndex < _exercises.length) {
       setState(() {
+        _completedSetsBefore += _sets.length;
         _currentExerciseIndex = nextIndex;
         _initExercise(_exercises[nextIndex]);
       });
@@ -310,19 +358,33 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
     final activeIndex = _firstIncompleteIndex;
     final doneCount = _sets.where((s) => s.completed).length;
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: _confirmExit,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmExit();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: _confirmExit,
+          ),
+          title: Text(
+            '${_currentExerciseIndex + 1} / ${_exercises.length}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          centerTitle: true,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(4),
+            child: LinearProgressIndicator(
+              value: _progressValue,
+              backgroundColor: AppColors.surface,
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
+              minHeight: 4,
+            ),
+          ),
         ),
-        title: Text(
-          '${_currentExerciseIndex + 1} / ${_exercises.length}',
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-      ),
-      body: SafeArea(
+        body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -346,6 +408,27 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
                       style: const TextStyle(
                           fontSize: 13, color: AppColors.textSecondary),
                     ),
+                    if (_lastSets[we.exerciseId] != null) ...[
+                      const SizedBox(height: 2),
+                      Builder(builder: (_) {
+                        final last = _lastSets[we.exerciseId]!;
+                        final w = last['weight'] as double;
+                        final r = last['reps'] as int;
+                        final d = last['date'] as String;
+                        final useKg = ref.read(useKgProvider);
+                        final displayW = useKg ? w : w * 2.20462;
+                        final unit = useKg ? 'кг' : 'лб';
+                        final dateShort = d.length >= 10
+                            ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
+                            : d;
+                        return Text(
+                          'Прошлый: ${displayW.toStringAsFixed(1)} $unit × $r ($dateShort)',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.accent),
+                        );
+                      }),
+                    ],
                     const SizedBox(height: 20),
 
                     // Шапка столбцов
@@ -426,6 +509,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
                 ),
               ),
           ],
+        ),
         ),
       ),
     );
