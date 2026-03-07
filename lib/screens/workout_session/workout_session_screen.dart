@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 
 // ─── Локальная модель одного подхода ────────────────────────────────────────
@@ -43,15 +44,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   int _currentExerciseIndex = 0;
   bool _loading = true;
   bool _resting = false;
-  int _restSeconds = 90;
-  int _initialRestSeconds = 90;
+  int _restSeconds = 0;
   Timer? _restTimer;
   bool _goToNextAfterRest = false;
   DateTime? _restStartedAt;
   int _lastRestSeconds = 0;
 
-  double _weight = 0;
   List<_SetData> _sets = [];
+  List<TextEditingController> _weightControllers = [];
 
   @override
   void initState() {
@@ -62,6 +62,9 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   @override
   void dispose() {
     _restTimer?.cancel();
+    for (final c in _weightControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -93,7 +96,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
   void _initExercise(WorkoutExercise we) {
     final defaultReps = _parseDefaultReps(we.repsRange);
-    _weight = 0;
+    for (final c in _weightControllers) {
+      c.dispose();
+    }
+    _weightControllers = List.generate(we.sets, (_) => TextEditingController());
     _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps));
   }
 
@@ -112,73 +118,79 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   bool get _allSetsCompleted => _sets.every((s) => s.completed);
 
   Future<void> _completeSet(int index) async {
+    if (_sets[index].completed) return;
     final we = _currentExercise!;
     final setData = _sets[index];
+    final restSecondsToSave = _lastRestSeconds > 0 ? _lastRestSeconds : null;
 
-    await TrainingService.saveSet(
-      widget.sessionId,
-      we.id,
-      index + 1,
-      weight: _weight > 0 ? _weight : null,
-      reps: setData.reps,
-      rpe: setData.rpe,
-      restSeconds: _lastRestSeconds > 0 ? _lastRestSeconds : null,
-    );
-    _lastRestSeconds = 0;
+    final useKg = ref.read(useKgProvider);
+    final weightText = _weightControllers[index].text.replaceAll(',', '.');
+    final displayWeight = double.tryParse(weightText) ?? 0.0;
+    final weightKg = useKg ? displayWeight : displayWeight / 2.20462;
 
+    // Optimistic update — instant visual feedback
     setState(() => _sets[index] = setData.copyWith(completed: true));
-
-    // Personal record check
-    if (_weight > 0) {
-      final exerciseId = we.exerciseId;
-      final prev = _personalBests[exerciseId];
-      if (prev == null || _weight > prev) {
-        _personalBests[exerciseId] = _weight;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Личный рекорд! 🏆'),
-              backgroundColor: Color(0xFF30D158),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-    }
+    _lastRestSeconds = 0;
 
     final nowAllDone = _sets.every((s) => s.completed);
     if (!nowAllDone) {
       _startRest(we.restSeconds, goToNext: false);
-      return;
+    } else {
+      final isLastExercise = _currentExerciseIndex >= _exercises.length - 1;
+      if (isLastExercise) {
+        if (mounted) _goToSummary();
+      } else {
+        _startRest(we.restSeconds, goToNext: true);
+      }
     }
 
-    final isLastExercise = _currentExerciseIndex >= _exercises.length - 1;
-    if (isLastExercise) {
-      if (mounted) _goToSummary();
-    } else {
-      _startRest(we.restSeconds, goToNext: true);
+    // Save to DB in background
+    await TrainingService.saveSet(
+      widget.sessionId,
+      we.id,
+      index + 1,
+      weight: weightKg > 0 ? weightKg : null,
+      reps: setData.reps,
+      rpe: setData.rpe,
+      restSeconds: restSecondsToSave,
+    );
+
+    EventLogger.setCompleted(
+      exerciseId: we.exerciseId,
+      setNumber: index + 1,
+      reps: setData.reps,
+      weightKg: weightKg > 0 ? weightKg : null,
+      restSeconds: restSecondsToSave,
+    );
+
+    // Personal record check
+    if (weightKg > 0 && mounted) {
+      final exerciseId = we.exerciseId;
+      final prev = _personalBests[exerciseId];
+      if (prev == null || weightKg > prev) {
+        _personalBests[exerciseId] = weightKg;
+        EventLogger.personalRecord(exerciseId: exerciseId, weightKg: weightKg);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Личный рекорд! 🏆'),
+            backgroundColor: Color(0xFF30D158),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
-  void _startRest(int seconds, {required bool goToNext}) {
+  void _startRest(int _, {required bool goToNext}) {
     _restTimer?.cancel();
     _goToNextAfterRest = goToNext;
     _restStartedAt = DateTime.now();
-    var remaining = seconds;
     setState(() {
       _resting = true;
-      _restSeconds = remaining;
-      _initialRestSeconds = seconds;
+      _restSeconds = 0;
     });
     _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      remaining--;
-      if (mounted) {
-        setState(() => _restSeconds = remaining);
-        if (remaining <= 0) {
-          t.cancel();
-          _onRestEnd();
-        }
-      }
+      if (mounted) setState(() => _restSeconds++);
     });
   }
 
@@ -194,6 +206,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
   void _skipRest() {
     _restTimer?.cancel();
+    EventLogger.restSkipped(elapsedSeconds: _restSeconds);
     _onRestEnd();
   }
 
@@ -209,7 +222,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
 
   void _addSet() {
     final defaultReps = _parseDefaultReps(_currentExercise!.repsRange);
-    setState(() => _sets.add(_SetData(reps: defaultReps)));
+    setState(() {
+      _sets.add(_SetData(reps: defaultReps));
+      _weightControllers.add(TextEditingController());
+    });
   }
 
   void _confirmExit() {
@@ -236,6 +252,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
+              EventLogger.workoutAbandoned(sessionId: widget.sessionId);
               ref.read(activeSessionProvider.notifier).stop();
               context.go('/home');
             },
@@ -254,6 +271,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
     final durationSeconds = sessionState.isActive
         ? sessionState.elapsed.inSeconds
         : 0;
+    EventLogger.workoutCompleted(
+      sessionId: widget.sessionId,
+      durationSeconds: durationSeconds,
+      setsCount: _sets.where((s) => s.completed).length,
+    );
     context.pushReplacement(
       '/session-summary',
       extra: {
@@ -277,13 +299,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
     }
     if (_resting) {
       return _RestScreen(
-        initialSeconds: _initialRestSeconds,
         seconds: _restSeconds,
         onSkip: _skipRest,
         onExit: _confirmExit,
       );
     }
 
+    final useKg = ref.watch(useKgProvider);
     final we = _currentExercise!;
     final activeIndex = _firstIncompleteIndex;
     final doneCount = _sets.where((s) => s.completed).length;
@@ -326,19 +348,24 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Вес
-                    _WeightRow(
-                      weight: _weight,
-                      onChanged: (v) => setState(() => _weight = v),
-                    ),
-                    const SizedBox(height: 20),
-
                     // Шапка столбцов
-                    const Padding(
-                      padding: EdgeInsets.only(left: 44, right: 48),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 44, right: 48),
                       child: Row(
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 72,
+                            child: Text(
+                              'Вес, ${weightLabel(useKg)}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondary,
+                                  letterSpacing: 0.5),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
                             child: Text('Повт.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
@@ -346,8 +373,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
                                     color: AppColors.textSecondary,
                                     letterSpacing: 0.5)),
                           ),
-                          SizedBox(width: 8),
-                          Expanded(
+                          const SizedBox(width: 8),
+                          const Expanded(
                             child: Text('RPE',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
@@ -367,15 +394,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
                         child: _SetBlock(
                           index: i,
                           data: _sets[i],
-                          isActive:
-                              i == activeIndex && !_sets[i].completed,
+                          isActive: i == activeIndex && !_sets[i].completed,
+                          weightController: _weightControllers[i],
                           onRepsChanged: (v) => setState(
                               () => _sets[i] = _sets[i].copyWith(reps: v)),
-                          onRpeChanged: (v) => setState(
-                              () => _sets[i].rpe = v),
-                          onComplete: _sets[i].completed
-                              ? null
-                              : () => _completeSet(i),
+                          onRpeChanged: (v) =>
+                              setState(() => _sets[i].rpe = v),
+                          onComplete: (!_sets[i].completed && i == activeIndex)
+                              ? () => _completeSet(i)
+                              : null,
                         ),
                       );
                     }),
@@ -405,71 +432,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen> {
   }
 }
 
-// ─── Строка с весом ─────────────────────────────────────────────────────────
-
-class _WeightRow extends ConsumerWidget {
-  final double weight;
-  final ValueChanged<double> onChanged;
-
-  const _WeightRow({required this.weight, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final useKg = ref.watch(useKgProvider);
-    final displayWeight = kgToDisplay(weight, useKg);
-    final display = weight > 0
-        ? (displayWeight % 1 == 0
-            ? '${displayWeight.toInt()}'
-            : '$displayWeight')
-        : '—';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        children: [
-          Text('Вес, ${weightLabel(useKg)}',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
-          const Spacer(),
-          _StepBtn(
-            label: '−2.5',
-            onTap: weight >= 2.5
-                ? () => onChanged((weight - 2.5).clamp(0, 999))
-                : null,
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            width: 64,
-            child: Text(
-              display,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          _StepBtn(
-            label: '+2.5',
-            onTap: () => onChanged(weight + 2.5),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ─── Блок подхода ────────────────────────────────────────────────────────────
 
 class _SetBlock extends StatelessWidget {
   final int index;
   final _SetData data;
   final bool isActive;
+  final TextEditingController weightController;
   final ValueChanged<int> onRepsChanged;
   final ValueChanged<int?> onRpeChanged;
   final VoidCallback? onComplete;
@@ -478,6 +447,7 @@ class _SetBlock extends StatelessWidget {
     required this.index,
     required this.data,
     required this.isActive,
+    required this.weightController,
     required this.onRepsChanged,
     required this.onRpeChanged,
     this.onComplete,
@@ -506,7 +476,54 @@ class _SetBlock extends StatelessWidget {
         child: Row(
           children: [
             _SetBadge(number: index + 1, done: done, active: isActive),
-            const SizedBox(width: 14),
+            const SizedBox(width: 8),
+            // Поле ввода веса
+            SizedBox(
+              width: 72,
+              height: 36,
+              child: TextField(
+                controller: weightController,
+                enabled: !done,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: done
+                      ? AppColors.textSecondary
+                      : AppColors.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  hintText: '—',
+                  hintStyle:
+                      const TextStyle(color: AppColors.textSecondary),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 6, vertical: 8),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                        color: AppColors.accent, width: 1.2),
+                  ),
+                  disabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: _Stepper(
                 value: data.reps,
@@ -539,8 +556,11 @@ class _SetBlock extends StatelessWidget {
                     shape: BoxShape.circle,
                     color: isActive ? AppColors.accent : AppColors.surface,
                   ),
-                  child: Icon(Icons.check, size: 20,
-                      color: isActive ? Colors.black : AppColors.textSecondary),
+                  child: Icon(Icons.check,
+                      size: 20,
+                      color: isActive
+                          ? Colors.black
+                          : AppColors.textSecondary),
                 ),
               )
             else
@@ -711,47 +731,14 @@ class _AddSetButton extends StatelessWidget {
   }
 }
 
-// ─── Кнопки шага веса ────────────────────────────────────────────────────────
-
-class _StepBtn extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-
-  const _StepBtn({required this.label, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final active = onTap != null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(10)),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: active
-                    ? AppColors.accent
-                    : AppColors.textSecondary
-                        .withValues(alpha: 0.4))),
-      ),
-    );
-  }
-}
-
 // ─── Экран отдыха ────────────────────────────────────────────────────────────
 
 class _RestScreen extends StatelessWidget {
-  final int initialSeconds;
   final int seconds;
   final VoidCallback onSkip;
   final VoidCallback onExit;
 
   const _RestScreen({
-    required this.initialSeconds,
     required this.seconds,
     required this.onSkip,
     required this.onExit,
@@ -763,8 +750,6 @@ class _RestScreen extends StatelessWidget {
     final s = seconds % 60;
     final timeStr =
         '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    final progress =
-        initialSeconds > 0 ? 1 - (seconds / initialSeconds) : 1.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -774,54 +759,36 @@ class _RestScreen extends StatelessWidget {
         ),
         title: const Text('Отдых'),
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(
-                width: 200,
-                height: 200,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                        value: progress,
-                        strokeWidth: 8,
-                        color: AppColors.accent),
-                    Text(timeStr,
-                        style: const TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary)),
-                  ],
-                ),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              timeStr,
+              style: const TextStyle(
+                fontSize: 72,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
               ),
-              const SizedBox(height: 24),
-              const Text('Отдых',
-                  style: TextStyle(
-                      fontSize: 24, color: AppColors.textSecondary)),
-              const SizedBox(height: 48),
-              TextButton(
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Отдых',
+              style: TextStyle(fontSize: 20, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 48),
+            SizedBox(
+              width: 200,
+              height: 52,
+              child: ElevatedButton(
                 onPressed: onSkip,
-                child: const Text('Пропустить',
-                    style:
-                        TextStyle(color: AppColors.accent, fontSize: 18)),
-              ),
-              if (seconds <= 0) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: onSkip,
-                    child: const Text('Следующий подход'),
-                  ),
+                child: const Text(
+                  'Готов',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
-              ],
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );

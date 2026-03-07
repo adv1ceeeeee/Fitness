@@ -108,7 +108,7 @@ class TrainingService {
 
     final res = await _client
         .from('training_sessions')
-        .select('id, workout_id, date, completed')
+        .select('id, user_id, workout_id, date, completed')
         .eq('user_id', userId)
         .gte('date', fromStr)
         .lte('date', toStr)
@@ -163,6 +163,51 @@ class TrainingService {
       'reps': reps,
       'rpe': rpe,
     }).eq('id', setId);
+  }
+
+  /// Schedule (or return existing) a session for a specific date.
+  static Future<TrainingSession> scheduleSession(
+      String workoutId, DateTime date) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) throw Exception('Not authenticated');
+    final dateStr = date.toIso8601String().split('T')[0];
+
+    final existing = await _client
+        .from('training_sessions')
+        .select('id, user_id, workout_id, date, completed')
+        .eq('user_id', userId)
+        .eq('workout_id', workoutId)
+        .eq('date', dateStr)
+        .maybeSingle();
+
+    if (existing != null) return TrainingSession.fromJson(existing);
+
+    final res = await _client.from('training_sessions').insert({
+      'user_id': userId,
+      'workout_id': workoutId,
+      'date': dateStr,
+      'completed': false,
+    }).select().single();
+
+    return TrainingSession.fromJson(res);
+  }
+
+  /// Returns all incomplete sessions for today joined with workout name.
+  static Future<List<Map<String, dynamic>>> getTodayIncompleteSessions() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    final res = await _client
+        .from('training_sessions')
+        .select('id, workout_id, created_at, workouts(name)')
+        .eq('user_id', userId)
+        .eq('date', today)
+        .eq('completed', false)
+        .order('created_at', ascending: true);
+
+    return (res as List).cast<Map<String, dynamic>>();
   }
 
   /// Find the first incomplete (not completed) session for today.

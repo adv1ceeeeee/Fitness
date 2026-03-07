@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
@@ -6,6 +7,7 @@ import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/workout_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -23,7 +25,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _ageController = TextEditingController();
   final _weightController = TextEditingController();
   String? _goal;
-  String? _level;
+  DateTime _trainingStart = DateTime(DateTime.now().year - 1, DateTime.now().month);
 
   @override
   void dispose() {
@@ -37,6 +39,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
 
+    final now = DateTime.now();
+    final months = (now.year - _trainingStart.year) * 12 +
+        (now.month - _trainingStart.month);
+    final level = months < 6
+        ? 'beginner'
+        : months < 24
+            ? 'intermediate'
+            : 'advanced';
+    final startDateStr =
+        '${_trainingStart.year}-${_trainingStart.month.toString().padLeft(2, '0')}-01';
+
     await ProfileService.updateProfile({
       'gender': _gender,
       'age': _ageController.text.isNotEmpty
@@ -46,8 +59,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ? double.tryParse(_weightController.text.replaceAll(',', '.'))
           : null,
       'goal': _goal,
-      'level': _level,
+      'level': level,
+      'training_start_date': startDateStr,
     });
+
+    EventLogger.onboardingCompleted(
+      level: level,
+      goal: _goal,
+      gender: _gender,
+    );
 
     if (!mounted) return;
 
@@ -113,6 +133,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _skip() {
+    EventLogger.onboardingSkipped();
     context.go('/home');
   }
 
@@ -146,8 +167,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     onGoalChanged: (v) => setState(() => _goal = v),
                   ),
                   _Page3(
-                    level: _level,
-                    onLevelChanged: (v) => setState(() => _level = v),
+                    trainingStart: _trainingStart,
+                    onChanged: (v) => setState(() => _trainingStart = v),
                   ),
                 ],
               ),
@@ -321,45 +342,160 @@ class _Page2 extends StatelessWidget {
   }
 }
 
-class _Page3 extends StatelessWidget {
-  final String? level;
-  final ValueChanged<String?> onLevelChanged;
+class _Page3 extends StatefulWidget {
+  final DateTime trainingStart;
+  final ValueChanged<DateTime> onChanged;
 
-  const _Page3({required this.level, required this.onLevelChanged});
+  const _Page3({required this.trainingStart, required this.onChanged});
 
-  static const _levels = [
-    ('beginner', 'Новичок'),
-    ('intermediate', 'Любитель'),
-    ('advanced', 'Продвинутый'),
+  @override
+  State<_Page3> createState() => _Page3State();
+}
+
+class _Page3State extends State<_Page3> {
+  static const _months = [
+    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
   ];
+  static final int _startYear = 1970;
+  static final int _endYear = DateTime.now().year;
+
+  late final FixedExtentScrollController _monthCtrl;
+  late final FixedExtentScrollController _yearCtrl;
+
+  int _selectedMonth = 1;
+  int _selectedYear = DateTime.now().year;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMonth = widget.trainingStart.month;
+    _selectedYear = widget.trainingStart.year;
+    _monthCtrl = FixedExtentScrollController(initialItem: _selectedMonth - 1);
+    _yearCtrl = FixedExtentScrollController(initialItem: _selectedYear - _startYear);
+  }
+
+  @override
+  void dispose() {
+    _monthCtrl.dispose();
+    _yearCtrl.dispose();
+    super.dispose();
+  }
+
+  void _notify() {
+    widget.onChanged(DateTime(_selectedYear, _selectedMonth));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final months = (_selectedYear < now.year)
+        ? (now.year - _selectedYear) * 12 + (now.month - _selectedMonth)
+        : (now.month - _selectedMonth).clamp(0, 12);
+    final String experience;
+    if (months < 1) {
+      experience = 'Только начинаю';
+    } else if (months < 12) {
+      experience = 'Стаж: $months мес.';
+    } else {
+      final y = months ~/ 12;
+      final m = months % 12;
+      experience = m == 0 ? 'Стаж: $y л.' : 'Стаж: $y л. $m мес.';
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Твой уровень',
+            'Когда начал тренироваться?',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: AppColors.textPrimary,
             ),
           ),
+          const SizedBox(height: 8),
+          const Text(
+            'Выбери месяц и год начала тренировок',
+            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+          ),
           const SizedBox(height: 32),
-          ..._levels.map((l) {
-            final (value, label) = l;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _ChoiceChip(
-                label: label,
-                selected: level == value,
-                onTap: () => onLevelChanged(value),
+
+          // Wheels
+          Container(
+            height: 220,
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                // Month wheel
+                Expanded(
+                  flex: 3,
+                  child: CupertinoPicker(
+                    scrollController: _monthCtrl,
+                    itemExtent: 52,
+                    backgroundColor: Colors.transparent,
+                    onSelectedItemChanged: (i) {
+                      _selectedMonth = i + 1;
+                      _notify();
+                    },
+                    children: _months
+                        .map((m) => Center(
+                              child: Text(
+                                m,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 17,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+                // Year wheel
+                Expanded(
+                  flex: 2,
+                  child: CupertinoPicker(
+                    scrollController: _yearCtrl,
+                    itemExtent: 52,
+                    backgroundColor: Colors.transparent,
+                    onSelectedItemChanged: (i) {
+                      _selectedYear = _startYear + i;
+                      _notify();
+                    },
+                    children: List.generate(
+                      _endYear - _startYear + 1,
+                      (i) => Center(
+                        child: Text(
+                          '${_startYear + i}',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 17,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          Center(
+            child: Text(
+              experience,
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppColors.accent,
+                fontWeight: FontWeight.w600,
               ),
-            );
-          }),
+            ),
+          ),
         ],
       ),
     );

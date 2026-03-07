@@ -181,7 +181,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   onChanged: (v) => setState(() => _rememberDevice = v),
                   activeThumbColor: AppColors.accent,
                   activeTrackColor: AppColors.accent.withValues(alpha: 0.4),
-                  contentPadding: EdgeInsets.zero,
+                  contentPadding: const EdgeInsets.only(left: 8),
                   title: const Text(
                     'Запомнить меня на этом устройстве',
                     style: TextStyle(

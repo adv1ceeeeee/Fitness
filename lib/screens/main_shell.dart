@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
@@ -199,10 +200,34 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   }
 
   Future<void> _onPlayTap() async {
-    final workout = await TrainingService.getTodayWorkout();
+    final cyclicWorkout = await TrainingService.getTodayWorkout();
+    final todaySessions = await TrainingService.getTodayIncompleteSessions();
     if (!mounted) return;
 
-    if (workout == null) {
+    final choices = <_WorkoutChoice>[];
+
+    for (final s in todaySessions) {
+      final name =
+          (s['workouts'] as Map<String, dynamic>?)?['name'] as String? ??
+              'Тренировка';
+      choices.add(_WorkoutChoice(
+        sessionId: s['id'] as String,
+        workoutId: s['workout_id'] as String,
+        workoutName: name,
+        isCyclic: false,
+      ));
+    }
+
+    if (cyclicWorkout != null &&
+        !choices.any((c) => c.workoutId == cyclicWorkout.id)) {
+      choices.add(_WorkoutChoice(
+        workoutId: cyclicWorkout.id,
+        workoutName: cyclicWorkout.name,
+        isCyclic: true,
+      ));
+    }
+
+    if (choices.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Сегодня тренировок нет. Добавьте программу.'),
@@ -211,16 +236,44 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       return;
     }
 
-    final session = await TrainingService.getOrCreateTodaySession(workout.id);
-    if (!mounted || session == null) return;
+    _WorkoutChoice choice;
+    if (choices.length == 1) {
+      choice = choices.first;
+    } else {
+      final picked = await showModalBottomSheet<_WorkoutChoice>(
+        context: context,
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => _StartChoiceSheet(choices: choices),
+      );
+      if (picked == null || !mounted) return;
+      choice = picked;
+    }
+
+    final String finalSessionId;
+    if (choice.sessionId != null) {
+      finalSessionId = choice.sessionId!;
+    } else {
+      final session =
+          await TrainingService.getOrCreateTodaySession(choice.workoutId);
+      if (!mounted || session == null) return;
+      finalSessionId = session.id;
+    }
 
     ref.read(activeSessionProvider.notifier).start(
-          sessionId: session.id,
-          workoutId: workout.id,
-          workoutName: workout.name,
+          sessionId: finalSessionId,
+          workoutId: choice.workoutId,
+          workoutName: choice.workoutName,
         );
+    EventLogger.workoutStarted(
+      workoutId: choice.workoutId,
+      workoutName: choice.workoutName,
+      sessionId: finalSessionId,
+    );
     _startTicker();
-    context.push('/session/${session.id}');
+    context.push('/session/$finalSessionId');
   }
 
   void _onStopTap() {
@@ -268,13 +321,16 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
             shape: const CircleBorder(),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
-              child: Icon(
-                isActive
-                    ? CupertinoIcons.stop_fill
-                    : CupertinoIcons.play_fill,
-                key: ValueKey(isActive),
-                color: Colors.white,
-                size: 26,
+              child: Transform.translate(
+                offset: Offset(isActive ? 0 : 2, 0),
+                child: Icon(
+                  isActive
+                      ? CupertinoIcons.stop_fill
+                      : CupertinoIcons.play_fill,
+                  key: ValueKey(isActive),
+                  color: Colors.white,
+                  size: 26,
+                ),
               ),
             ),
           ),
@@ -291,6 +347,107 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
           ),
         ],
       ],
+    );
+  }
+}
+
+// ─── Workout choice model ─────────────────────────────────────────────────────
+
+class _WorkoutChoice {
+  final String? sessionId;
+  final String workoutId;
+  final String workoutName;
+  final bool isCyclic;
+
+  const _WorkoutChoice({
+    this.sessionId,
+    required this.workoutId,
+    required this.workoutName,
+    required this.isCyclic,
+  });
+}
+
+// ─── Start choice sheet ───────────────────────────────────────────────────────
+
+class _StartChoiceSheet extends StatelessWidget {
+  final List<_WorkoutChoice> choices;
+
+  const _StartChoiceSheet({required this.choices});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Какую тренировку начать?',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...choices.map(
+            (c) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  onTap: () => Navigator.pop(context, c),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Icon(
+                          c.isCyclic
+                              ? Icons.calendar_month_outlined
+                              : Icons.fitness_center_outlined,
+                          size: 20,
+                          color: AppColors.accent,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.workoutName,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                c.isCyclic
+                                    ? 'По расписанию программы'
+                                    : 'Разовая тренировка',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            size: 18, color: AppColors.textSecondary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

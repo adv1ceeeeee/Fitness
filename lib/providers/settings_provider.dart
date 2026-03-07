@@ -55,10 +55,45 @@ class UseKgNotifier extends StateNotifier<bool> {
   }
 }
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Units (cm / inches) ─────────────────────────────────────────────────────
+
+final useCmProvider = StateNotifierProvider<UseCmNotifier, bool>(
+  (ref) => UseCmNotifier(),
+);
+
+class UseCmNotifier extends StateNotifier<bool> {
+  static const _key = 'use_cm';
+
+  UseCmNotifier() : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setUseCm(bool useCm) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, useCm);
+    state = useCm;
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Convert kg value to display value + label depending on unit preference.
 double kgToDisplay(double kg, bool useKg) =>
     useKg ? kg : double.parse((kg * 2.20462).toStringAsFixed(1));
 
 String weightLabel(bool useKg) => useKg ? 'кг' : 'фунты';
+
+/// Convert cm value to display value depending on unit preference.
+double cmToDisplay(double cm, bool useCm) =>
+    useCm ? cm : double.parse((cm / 2.54).toStringAsFixed(1));
+
+/// Convert display value back to cm.
+double displayToCm(double display, bool useCm) =>
+    useCm ? display : display * 2.54;
+
+String lengthLabel(bool useCm) => useCm ? 'см' : 'дюйм';

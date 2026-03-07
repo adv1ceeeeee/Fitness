@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:sportwai/config/theme.dart';
-import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
@@ -19,15 +18,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime? _selectedDay;
 
   List<Workout> _workouts = [];
-  List<TrainingSession> _sessions = [];
   bool _loading = true;
 
-  // date → список (workoutId, isCompleted)
   Map<DateTime, List<_DayEvent>> _events = {};
-
-  // Double-tap detection
-  DateTime? _lastTappedDay;
-  DateTime? _lastTapTime;
 
   @override
   void initState() {
@@ -35,65 +28,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    final workouts = await WorkoutService.getMyWorkouts();
-    final now = DateTime.now();
-    final rangeStart = DateTime(now.year, now.month - 2, 1);
-    // будущее: берём макс. цикл среди программ (или 16 нед. по умолчанию)
-    final maxCycle =
-        workouts.fold(0, (m, w) => w.cycleWeeks > m ? w.cycleWeeks : m);
-    final rangeEnd =
-        now.add(Duration(days: (maxCycle > 0 ? maxCycle : 16) * 7));
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && mounted) setState(() => _loading = true);
+    try {
+      final workouts = await WorkoutService.getMyWorkouts();
+      final now = DateTime.now();
+      final rangeStart = DateTime(now.year, now.month - 2, 1);
+      final maxCycle =
+          workouts.fold(0, (m, w) => w.cycleWeeks > m ? w.cycleWeeks : m);
+      final rangeEnd =
+          now.add(Duration(days: (maxCycle > 0 ? maxCycle : 16) * 7));
 
-    final sessions = await TrainingService.getSessionsByDateRange(
-        rangeStart, rangeEnd);
+      final sessions =
+          await TrainingService.getSessionsByDateRange(rangeStart, rangeEnd);
 
-    final events = <DateTime, List<_DayEvent>>{};
+      final events = <DateTime, List<_DayEvent>>{};
 
-    // Прошедшие сессии из БД
-    for (final s in sessions) {
-      final d = _dayOnly(s.date);
-      events.putIfAbsent(d, () => []).add(
-            _DayEvent(workoutId: s.workoutId, completed: s.completed),
-          );
-    }
+      for (final s in sessions) {
+        final d = _dayOnly(s.date);
+        events.putIfAbsent(d, () => []).add(
+              _DayEvent(workoutId: s.workoutId, completed: s.completed),
+            );
+      }
 
-    // Будущие запланированные даты
-    final sessionDays =
-        sessions.map((s) => _dayOnly(s.date)).toSet();
-
-    for (final w in workouts) {
-      if (w.days.isEmpty) continue;
-      final cycleEnd = now.add(Duration(days: w.cycleWeeks * 7));
-      var cursor = now;
-      while (!cursor.isAfter(cycleEnd)) {
-        // 0=Пн … 6=Вс; Dart weekday: 1=Пн … 7=Вс
-        final dayIndex = cursor.weekday - 1;
-        if (w.days.contains(dayIndex)) {
-          final d = _dayOnly(cursor);
-          if (!sessionDays.contains(d)) {
-            // Не дублируем, если уже есть событие от другой программы
-            final existing = events[d];
-            final alreadyHas =
-                existing?.any((e) => e.workoutId == w.id) ?? false;
-            if (!alreadyHas) {
-              events.putIfAbsent(d, () => []).add(
-                    _DayEvent(workoutId: w.id, completed: false, planned: true),
-                  );
+      for (final w in workouts) {
+        if (w.days.isEmpty) continue;
+        final cycleEnd = now.add(Duration(days: w.cycleWeeks * 7));
+        var cursor = now;
+        while (!cursor.isAfter(cycleEnd)) {
+          final dayIndex = cursor.weekday - 1;
+          if (w.days.contains(dayIndex)) {
+            final d = _dayOnly(cursor);
+            // Only hide cyclic if THIS workout already has a concrete session on this day
+            final workoutHasSession =
+                events[d]?.any((e) => e.workoutId == w.id && !e.planned) ??
+                    false;
+            if (!workoutHasSession) {
+              final alreadyHas =
+                  events[d]?.any((e) => e.workoutId == w.id && e.planned) ??
+                      false;
+              if (!alreadyHas) {
+                events.putIfAbsent(d, () => []).add(
+                      _DayEvent(workoutId: w.id, completed: false, planned: true),
+                    );
+              }
             }
           }
+          cursor = cursor.add(const Duration(days: 1));
         }
-        cursor = cursor.add(const Duration(days: 1));
       }
-    }
 
-    if (mounted) {
-      setState(() {
-        _workouts = workouts;
-        _sessions = sessions;
-        _events = events;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _workouts = workouts;
+          _events = events;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -103,31 +96,93 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events[_dayOnly(day)] ?? [];
 
   void _onDaySelected(DateTime selected, DateTime focused) {
-    final now = DateTime.now();
-    final isDoubleTap = _lastTappedDay != null &&
-        isSameDay(_lastTappedDay!, selected) &&
-        _lastTapTime != null &&
-        now.difference(_lastTapTime!).inMilliseconds < 400;
-
-    _lastTappedDay = selected;
-    _lastTapTime = now;
-
     setState(() {
-      _selectedDay = selected;
+      _selectedDay =
+          (_selectedDay != null && isSameDay(_selectedDay!, selected))
+              ? null
+              : selected;
       _focusedDay = focused;
     });
+  }
 
-    if (isDoubleTap) {
-      _showDayActions(selected);
+  Future<void> _addOnetimeSession(DateTime day) async {
+    if (_workouts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сначала создайте программу тренировок')),
+      );
+      return;
+    }
+
+    final events = _eventsFor(day);
+    final cyclicEvent = events.where((e) => e.planned).firstOrNull;
+
+    if (cyclicEvent != null) {
+      // Conflict: a cyclic workout is already planned for this day
+      final cyclicName = _workoutName(cyclicEvent.workoutId);
+      if (!mounted) return;
+      await showModalBottomSheet(
+        context: context,
+        useRootNavigator: true,
+        backgroundColor: AppColors.card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => _ConflictAddSheet(
+          cyclicName: cyclicName,
+          onUseCyclic: () async {
+            Navigator.pop(ctx);
+            await _scheduleAndRefresh(cyclicEvent.workoutId, day);
+          },
+          onCreateOnetime: () async {
+            Navigator.pop(ctx);
+            await _pickAndSchedule(day);
+          },
+        ),
+      );
+    } else {
+      await _pickAndSchedule(day);
     }
   }
 
-  void _showDayActions(DateTime day) {
-    final events = _eventsFor(day);
-    final isFuture = _dayOnly(day).isAfter(_dayOnly(DateTime.now()));
-    final dateStr = '${day.day}.${day.month.toString().padLeft(2, '0')}.${day.year}';
+  Future<void> _pickAndSchedule(DateTime day) async {
+    final workoutId = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _WorkoutPickerSheet(workouts: _workouts),
+    );
+    if (workoutId == null || !mounted) return;
+    await _scheduleAndRefresh(workoutId, day);
+  }
 
-    showModalBottomSheet(
+  Future<void> _scheduleAndRefresh(String workoutId, DateTime day) async {
+    try {
+      await TrainingService.scheduleSession(workoutId, day);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Тренировка запланирована'),
+          backgroundColor: Color(0xFF30D158),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
+  }
+
+  Future<void> _showEditConflictSheet({
+    required String sessionWorkoutId,
+    required String programWorkoutId,
+  }) async {
+    await showModalBottomSheet(
       context: context,
       useRootNavigator: true,
       backgroundColor: AppColors.card,
@@ -140,83 +195,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              dateStr,
-              style: const TextStyle(
+            const Text(
+              'Что изменить?',
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 16),
-
-            // Существующие тренировки
-            if (events.isNotEmpty) ...[
-              const Text(
-                'Тренировки',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 8),
-              ...events.map((ev) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Material(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          context.push('/workouts/${ev.workoutId}/exercises');
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 14),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: ev.completed
-                                      ? AppColors.accent
-                                      : AppColors.accent.withValues(alpha: 0.45),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  _workoutName(ev.workoutId),
-                                  style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontWeight: FontWeight.w500),
-                                ),
-                              ),
-                              const Icon(Icons.tune,
-                                  size: 18, color: AppColors.textSecondary),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  )),
-              const SizedBox(height: 8),
-            ],
-
-            // Создать программу (всегда, если будущая дата или нет событий)
-            if (isFuture || events.isEmpty)
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    context.push('/workouts/create');
-                  },
-                  icon: const Icon(Icons.add),
-                  label: const Text('Создать программу'),
-                ),
-              ),
+            _ActionBtn(
+              icon: Icons.calendar_month_outlined,
+              label:
+                  'Плановую по программе: ${_workoutName(programWorkoutId)}',
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push('/workouts/$programWorkoutId/exercises');
+              },
+            ),
+            const SizedBox(height: 8),
+            _ActionBtn(
+              icon: Icons.fitness_center_outlined,
+              label: 'Разовую: ${_workoutName(sessionWorkoutId)}',
+              onTap: () {
+                Navigator.pop(ctx);
+                context.push('/workouts/$sessionWorkoutId/exercises');
+              },
+            ),
           ],
         ),
       ),
@@ -229,6 +234,69 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } catch (_) {
       return 'Тренировка';
     }
+  }
+
+  Widget _buildActionButtons(DateTime day) {
+    final events = _eventsFor(day);
+
+    // разовая = actual DB session not yet completed
+    final hasSession = events.any((e) => !e.planned && !e.completed);
+    // программа = future weekly-schedule slot (no session row yet)
+    final hasProgram = events.any((e) => e.planned);
+
+    final sessionWorkoutId = hasSession
+        ? events.firstWhere((e) => !e.planned && !e.completed).workoutId
+        : null;
+    final programWorkoutId = hasProgram
+        ? events.firstWhere((e) => e.planned).workoutId
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ActionBtn(
+          icon: Icons.fitness_center_outlined,
+          label: 'Добавить разовую тренировку',
+          onTap: () => _addOnetimeSession(day),
+        ),
+        const SizedBox(height: 8),
+        _ActionBtn(
+          icon: Icons.calendar_month_outlined,
+          label: 'Добавить программу тренировок',
+          onTap: () => context.push('/workouts/create'),
+        ),
+        if (hasSession && hasProgram) ...[
+          const SizedBox(height: 8),
+          _ActionBtn(
+            icon: Icons.edit_outlined,
+            label: 'Изменить тренировку',
+            accent: true,
+            onTap: () => _showEditConflictSheet(
+              sessionWorkoutId: sessionWorkoutId!,
+              programWorkoutId: programWorkoutId!,
+            ),
+          ),
+        ] else if (hasSession) ...[
+          const SizedBox(height: 8),
+          _ActionBtn(
+            icon: Icons.edit_outlined,
+            label: 'Изменить разовую тренировку',
+            accent: true,
+            onTap: () =>
+                context.push('/workouts/$sessionWorkoutId/exercises'),
+          ),
+        ] else if (hasProgram) ...[
+          const SizedBox(height: 8),
+          _ActionBtn(
+            icon: Icons.edit_calendar_outlined,
+            label: 'Изменить программу тренировок',
+            accent: true,
+            onTap: () =>
+                context.push('/workouts/$programWorkoutId/exercises'),
+          ),
+        ],
+      ],
+    );
   }
 
   @override
@@ -255,15 +323,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   const SizedBox(height: 8),
                   TableCalendar<_DayEvent>(
-                    firstDay: DateTime.now().subtract(const Duration(days: 365)),
-                    lastDay: DateTime.now().add(const Duration(days: 365)),
+                    firstDay: DateTime.now()
+                        .subtract(const Duration(days: 365)),
+                    lastDay:
+                        DateTime.now().add(const Duration(days: 365)),
                     focusedDay: _focusedDay,
                     selectedDayPredicate: (d) =>
                         _selectedDay != null &&
                         isSameDay(d, _selectedDay!),
                     eventLoader: _eventsFor,
                     onDaySelected: _onDaySelected,
-                    onPageChanged: (d) => setState(() => _focusedDay = d),
+                    onPageChanged: (d) =>
+                        setState(() => _focusedDay = d),
                     locale: 'ru_RU',
                     startingDayOfWeek: StartingDayOfWeek.monday,
                     calendarStyle: CalendarStyle(
@@ -272,8 +343,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           const TextStyle(color: AppColors.textPrimary),
                       weekendTextStyle:
                           const TextStyle(color: AppColors.textPrimary),
+                      // Custom selectedBuilder overrides this, set transparent
                       selectedDecoration: const BoxDecoration(
-                        color: AppColors.accent,
+                        color: Colors.transparent,
                         shape: BoxShape.circle,
                       ),
                       todayDecoration: BoxDecoration(
@@ -305,65 +377,97 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                     daysOfWeekStyle: const DaysOfWeekStyle(
-                      weekdayStyle:
-                          TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                      weekendStyle:
-                          TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      weekdayStyle: TextStyle(
+                          color: AppColors.textSecondary, fontSize: 12),
+                      weekendStyle: TextStyle(
+                          color: AppColors.textSecondary, fontSize: 12),
                     ),
                     calendarBuilders: CalendarBuilders(
                       defaultBuilder: (ctx, day, focused) =>
                           _DayCell(day: day, events: _eventsFor(day)),
-                      todayBuilder: (ctx, day, focused) =>
-                          _DayCell(day: day, events: _eventsFor(day), isToday: true),
+                      todayBuilder: (ctx, day, focused) => _DayCell(
+                          day: day,
+                          events: _eventsFor(day),
+                          isToday: true),
+                      // 2.5x bigger selected circle
                       selectedBuilder: (ctx, day, focused) =>
-                          _DayCell(day: day, events: _eventsFor(day), isSelected: true),
+                          Transform.scale(
+                        scale: 1.6,
+                        child: _DayCell(
+                          day: day,
+                          events: _eventsFor(day),
+                          isSelected: true,
+                        ),
+                      ),
                       outsideBuilder: (ctx, day, focused) =>
                           _DayCell(day: day, events: const [], outside: true),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // Легенда
+                  // Legend
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 24),
                     child: Row(
                       children: [
-                        const _LegendDot(color: AppColors.accent, label: 'Выполнено'),
+                        const _LegendDot(
+                            color: AppColors.accent, label: 'Выполнено'),
                         const SizedBox(width: 16),
                         _LegendDot(
-                          color: AppColors.accent.withValues(alpha: 0.35),
+                          color:
+                              AppColors.accent.withValues(alpha: 0.35),
                           label: 'Запланировано',
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // Список событий выбранного дня
-                  if (_selectedDay != null &&
-                      _eventsFor(_selectedDay!).isNotEmpty)
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: _eventsFor(_selectedDay!).map((ev) {
-                          return _EventCard(
-                            name: _workoutName(ev.workoutId),
-                            completed: ev.completed,
-                            planned: ev.planned,
-                            onTap: () => context
-                                .push('/workouts/${ev.workoutId}/exercises'),
-                          );
-                        }).toList(),
-                      ),
-                    )
-                  else if (_workouts.isEmpty && !_loading)
-                    const Expanded(
-                      child: Center(
-                        child: Text(
-                          'Создайте программу тренировок,\nчтобы видеть расписание',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
+                  // Buttons + events list
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding:
+                          const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                      child: _selectedDay == null
+                          ? (_workouts.isEmpty
+                              ? const Padding(
+                                  padding: EdgeInsets.all(32),
+                                  child: Center(
+                                    child: Text(
+                                      'Создайте программу тренировок,\nчтобы видеть расписание',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink())
+                          : Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.stretch,
+                              children: [
+                                _buildActionButtons(_selectedDay!),
+                                if (_eventsFor(_selectedDay!)
+                                    .isNotEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  ..._eventsFor(_selectedDay!).map(
+                                      (ev) => Padding(
+                                            padding:
+                                                const EdgeInsets.only(
+                                                    bottom: 8),
+                                            child: _EventCard(
+                                              name: _workoutName(
+                                                  ev.workoutId),
+                                              completed: ev.completed,
+                                              planned: ev.planned,
+                                              onTap: () => context.push(
+                                                  '/workouts/${ev.workoutId}/exercises'),
+                                            ),
+                                          )),
+                                ],
+                              ],
+                            ),
                     ),
+                  ),
                 ],
               ),
       ),
@@ -383,6 +487,240 @@ class _DayEvent {
     required this.completed,
     this.planned = false,
   });
+}
+
+// ─── Action button ────────────────────────────────────────────────────────────
+
+class _ActionBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool accent;
+
+  const _ActionBtn({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.accent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: accent
+          ? AppColors.accent.withValues(alpha: 0.12)
+          : AppColors.card,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: accent
+                    ? AppColors.accent
+                    : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: accent
+                        ? AppColors.accent
+                        : AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: accent
+                    ? AppColors.accent.withValues(alpha: 0.6)
+                    : AppColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Conflict sheet (cyclic + add one-time) ───────────────────────────────────
+
+class _ConflictAddSheet extends StatelessWidget {
+  final String cyclicName;
+  final VoidCallback onUseCyclic;
+  final VoidCallback onCreateOnetime;
+
+  const _ConflictAddSheet({
+    required this.cyclicName,
+    required this.onUseCyclic,
+    required this.onCreateOnetime,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'На этот день уже запланирована тренировка',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '«$cyclicName» по расписанию программы',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Material(
+            color: AppColors.accent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: onUseCyclic,
+              borderRadius: BorderRadius.circular(14),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.calendar_month_outlined,
+                        size: 20, color: AppColors.accent),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Использовать запланированную',
+                        style: TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        size: 18, color: AppColors.accent),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Material(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: onCreateOnetime,
+              borderRadius: BorderRadius.circular(14),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.fitness_center_outlined,
+                        size: 20, color: AppColors.textSecondary),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Создать разовую вместо неё',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        size: 18, color: AppColors.textSecondary),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Workout picker sheet ────────────────────────────────────────────────────
+
+class _WorkoutPickerSheet extends StatelessWidget {
+  final List<Workout> workouts;
+
+  const _WorkoutPickerSheet({required this.workouts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Выберите тренировку',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...workouts.map(
+            (w) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: () => Navigator.pop(context, w.id),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.fitness_center,
+                            size: 18, color: AppColors.accent),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            w.name,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            size: 18,
+                            color: AppColors.textSecondary),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Виджеты ─────────────────────────────────────────────────────────────────
@@ -486,60 +824,59 @@ class _EventCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: AppColors.card,
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: completed
-                        ? AppColors.accent
-                        : AppColors.accent.withValues(alpha: 0.4),
-                  ),
+        child: Padding(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: completed
+                      ? AppColors.accent
+                      : AppColors.accent.withValues(alpha: 0.4),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        completed
-                            ? 'Выполнено'
-                            : planned
-                                ? 'Запланировано'
-                                : 'Не завершено',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: completed
-                              ? AppColors.accent
-                              : AppColors.textSecondary,
-                        ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      completed
+                          ? 'Выполнено'
+                          : planned
+                              ? 'Запланировано'
+                              : 'Не завершено',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: completed
+                            ? AppColors.accent
+                            : AppColors.textSecondary,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const Icon(Icons.chevron_right, color: AppColors.textSecondary),
-              ],
-            ),
+              ),
+              const Icon(Icons.chevron_right,
+                  color: AppColors.textSecondary),
+            ],
           ),
         ),
       ),

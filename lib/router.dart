@@ -34,8 +34,6 @@ class AppRouter {
       final isAuthRoute = state.matchedLocation.startsWith('/login') ||
           state.matchedLocation.startsWith('/register') ||
           state.matchedLocation == '/';
-      final isOnboarding = state.matchedLocation == '/onboarding';
-
       if (!isAuth && !isAuthRoute) {
         return '/';
       }
