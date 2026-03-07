@@ -158,13 +158,12 @@ void main() {
     });
 
     test('reads persisted value on startup', () async {
+      SharedPreferences.resetStatic();
       SharedPreferences.setMockInitialValues({'use_cm': false});
-      // Allow the async _load() to run
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      // Trigger load by reading
+      container.read(useCmProvider); // trigger initialization
       await Future.delayed(Duration.zero);
-      // After _load the state should be false
       expect(container.read(useCmProvider.notifier).state, isFalse);
     });
   });
