@@ -389,7 +389,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
           return ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: SizedBox(
-              height: 88,
+              height: 96,
               child: Stack(
                 children: [
                   // ── Action panel (revealed on swipe) ──────────────────────

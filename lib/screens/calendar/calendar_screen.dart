@@ -861,7 +861,9 @@ class _ExerciseBuilderSheet extends StatefulWidget {
 
 class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
   List<Exercise> _exercises = [];
-  final Set<String> _selectedIds = {};
+  // exerciseId → params
+  final Map<String, _ExerciseParams> _selected = {};
+  String? _expandedId;
   bool _loading = true;
   bool _saving = false;
   String _search = '';
@@ -883,8 +885,26 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
     return _exercises.where((e) => e.name.toLowerCase().contains(q)).toList();
   }
 
+  void _toggleExercise(String id) {
+    setState(() {
+      if (_selected.containsKey(id)) {
+        // already selected → deselect and collapse
+        _selected.remove(id);
+        if (_expandedId == id) _expandedId = null;
+      } else {
+        // not selected → select with defaults and expand params
+        _selected[id] = _ExerciseParams();
+        _expandedId = id;
+      }
+    });
+  }
+
+  void _toggleExpand(String id) {
+    setState(() => _expandedId = _expandedId == id ? null : id);
+  }
+
   Future<void> _confirm() async {
-    if (_selectedIds.isEmpty) return;
+    if (_selected.isEmpty) return;
     setState(() => _saving = true);
     try {
       final workout = await WorkoutService.createWorkout(
@@ -892,8 +912,14 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
         [],
         cycleWeeks: 0,
       );
-      for (final id in _selectedIds) {
-        await WorkoutService.addExerciseToWorkout(workout.id, id);
+      for (final entry in _selected.entries) {
+        await WorkoutService.addExerciseToWorkout(
+          workout.id,
+          entry.key,
+          sets: entry.value.sets,
+          repsRange: entry.value.repsRange,
+          restSeconds: entry.value.restSeconds,
+        );
       }
       await TrainingService.scheduleSession(workout.id, widget.date);
       if (mounted) Navigator.pop(context, workout.id);
@@ -918,7 +944,6 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
       builder: (ctx, scrollCtrl) {
         return Column(
           children: [
-            // Handle
             Container(
               margin: const EdgeInsets.only(top: 12, bottom: 8),
               width: 40,
@@ -942,13 +967,10 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                       ),
                     ),
                   ),
-                  if (_selectedIds.isNotEmpty)
+                  if (_selected.isNotEmpty)
                     Text(
-                      '${_selectedIds.length} выбрано',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.accent,
-                      ),
+                      '${_selected.length} выбрано',
+                      style: const TextStyle(fontSize: 13, color: AppColors.accent),
                     ),
                 ],
               ),
@@ -965,8 +987,8 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                       color: AppColors.textSecondary, size: 20),
                   filled: true,
                   fillColor: AppColors.surface,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
@@ -982,8 +1004,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                   : _filtered.isEmpty
                       ? const Center(
                           child: Text('Ничего не найдено',
-                              style: TextStyle(
-                                  color: AppColors.textSecondary)),
+                              style: TextStyle(color: AppColors.textSecondary)),
                         )
                       : ListView.builder(
                           controller: scrollCtrl,
@@ -1009,61 +1030,22 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                                   ),
                                 ),
                                 ...items.map((ex) {
-                                  final selected =
-                                      _selectedIds.contains(ex.id);
-                                  return Padding(
-                                    padding:
-                                        const EdgeInsets.only(bottom: 6),
-                                    child: Material(
-                                      color: selected
-                                          ? AppColors.accent
-                                              .withValues(alpha: 0.12)
-                                          : AppColors.surface,
-                                      borderRadius:
-                                          BorderRadius.circular(12),
-                                      child: InkWell(
-                                        onTap: () => setState(() {
-                                          if (selected) {
-                                            _selectedIds.remove(ex.id);
-                                          } else {
-                                            _selectedIds.add(ex.id);
-                                          }
-                                        }),
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 16, vertical: 12),
-                                          child: Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  ex.name,
-                                                  style: TextStyle(
-                                                    color: selected
-                                                        ? AppColors.accent
-                                                        : AppColors
-                                                            .textPrimary,
-                                                    fontWeight: selected
-                                                        ? FontWeight.w600
-                                                        : FontWeight.w400,
-                                                  ),
-                                                ),
-                                              ),
-                                              Icon(
-                                                selected
-                                                    ? Icons.check_circle
-                                                    : Icons.circle_outlined,
-                                                color: selected
-                                                    ? AppColors.accent
-                                                    : AppColors.textSecondary,
-                                                size: 20,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                                  final params = _selected[ex.id];
+                                  final isSelected = params != null;
+                                  final isExpanded = _expandedId == ex.id;
+                                  return _ExerciseItem(
+                                    exercise: ex,
+                                    isSelected: isSelected,
+                                    isExpanded: isExpanded,
+                                    params: params ?? _ExerciseParams(),
+                                    onTap: () => _toggleExercise(ex.id),
+                                    onExpandTap: isSelected
+                                        ? () => _toggleExpand(ex.id)
+                                        : null,
+                                    onParamsChanged: isSelected
+                                        ? (p) => setState(
+                                            () => _selected[ex.id] = p)
+                                        : null,
                                   );
                                 }),
                               ],
@@ -1071,15 +1053,13 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                           },
                         ),
             ),
-            // Confirm button
             Padding(
               padding: EdgeInsets.fromLTRB(
                   24, 8, 24, MediaQuery.of(context).padding.bottom + 16),
               child: SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed:
-                      (_selectedIds.isEmpty || _saving) ? null : _confirm,
+                  onPressed: (_selected.isEmpty || _saving) ? null : _confirm,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.accent,
                     disabledBackgroundColor:
@@ -1096,9 +1076,9 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                               strokeWidth: 2, color: Colors.white),
                         )
                       : Text(
-                          _selectedIds.isEmpty
+                          _selected.isEmpty
                               ? 'Выберите упражнения'
-                              : 'Создать тренировку (${_selectedIds.length})',
+                              : 'Создать тренировку (${_selected.length})',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -1111,6 +1091,346 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
           ],
         );
       },
+    );
+  }
+}
+
+// ─── Exercise params model ────────────────────────────────────────────────────
+
+class _ExerciseParams {
+  int sets;
+  String repsRange;
+  int restSeconds;
+
+  _ExerciseParams({this.sets = 3, this.repsRange = '8-12', this.restSeconds = 90});
+
+  _ExerciseParams copyWith({int? sets, String? repsRange, int? restSeconds}) =>
+      _ExerciseParams(
+        sets: sets ?? this.sets,
+        repsRange: repsRange ?? this.repsRange,
+        restSeconds: restSeconds ?? this.restSeconds,
+      );
+}
+
+// ─── Exercise item with inline params panel ───────────────────────────────────
+
+class _ExerciseItem extends StatefulWidget {
+  final Exercise exercise;
+  final bool isSelected;
+  final bool isExpanded;
+  final _ExerciseParams params;
+  final VoidCallback onTap;
+  final VoidCallback? onExpandTap;
+  final void Function(_ExerciseParams)? onParamsChanged;
+
+  const _ExerciseItem({
+    required this.exercise,
+    required this.isSelected,
+    required this.isExpanded,
+    required this.params,
+    required this.onTap,
+    this.onExpandTap,
+    this.onParamsChanged,
+  });
+
+  @override
+  State<_ExerciseItem> createState() => _ExerciseItemState();
+}
+
+class _ExerciseItemState extends State<_ExerciseItem> {
+  late TextEditingController _repsCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _repsCtrl = TextEditingController(text: widget.params.repsRange);
+  }
+
+  @override
+  void didUpdateWidget(_ExerciseItem old) {
+    super.didUpdateWidget(old);
+    if (old.params.repsRange != widget.params.repsRange &&
+        _repsCtrl.text != widget.params.repsRange) {
+      _repsCtrl.text = widget.params.repsRange;
+    }
+  }
+
+  @override
+  void dispose() {
+    _repsCtrl.dispose();
+    super.dispose();
+  }
+
+  void _updateParams(_ExerciseParams updated) =>
+      widget.onParamsChanged?.call(updated);
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.params;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          children: [
+            // ── Exercise row ────────────────────────────────────────────────
+            Material(
+              color: widget.isSelected
+                  ? AppColors.accent.withValues(alpha: 0.12)
+                  : AppColors.surface,
+              child: InkWell(
+                onTap: widget.onTap,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.exercise.name,
+                          style: TextStyle(
+                            color: widget.isSelected
+                                ? AppColors.accent
+                                : AppColors.textPrimary,
+                            fontWeight: widget.isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                      if (widget.isSelected) ...[
+                        // Params summary + expand toggle
+                        GestureDetector(
+                          onTap: widget.onExpandTap,
+                          child: Row(
+                            children: [
+                              Text(
+                                '${p.sets}×${p.repsRange}',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                widget.isExpanded
+                                    ? Icons.expand_less
+                                    : Icons.expand_more,
+                                color: AppColors.textSecondary,
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Icon(
+                        widget.isSelected
+                            ? Icons.check_circle
+                            : Icons.circle_outlined,
+                        color: widget.isSelected
+                            ? AppColors.accent
+                            : AppColors.textSecondary,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Params panel (expands below) ────────────────────────────────
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              child: widget.isSelected && widget.isExpanded
+                  ? Container(
+                      color: AppColors.surface.withValues(alpha: 0.6),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Divider(color: Color(0xFF2C2C2E), height: 1),
+                          const SizedBox(height: 12),
+
+                          // Sets stepper
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text('Подходы',
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13)),
+                              ),
+                              _Stepper(
+                                value: p.sets,
+                                min: 1,
+                                max: 10,
+                                onChanged: (v) =>
+                                    _updateParams(p.copyWith(sets: v)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Reps range
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text('Повторения',
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13)),
+                              ),
+                              SizedBox(
+                                width: 80,
+                                child: TextField(
+                                  controller: _repsCtrl,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 14),
+                                  decoration: InputDecoration(
+                                    filled: true,
+                                    fillColor: AppColors.card,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 8),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
+                                  onChanged: (v) =>
+                                      _updateParams(p.copyWith(repsRange: v)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Rest presets
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text('Отдых',
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13)),
+                              ),
+                              Wrap(
+                                spacing: 6,
+                                children: [60, 90, 120, 180].map((sec) {
+                                  final active = p.restSeconds == sec;
+                                  return GestureDetector(
+                                    onTap: () => _updateParams(
+                                        p.copyWith(restSeconds: sec)),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: active
+                                            ? AppColors.accent
+                                            : AppColors.card,
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        '${sec}с',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: active
+                                              ? Colors.white
+                                              : AppColors.textSecondary,
+                                          fontWeight: active
+                                              ? FontWeight.w600
+                                              : FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Stepper widget ───────────────────────────────────────────────────────────
+
+class _Stepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final void Function(int) onChanged;
+
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _StepBtn(
+          icon: Icons.remove,
+          onTap: value > min ? () => onChanged(value - 1) : null,
+        ),
+        Container(
+          width: 36,
+          alignment: Alignment.center,
+          child: Text(
+            '$value',
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 15),
+          ),
+        ),
+        _StepBtn(
+          icon: Icons.add,
+          onTap: value < max ? () => onChanged(value + 1) : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _StepBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  const _StepBtn({required this.icon, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon,
+            size: 16,
+            color: onTap != null
+                ? AppColors.textPrimary
+                : AppColors.textSecondary.withValues(alpha: 0.4)),
+      ),
     );
   }
 }
@@ -1141,7 +1461,8 @@ class _DayCell extends StatelessWidget {
     }
 
     final hasCompleted = events.any((e) => e.completed);
-    final hasPlanned = events.any((e) => e.planned);
+    // Show semi-transparent dot for any upcoming event (cyclic OR one-time scheduled)
+    final hasPlanned = events.any((e) => !e.completed);
 
     // Selected circle is independently sized so the text stays at 14px
     final content = Column(
