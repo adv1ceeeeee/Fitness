@@ -19,7 +19,48 @@ import 'package:sportwai/screens/calendar/calendar_screen.dart';
 import 'package:sportwai/screens/workout_session/session_summary_screen.dart';
 import 'package:sportwai/screens/main_shell.dart';
 import 'package:sportwai/screens/onboarding/onboarding_check_screen.dart';
+import 'package:sportwai/screens/history/history_screen.dart';
 import 'package:sportwai/screens/profile/body_metrics_screen.dart';
+
+// ── Transition helpers ────────────────────────────────────────────────────────
+
+CustomTransitionPage<void> _slideUpPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 280),
+    reverseTransitionDuration: const Duration(milliseconds: 220),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.07),
+          end: Offset.zero,
+        ).animate(curved),
+        child: FadeTransition(opacity: curved, child: child),
+      );
+    },
+  );
+}
+
+CustomTransitionPage<void> _fadePage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 220),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        FadeTransition(
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeIn),
+      child: child,
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -46,31 +87,31 @@ class AppRouter {
       // ── Auth & onboarding (no bottom nav) ─────────────────────────────────
       GoRoute(
         path: '/',
-        builder: (context, state) => const WelcomeScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const WelcomeScreen()),
       ),
       GoRoute(
         path: '/login',
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const LoginScreen()),
       ),
       GoRoute(
         path: '/register',
-        builder: (context, state) => const RegisterScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const RegisterScreen()),
       ),
       GoRoute(
         path: '/onboarding',
-        builder: (context, state) => const OnboardingScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const OnboardingScreen()),
       ),
       GoRoute(
         path: '/onboarding-check',
-        builder: (context, state) => const OnboardingCheckScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const OnboardingCheckScreen()),
       ),
       GoRoute(
         path: '/pin-setup',
-        builder: (context, state) => const PinSetupScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const PinSetupScreen()),
       ),
       GoRoute(
         path: '/pin-login',
-        builder: (context, state) => const PinLoginScreen(),
+        pageBuilder: (context, state) => _fadePage(state, const PinLoginScreen()),
       ),
 
       // ── All post-auth screens wrapped in MainShell (bottom nav always visible)
@@ -110,44 +151,57 @@ class AppRouter {
           // Secondary screens — bottom nav stays visible
           GoRoute(
             path: '/calendar',
-            builder: (context, state) => const CalendarScreen(),
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const CalendarScreen()),
           ),
           GoRoute(
             path: '/today',
-            builder: (context, state) => const TodayScreen(),
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const TodayScreen()),
           ),
           GoRoute(
             path: '/session/:sessionId',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final sessionId = state.pathParameters['sessionId']!;
-              return WorkoutSessionScreen(sessionId: sessionId);
+              return _slideUpPage(
+                  state, WorkoutSessionScreen(sessionId: sessionId));
             },
           ),
           GoRoute(
             path: '/session-summary',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final extra = state.extra as Map<String, dynamic>;
-              return SessionSummaryScreen(
-                sessionId: extra['sessionId'] as String,
-                workoutId: extra['workoutId'] as String,
-                durationSeconds: extra['durationSeconds'] as int,
+              return _slideUpPage(
+                state,
+                SessionSummaryScreen(
+                  sessionId: extra['sessionId'] as String,
+                  workoutId: extra['workoutId'] as String,
+                  durationSeconds: extra['durationSeconds'] as int,
+                ),
               );
             },
           ),
           GoRoute(
             path: '/workouts/create',
-            builder: (context, state) => const CreateWorkoutScreen(),
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const CreateWorkoutScreen()),
           ),
           GoRoute(
             path: '/workouts/:id/exercises',
-            builder: (context, state) {
+            pageBuilder: (context, state) {
               final id = state.pathParameters['id']!;
-              return AddExercisesScreen(workoutId: id);
+              return _slideUpPage(state, AddExercisesScreen(workoutId: id));
             },
           ),
           GoRoute(
             path: '/body-metrics',
-            builder: (context, state) => const BodyMetricsScreen(),
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const BodyMetricsScreen()),
+          ),
+          GoRoute(
+            path: '/history',
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const HistoryScreen()),
           ),
         ],
       ),

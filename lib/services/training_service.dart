@@ -92,10 +92,12 @@ class TrainingService {
   static Future<void> completeSession(
     String sessionId, {
     int? durationSeconds,
+    String? notes,
   }) async {
     await _client.from('training_sessions').update({
       'completed': true,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      'notes': notes,
     }).eq('id', sessionId);
   }
 
@@ -123,7 +125,7 @@ class TrainingService {
         .toList();
   }
 
-  static Future<void> saveSet(
+  static Future<bool> saveSet(
     String sessionId,
     String workoutExerciseId,
     int setNumber, {
@@ -143,8 +145,10 @@ class TrainingService {
         'completed': true,
         if (restSeconds != null) 'rest_seconds': restSeconds,
       });
+      return true;
     } catch (e) {
       debugPrint('[TrainingService.saveSet] error: $e');
+      return false;
     }
   }
 
@@ -218,23 +222,31 @@ class TrainingService {
     return (res as List).cast<Map<String, dynamic>>();
   }
 
-  /// Find the first incomplete (not completed) session for today.
+  /// Find the most recent incomplete session started within the last 24 hours.
   /// Returns null if none found. Used for session recovery on app restart.
   static Future<Map<String, dynamic>?> getOpenSession() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
-    final today = DateTime.now().toIso8601String().split('T')[0];
+    final cutoff = DateTime.now()
+        .subtract(const Duration(hours: 24))
+        .toIso8601String();
 
     return await _client
         .from('training_sessions')
         .select('id, workout_id, created_at, workouts(name)')
         .eq('user_id', userId)
-        .eq('date', today)
         .eq('completed', false)
+        .gte('created_at', cutoff)
         .order('created_at', ascending: false)
         .limit(1)
         .maybeSingle();
+  }
+
+  /// Delete a session and all its sets.
+  static Future<void> deleteSession(String sessionId) async {
+    await _client.from('sets').delete().eq('training_session_id', sessionId);
+    await _client.from('training_sessions').delete().eq('id', sessionId);
   }
 
   /// Returns the personal best weight (kg) ever logged for a given exercise,
@@ -277,5 +289,52 @@ class TrainingService {
 
     if (setsRes == null) return null;
     return (setsRes['weight'] as num?)?.toDouble();
+  }
+
+  /// Returns the most recent completed session info per workout_id.
+  /// Result: { workoutId → { 'date': String, 'duration_seconds': int? } }
+  static Future<Map<String, Map<String, dynamic>>> getLastSessionInfoForWorkouts(
+      List<String> workoutIds) async {
+    if (workoutIds.isEmpty) return {};
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final rows = await _client
+        .from('training_sessions')
+        .select('workout_id, date, duration_seconds')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .inFilter('workout_id', workoutIds)
+        .order('date', ascending: false);
+
+    final result = <String, Map<String, dynamic>>{};
+    for (final row in rows as List) {
+      final wid = row['workout_id'] as String;
+      if (!result.containsKey(wid)) {
+        result[wid] = {
+          'date': row['date'] as String?,
+          'duration_seconds': row['duration_seconds'] as int?,
+        };
+      }
+    }
+    return result;
+  }
+
+  /// All completed sessions, newest first, with workout name and duration.
+  static Future<List<Map<String, dynamic>>> getCompletedSessions({
+    int limit = 100,
+  }) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final res = await _client
+        .from('training_sessions')
+        .select('id, workout_id, date, duration_seconds, notes, workouts(name)')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(limit);
+
+    return (res as List).cast<Map<String, dynamic>>();
   }
 }

@@ -47,6 +47,7 @@ class WorkoutService {
     int restSeconds = 90,
     double? targetWeight,
     int? targetRpe,
+    int? durationMinutes,
   }) async {
     final maxOrder = await _client
         .from('workout_exercises')
@@ -67,6 +68,7 @@ class WorkoutService {
       'rest_seconds': restSeconds,
       if (targetWeight != null) 'target_weight': targetWeight,
       if (targetRpe != null) 'target_rpe': targetRpe,
+      if (durationMinutes != null) 'duration_minutes': durationMinutes,
     });
   }
 
@@ -95,11 +97,15 @@ class WorkoutService {
     String? name,
     List<int>? days,
     int? cycleWeeks,
+    int? warmupMinutes,
+    int? cooldownMinutes,
   }) async {
     final updates = <String, dynamic>{};
     if (name != null) updates['name'] = name;
     if (days != null) updates['days'] = days;
     if (cycleWeeks != null) updates['cycle_weeks'] = cycleWeeks;
+    if (warmupMinutes != null) updates['warmup_minutes'] = warmupMinutes;
+    if (cooldownMinutes != null) updates['cooldown_minutes'] = cooldownMinutes;
     if (updates.isEmpty) return;
     await _client.from('workouts').update(updates).eq('id', id);
   }
@@ -129,16 +135,23 @@ class WorkoutService {
     int? restSeconds,
     double? targetWeight,
     int? targetRpe,
+    int? durationMinutes,
+    // Pass a boxed int? to explicitly set superset_group (null clears it).
+    // Use [_Absent] sentinel to skip the field entirely.
+    Object? supersetGroup = _absent,
   }) async {
     final updates = <String, dynamic>{};
     if (sets != null) updates['sets'] = sets;
     if (repsRange != null) updates['reps_range'] = repsRange;
     if (restSeconds != null) updates['rest_seconds'] = restSeconds;
-    // null значение явно затирает поле (передаём null чтобы удалить)
     updates['target_weight'] = targetWeight;
     updates['target_rpe'] = targetRpe;
+    updates['duration_minutes'] = durationMinutes;
+    if (supersetGroup != _absent) updates['superset_group'] = supersetGroup;
     await _client.from('workout_exercises').update(updates).eq('id', id);
   }
+
+  static const _absent = Object();
 
   /// Delete a workout and all its exercises.
   static Future<void> deleteWorkout(String id) async {

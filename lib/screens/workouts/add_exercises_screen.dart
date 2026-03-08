@@ -22,6 +22,7 @@ const _categoryOrder = [
   'Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио',
 ];
 
+
 class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Workout? _workout;
   List<WorkoutExercise> _programExercises = [];
@@ -88,12 +89,79 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     }
   }
 
+  /// Returns label like "A1", "A2", "B1"... for exercises in a superset, or null.
+  String? _supersetLabel(int index) {
+    final g = _programExercises[index].supersetGroup;
+    if (g == null) return null;
+    // Collect unique groups in order of first appearance
+    final seenGroups = <int>[];
+    for (final we in _programExercises) {
+      if (we.supersetGroup != null && !seenGroups.contains(we.supersetGroup)) {
+        seenGroups.add(we.supersetGroup!);
+      }
+    }
+    final groupLetter = String.fromCharCode(
+        'A'.codeUnitAt(0) + seenGroups.indexOf(g));
+    // Count position within the group up to this index
+    int pos = 0;
+    for (int i = 0; i <= index; i++) {
+      if (_programExercises[i].supersetGroup == g) pos++;
+    }
+    return '$groupLetter$pos';
+  }
+
+  /// Toggle superset link between exercise[i] and exercise[i+1].
+  Future<void> _toggleSuperset(int i) async {
+    final a = _programExercises[i];
+    final b = _programExercises[i + 1];
+    final linked = a.supersetGroup != null && a.supersetGroup == b.supersetGroup;
+
+    if (linked) {
+      // Unlink: find next available group for b if more than 2 in group
+      final groupMembers = _programExercises
+          .where((e) => e.supersetGroup == a.supersetGroup)
+          .toList();
+      if (groupMembers.length == 2) {
+        // Just remove group entirely for both
+        await Future.wait([
+          WorkoutService.updateWorkoutExercise(a.id, supersetGroup: null),
+          WorkoutService.updateWorkoutExercise(b.id, supersetGroup: null),
+        ]);
+      } else {
+        // Remove only b from the group
+        await WorkoutService.updateWorkoutExercise(b.id, supersetGroup: null);
+      }
+    } else {
+      // Link: both get the same group ID.
+      // Use a's existing group if it has one, otherwise b's, otherwise new ID.
+      int newGroup;
+      if (a.supersetGroup != null) {
+        newGroup = a.supersetGroup!;
+      } else if (b.supersetGroup != null) {
+        newGroup = b.supersetGroup!;
+      } else {
+        // New group ID = max existing + 1
+        final maxGroup = _programExercises
+            .map((e) => e.supersetGroup ?? 0)
+            .reduce((a, b) => a > b ? a : b);
+        newGroup = maxGroup + 1;
+      }
+      await Future.wait([
+        WorkoutService.updateWorkoutExercise(a.id, supersetGroup: newGroup),
+        WorkoutService.updateWorkoutExercise(b.id, supersetGroup: newGroup),
+      ]);
+    }
+    await _load();
+  }
+
 
   void _showEditWorkoutDialog() {
     if (_workout == null) return;
     final nameCtrl = TextEditingController(text: _workout!.name);
     final Set<int> selectedDays = Set.from(_workout!.days);
     int cycleWeeks = _workout!.cycleWeeks;
+    int warmupMinutes = _workout!.warmupMinutes;
+    int cooldownMinutes = _workout!.cooldownMinutes;
 
     showDialog(
       context: context,
@@ -159,101 +227,107 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   children: [
                     const Text('Длительность цикла',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-                    if (cycleWeeks > 16)
-                      Text('$cycleWeeks нед.',
-                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    GestureDetector(
+                      onTap: () async {
+                        final ctrl = TextEditingController(text: '$cycleWeeks');
+                        final result = await showDialog<int>(
+                          context: ctx,
+                          builder: (dctx) => AlertDialog(
+                            backgroundColor: AppColors.card,
+                            title: const Text('Длительность цикла',
+                                style: TextStyle(color: AppColors.textPrimary)),
+                            content: TextField(
+                              controller: ctrl,
+                              keyboardType: TextInputType.number,
+                              autofocus: true,
+                              style: const TextStyle(color: AppColors.textPrimary),
+                              decoration: const InputDecoration(suffixText: 'нед.'),
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+                              TextButton(
+                                onPressed: () {
+                                  final v = int.tryParse(ctrl.text.trim());
+                                  if (v != null && v >= 1) Navigator.pop(dctx, v);
+                                },
+                                child: const Text('OK'),
+                              ),
+                            ],
+                          ),
+                        );
+                        ctrl.dispose();
+                        if (result != null) setDialogState(() => cycleWeeks = result);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$cycleWeeks нед.',
+                          style: const TextStyle(
+                            color: AppColors.accent,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                GestureDetector(
-                  onDoubleTap: () async {
-                    final ctrl = TextEditingController(text: '$cycleWeeks');
-                    final result = await showDialog<int>(
-                      context: ctx,
-                      builder: (dctx) => AlertDialog(
-                        title: const Text('Длительность цикла'),
-                        content: TextField(
-                          controller: ctrl,
-                          keyboardType: TextInputType.number,
-                          autofocus: true,
-                          decoration: const InputDecoration(suffixText: 'нед.'),
-                        ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
-                          TextButton(
-                            onPressed: () {
-                              final v = int.tryParse(ctrl.text.trim());
-                              if (v != null && v >= 1) Navigator.pop(dctx, v);
-                            },
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-                    ctrl.dispose();
-                    if (result != null) setDialogState(() => cycleWeeks = result);
-                  },
-                  child: LayoutBuilder(
-                    builder: (lctx, constraints) {
-                      const min = 4.0;
-                      const max = 16.0;
-                      const pad = 24.0;
-                      final sv = cycleWeeks.clamp(4, 16).toDouble();
-                      final thumbX = pad + (sv - min) / (max - min) * (constraints.maxWidth - pad * 2);
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 28),
-                            child: SliderTheme(
-                              data: SliderTheme.of(lctx).copyWith(
-                                activeTrackColor: AppColors.accent,
-                                inactiveTrackColor: AppColors.surface,
-                                thumbColor: AppColors.accent,
-                                overlayColor: AppColors.accent.withValues(alpha: 0.12),
-                              ),
-                              child: Slider(
-                                value: sv,
-                                min: min,
-                                max: max,
-                                divisions: 12,
-                                onChanged: (v) => setDialogState(() => cycleWeeks = v.round()),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: thumbX - 24,
-                            top: 0,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.accent,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '$cycleWeeks нед.',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                const SizedBox(height: 8),
+                SliderTheme(
+                  data: SliderTheme.of(ctx).copyWith(
+                    activeTrackColor: AppColors.accent,
+                    inactiveTrackColor: AppColors.surface,
+                    thumbColor: AppColors.accent,
+                    overlayColor: AppColors.accent.withValues(alpha: 0.12),
+                  ),
+                  child: Slider(
+                    value: cycleWeeks.clamp(4, 16).toDouble(),
+                    min: 4,
+                    max: 16,
+                    divisions: 12,
+                    label: '$cycleWeeks нед.',
+                    onChanged: (v) => setDialogState(() => cycleWeeks = v.round()),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
+                    children: [
                       Text('4 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                       Text('16 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                     ],
                   ),
+                ),
+                const SizedBox(height: 16),
+                // Разминка
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Разминка',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    _MinuteStepper(
+                      value: warmupMinutes,
+                      onChanged: (v) => setDialogState(() => warmupMinutes = v),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // Заминка
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Заминка',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    _MinuteStepper(
+                      value: cooldownMinutes,
+                      onChanged: (v) => setDialogState(() => cooldownMinutes = v),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -273,6 +347,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   name: name,
                   days: selectedDays.toList()..sort(),
                   cycleWeeks: cycleWeeks,
+                  warmupMinutes: warmupMinutes,
+                  cooldownMinutes: cooldownMinutes,
                 );
                 if (ctx.mounted) Navigator.pop(ctx);
                 _load();
@@ -285,18 +361,26 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     );
   }
 
+  /// Shows the exercise params bottom sheet.
+  /// [isCardio] — if true, shows only a duration slider (minutes).
+  /// [onSave] receives (sets, repsRange, restSeconds, targetWeight, durationMinutes).
   void _showExerciseSettingsSheet({
     required String title,
+    required bool isCardio,
     required int initialSets,
     required String initialRepsRange,
     required int initialRest,
     required double? initialTargetWeight,
-    required Future<void> Function(int sets, String repsRange, int rest, double? tw) onSave,
+    required int initialDurationMinutes,
+    required Future<void> Function(
+            int sets, String repsRange, int rest, double? tw, int? durationMinutes)
+        onSave,
     required String saveLabel,
   }) {
     int sets = initialSets;
     int restSeconds = initialRest;
     double? targetWeight = initialTargetWeight;
+    int durationMinutes = initialDurationMinutes;
     final repsController = TextEditingController(text: initialRepsRange);
     final weightController = TextEditingController(
         text: targetWeight != null ? targetWeight.toString() : '');
@@ -361,146 +445,199 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Подходы
-                  const Text('Подходы',
-                      style: TextStyle(color: AppColors.textSecondary)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _NumberButton(
-                        label: '-',
-                        onTap: () {
-                          if (sets > 1) setModalState(() => sets--);
-                        },
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          '$sets',
-                          style: const TextStyle(
-                              fontSize: 24, color: AppColors.textPrimary),
+                  if (isCardio) ...[
+                    // ─── Кардио: только длительность ─────────────────────
+                    const Text('Длительность',
+                        style: TextStyle(color: AppColors.textSecondary)),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Text(
+                        '$durationMinutes мин',
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
                         ),
                       ),
-                      _NumberButton(
-                        label: '+',
-                        onTap: () => setModalState(() => sets++),
+                    ),
+                    const SizedBox(height: 8),
+                    SliderTheme(
+                      data: SliderTheme.of(ctx).copyWith(
+                        activeTrackColor: AppColors.accent,
+                        inactiveTrackColor: AppColors.surface,
+                        thumbColor: AppColors.accent,
+                        overlayColor: AppColors.accent.withValues(alpha: 0.12),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
+                      child: Slider(
+                        value: durationMinutes.clamp(5, 120).toDouble(),
+                        min: 5,
+                        max: 120,
+                        divisions: 23,
+                        label: '$durationMinutes мин',
+                        onChanged: (v) => setModalState(
+                            () => durationMinutes = (v / 5).round() * 5),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('5 мин',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary)),
+                          Text('120 мин',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    // ─── С отягощением: подходы/повторения/вес/отдых ─────
 
-                  // Повторения
-                  const Text('Повторения',
-                      style: TextStyle(color: AppColors.textSecondary)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: repsController,
-                    keyboardType: TextInputType.text,
-                    decoration: const InputDecoration(hintText: '8-12 или 5'),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Целевой вес
-                  const Text('Целевой вес (кг)',
-                      style: TextStyle(color: AppColors.textSecondary)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: weightController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (v) {
-                      targetWeight = double.tryParse(v.replaceAll(',', '.'));
-                    },
-                    decoration: const InputDecoration(hintText: 'Не обязательно'),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Отдых — слайдер
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Отдых',
-                          style: TextStyle(color: AppColors.textSecondary)),
-                      if (restSeconds > 120)
-                        Text('$restSeconds сек.',
+                    // Подходы
+                    const Text('Подходы',
+                        style: TextStyle(color: AppColors.textSecondary)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _NumberButton(
+                          label: '-',
+                          onTap: () {
+                            if (sets > 1) setModalState(() => sets--);
+                          },
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                            '$sets',
                             style: const TextStyle(
-                                fontSize: 13, color: AppColors.textSecondary)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  GestureDetector(
-                    onDoubleTap: editRestManually,
-                    child: LayoutBuilder(
-                      builder: (lctx, constraints) {
-                        const sliderPadding = 24.0;
-                        const min = 0.0;
-                        const max = 120.0;
-                        final sliderVal = restSeconds.clamp(0, 120).toDouble();
-                        final trackWidth = constraints.maxWidth - sliderPadding * 2;
-                        final thumbX = sliderPadding + (sliderVal - min) / (max - min) * trackWidth;
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 28),
-                              child: SliderTheme(
-                                data: SliderTheme.of(lctx).copyWith(
-                                  activeTrackColor: AppColors.accent,
-                                  inactiveTrackColor: AppColors.surface,
-                                  thumbColor: AppColors.accent,
-                                  overlayColor: AppColors.accent.withValues(alpha: 0.12),
-                                ),
-                                child: Slider(
-                                  value: sliderVal,
-                                  min: min,
-                                  max: max,
-                                  divisions: 24,
-                                  onChanged: (v) => setModalState(() => restSeconds = v.round()),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              left: thumbX - 24,
-                              top: 0,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.accent,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '${restSeconds}с',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                                fontSize: 24, color: AppColors.textPrimary),
+                          ),
+                        ),
+                        _NumberButton(
+                          label: '+',
+                          onTap: () => setModalState(() => sets++),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Повторения
+                    const Text('Повторения',
+                        style: TextStyle(color: AppColors.textSecondary)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: repsController,
+                      keyboardType: TextInputType.text,
+                      decoration: const InputDecoration(hintText: '8-12 или 5'),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Целевой вес
+                    const Text('Целевой вес (кг)',
+                        style: TextStyle(color: AppColors.textSecondary)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: weightController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (v) {
+                        targetWeight = double.tryParse(v.replaceAll(',', '.'));
+                      },
+                      decoration: const InputDecoration(hintText: 'Не обязательно'),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Отдых — слайдер
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Отдых',
+                            style: TextStyle(color: AppColors.textSecondary)),
+                        if (restSeconds > 120)
+                          Text('$restSeconds сек.',
+                              style: const TextStyle(
+                                  fontSize: 13, color: AppColors.textSecondary)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    GestureDetector(
+                      onDoubleTap: editRestManually,
+                      child: LayoutBuilder(
+                        builder: (lctx, constraints) {
+                          const sliderPadding = 24.0;
+                          const min = 0.0;
+                          const max = 120.0;
+                          final sliderVal = restSeconds.clamp(0, 120).toDouble();
+                          final trackWidth = constraints.maxWidth - sliderPadding * 2;
+                          final thumbX = sliderPadding + (sliderVal - min) / (max - min) * trackWidth;
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 28),
+                                child: SliderTheme(
+                                  data: SliderTheme.of(lctx).copyWith(
+                                    activeTrackColor: AppColors.accent,
+                                    inactiveTrackColor: AppColors.surface,
+                                    thumbColor: AppColors.accent,
+                                    overlayColor: AppColors.accent.withValues(alpha: 0.12),
+                                  ),
+                                  child: Slider(
+                                    value: sliderVal,
+                                    min: min,
+                                    max: max,
+                                    divisions: 24,
+                                    onChanged: (v) => setModalState(() => restSeconds = v.round()),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        );
-                      },
+                              Positioned(
+                                left: thumbX - 24,
+                                top: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '$restSeconds с',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text('0с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                        Text('120с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                      ],
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('0с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                          Text('120с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Center(
-                    child: Text(
-                      'Дважды нажмите для ручного ввода',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary.withValues(alpha: 0.6)),
+                    const SizedBox(height: 4),
+                    Center(
+                      child: Text(
+                        'Дважды нажмите для ручного ввода',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary.withValues(alpha: 0.6)),
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 24),
 
                   SizedBox(
@@ -509,14 +646,19 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     child: ElevatedButton(
                       onPressed: () async {
                         Navigator.pop(ctx);
-                        await onSave(
-                          sets,
-                          repsController.text.trim().isNotEmpty
-                              ? repsController.text.trim()
-                              : '8-12',
-                          restSeconds,
-                          targetWeight,
-                        );
+                        if (isCardio) {
+                          await onSave(1, '1', 0, null, durationMinutes);
+                        } else {
+                          await onSave(
+                            sets,
+                            repsController.text.trim().isNotEmpty
+                                ? repsController.text.trim()
+                                : '8-12',
+                            restSeconds,
+                            targetWeight,
+                            null,
+                          );
+                        }
                         _load();
                       },
                       child: Text(saveLabel),
@@ -538,7 +680,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(12),
         child: ListTile(
-          leading: const Icon(Icons.fitness_center, color: AppColors.accent),
+          leading: Icon(
+            ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
+            color: AppColors.accent,
+          ),
           title: Text(ex.name,
               style: const TextStyle(color: AppColors.textPrimary)),
           subtitle: Text(
@@ -549,18 +694,21 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             icon: const Icon(Icons.add, color: AppColors.accent),
             onPressed: () => _showExerciseSettingsSheet(
               title: ex.name,
+              isCardio: ex.category == 'cardio',
               initialSets: 3,
               initialRepsRange: '8-12',
               initialRest: 90,
               initialTargetWeight: null,
+              initialDurationMinutes: 30,
               saveLabel: 'Добавить в программу',
-              onSave: (s, r, rest, tw) => WorkoutService.addExerciseToWorkout(
+              onSave: (s, r, rest, tw, dur) => WorkoutService.addExerciseToWorkout(
                 widget.workoutId,
                 ex.id,
                 sets: s,
                 repsRange: r,
                 restSeconds: rest,
                 targetWeight: tw,
+                durationMinutes: dur,
               ),
             ),
           ),
@@ -573,6 +721,25 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Widget build(BuildContext context) {
     final workout = _workout;
     final days = workout?.days ?? [];
+
+    // Build catalog with group separators
+    final groups = _groupedExercises;
+    final catalogWidgets = <Widget>[];
+    bool weightedHeaderShown = false;
+    bool cardioHeaderShown = false;
+    for (final group in groups) {
+      final isCardioGroup = group.value.any((e) => e.category == 'cardio');
+      if (!isCardioGroup && !weightedHeaderShown) {
+        catalogWidgets.add(const _GroupSeparator('С отягощением'));
+        weightedHeaderShown = true;
+      }
+      if (isCardioGroup && !cardioHeaderShown) {
+        catalogWidgets.add(const _GroupSeparator('Без отягощения'));
+        cardioHeaderShown = true;
+      }
+      catalogWidgets.add(_CategoryHeader(label: group.key));
+      catalogWidgets.addAll(_buildExerciseTiles(group.value));
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -686,24 +853,36 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     children: _programExercises.asMap().entries.map((entry) {
                       final i = entry.key;
                       final we = entry.value;
+                      final isLast = i == _programExercises.length - 1;
+                      final nextWe = isLast ? null : _programExercises[i + 1];
+                      final isLinkedWithNext = !isLast &&
+                          we.supersetGroup != null &&
+                          we.supersetGroup == nextWe?.supersetGroup;
                       return _ProgramExerciseCard(
                         key: ValueKey(we.id),
                         dragIndex: i,
                         workoutExercise: we,
+                        supersetLabel: _supersetLabel(i),
+                        isLinkedWithNext: isLinkedWithNext,
+                        canLink: !isLast,
+                        onToggleLink: () => _toggleSuperset(i),
                         onEdit: () => _showExerciseSettingsSheet(
                           title: we.exercise?.name ?? '?',
+                          isCardio: we.exercise?.category == 'cardio',
                           initialSets: we.sets,
                           initialRepsRange: we.repsRange,
                           initialRest: we.restSeconds,
                           initialTargetWeight: we.targetWeight,
+                          initialDurationMinutes: we.durationMinutes ?? 30,
                           saveLabel: 'Сохранить',
-                          onSave: (s, r, rest, tw) =>
+                          onSave: (s, r, rest, tw, dur) =>
                               WorkoutService.updateWorkoutExercise(
                             we.id,
                             sets: s,
                             repsRange: r,
                             restSeconds: rest,
                             targetWeight: tw,
+                            durationMinutes: dur,
                           ),
                         ),
                         onDelete: () async {
@@ -732,10 +911,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 if (_searchQuery.isNotEmpty)
                   ..._buildExerciseTiles(_filteredFlat)
                 else
-                  for (final group in _groupedExercises) ...[
-                    _CategoryHeader(label: group.key),
-                    ..._buildExerciseTiles(group.value),
-                  ],
+                  ...catalogWidgets,
+
                 const SizedBox(height: 16),
               ],
             ),
@@ -751,6 +928,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 class _ProgramExerciseCard extends StatelessWidget {
   final WorkoutExercise workoutExercise;
   final int dragIndex;
+  final String? supersetLabel;   // e.g. "A1", "A2"
+  final bool isLinkedWithNext;
+  final bool canLink;
+  final VoidCallback onToggleLink;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -760,72 +941,200 @@ class _ProgramExerciseCard extends StatelessWidget {
     required this.workoutExercise,
     required this.onEdit,
     required this.onDelete,
+    required this.onToggleLink,
+    this.supersetLabel,
+    this.isLinkedWithNext = false,
+    this.canLink = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final we = workoutExercise;
+    final isCardio = we.exercise?.category == 'cardio';
+    final inSuperset = supersetLabel != null;
 
-    final parts = <String>[
-      '${we.sets} подх. × ${we.repsRange} повт.',
-      'отдых ${we.restSeconds}с',
+    final String subtitle;
+    if (isCardio) {
+      subtitle = '${we.durationMinutes ?? 30} мин';
+    } else {
+      final parts = <String>[
+        '${we.sets} подх. × ${we.repsRange} повт.',
+        'отдых ${we.restSeconds}с',
+      ];
+      if (we.targetWeight != null) parts.add('${we.targetWeight} кг');
+      if (we.targetRpe != null) parts.add('RPE ${we.targetRpe}');
+      subtitle = parts.join('  •  ');
+    }
+
+    // Accent colour for this superset group (cycle through palette)
+    const supersetColors = [
+      Color(0xFF30D158), // green – group A
+      Color(0xFFFF9F0A), // orange – group B
+      Color(0xFFFF453A), // red – group C
+      Color(0xFFBF5AF2), // purple – group D
     ];
-    if (we.targetWeight != null) parts.add('${we.targetWeight} кг');
-    if (we.targetRpe != null) parts.add('RPE ${we.targetRpe}');
+    final groupIndex = supersetLabel != null
+        ? (supersetLabel!.codeUnitAt(0) - 'A'.codeUnitAt(0)) %
+            supersetColors.length
+        : 0;
+    final supersetColor = supersetColors[groupIndex];
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              ReorderableDragStartListener(
-                index: dragIndex,
-                child: const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: Icon(Icons.drag_handle,
-                      color: AppColors.textSecondary, size: 22),
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      we.exercise?.name ?? '?',
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 15,
+      padding: const EdgeInsets.only(bottom: 0),
+      child: Column(
+        children: [
+          // ── Exercise card ────────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(12),
+              border: inSuperset
+                  ? Border(
+                      left: BorderSide(color: supersetColor, width: 3),
+                    )
+                  : null,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  ReorderableDragStartListener(
+                    index: dragIndex,
+                    child: const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: Icon(Icons.drag_handle,
+                          color: AppColors.textSecondary, size: 22),
+                    ),
+                  ),
+                  // Superset badge
+                  if (supersetLabel != null) ...[
+                    Container(
+                      width: 28,
+                      height: 28,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: supersetColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        supersetLabel!,
+                        style: TextStyle(
+                          color: supersetColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      parts.join('  •  '),
-                      style: const TextStyle(
-                          color: AppColors.textSecondary, fontSize: 12),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          we.exercise?.name ?? '?',
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.tune,
+                        color: AppColors.textSecondary, size: 20),
+                    tooltip: 'Изменить',
+                    onPressed: onEdit,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close,
+                        color: AppColors.error, size: 20),
+                    tooltip: 'Удалить',
+                    onPressed: onDelete,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Superset link button ─────────────────────────────────────
+          if (canLink)
+            GestureDetector(
+              onTap: onToggleLink,
+              child: Container(
+                height: 28,
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 1,
+                        color: isLinkedWithNext
+                            ? supersetColor.withValues(alpha: 0.5)
+                            : AppColors.surface,
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isLinkedWithNext
+                            ? supersetColor.withValues(alpha: 0.15)
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isLinkedWithNext
+                                ? Icons.link
+                                : Icons.link_off,
+                            size: 13,
+                            color: isLinkedWithNext
+                                ? supersetColor
+                                : AppColors.textSecondary
+                                    .withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isLinkedWithNext ? 'Суперсет' : 'Связать',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isLinkedWithNext
+                                  ? supersetColor
+                                  : AppColors.textSecondary
+                                      .withValues(alpha: 0.5),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        height: 1,
+                        color: isLinkedWithNext
+                            ? supersetColor.withValues(alpha: 0.5)
+                            : AppColors.surface,
+                      ),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.tune,
-                    color: AppColors.textSecondary, size: 20),
-                tooltip: 'Изменить',
-                onPressed: onEdit,
-              ),
-              IconButton(
-                icon: const Icon(Icons.close,
-                    color: AppColors.error, size: 20),
-                tooltip: 'Удалить',
-                onPressed: onDelete,
-              ),
-            ],
-          ),
-        ),
+            )
+          else
+            const SizedBox(height: 8),
+        ],
       ),
     );
   }
@@ -877,6 +1186,100 @@ class _CategoryHeader extends StatelessWidget {
           color: AppColors.accent,
           letterSpacing: 0.5,
         ),
+      ),
+    );
+  }
+}
+
+// ─── Степпер минут (0–30, шаг 5) ─────────────────────────────────────────────
+
+class _MinuteStepper extends StatelessWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const _MinuteStepper({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: value >= 5 ? () => onChanged(value - 5) : null,
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.remove,
+                size: 16,
+                color: value >= 5
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary.withValues(alpha: 0.3)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Text(
+            value == 0 ? 'Выкл' : '$value мин',
+            style: TextStyle(
+              fontSize: 13,
+              color: value > 0 ? AppColors.accent : AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: value < 30 ? () => onChanged(value + 5) : null,
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.add,
+                size: 16,
+                color: value < 30
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary.withValues(alpha: 0.3)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Разделитель групп упражнений ────────────────────────────────────────────
+
+class _GroupSeparator extends StatelessWidget {
+  final String label;
+
+  const _GroupSeparator(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              label.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider()),
+        ],
       ),
     );
   }

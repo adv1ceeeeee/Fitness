@@ -12,6 +12,8 @@ import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 
+enum _SessionPhase { warmup, exercise, cooldown }
+
 // ─── Локальная модель одного подхода ────────────────────────────────────────
 
 class _SetData {
@@ -49,6 +51,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   int _totalExpectedSets = 0;
   int _currentExerciseIndex = 0;
   bool _loading = true;
+  _SessionPhase _phase = _SessionPhase.exercise;
+  int _warmupMinutes = 0;
+  int _cooldownMinutes = 0;
+  int _phaseSecondsLeft = 0;
+  Timer? _phaseTimer;
   bool _resting = false;
   int _restSeconds = 0;
   Timer? _restTimer;
@@ -59,6 +66,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
   List<_SetData> _sets = [];
   List<TextEditingController> _weightControllers = [];
+  // Comparison result per set index: 1 = better, 0 = same, -1 = worse, null = no data
+  final Map<int, int?> _setComparisons = {};
 
   double get _progressValue {
     if (_totalExpectedSets == 0) return 0.0;
@@ -76,6 +85,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _phaseTimer?.cancel();
     _restTimer?.cancel();
     for (final c in _weightControllers) {
       c.dispose();
@@ -108,10 +118,17 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         .single();
 
     final workoutId = sessionRes['workout_id'] as String;
+
+    // Load exercises, workout settings, personal bests, and last sets concurrently
+    final workoutFuture = Supabase.instance.client
+        .from('workouts')
+        .select('warmup_minutes, cooldown_minutes')
+        .eq('id', workoutId)
+        .single();
     final ex = await TrainingService.getWorkoutExercisesForToday(workoutId);
+    final workoutRes2 = await workoutFuture;
     final exerciseIds = ex.map((e) => e.exerciseId).toList();
 
-    // Load personal bests and last sets concurrently
     final pbFutures = ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
     final lastSetsFuture = AnalyticsService.getLastSetsForExercises(exerciseIds);
     final pbValues = await Future.wait(pbFutures);
@@ -122,15 +139,25 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
     }
 
+    final warmupMins = workoutRes2['warmup_minutes'] as int? ?? 0;
+    final cooldownMins = workoutRes2['cooldown_minutes'] as int? ?? 0;
+
     if (mounted) {
       setState(() {
         _exercises = ex;
         _personalBests = pbs;
         _lastSets = lastSets;
         _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
+        _warmupMinutes = warmupMins;
+        _cooldownMinutes = cooldownMins;
         _loading = false;
         if (ex.isNotEmpty) _initExercise(ex[0]);
+        if (warmupMins > 0) {
+          _phase = _SessionPhase.warmup;
+          _phaseSecondsLeft = warmupMins * 60;
+        }
       });
+      if (warmupMins > 0) _startPhaseTimer();
     }
   }
 
@@ -146,6 +173,47 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     _weightControllers = List.generate(
         we.sets, (_) => TextEditingController(text: lastWeightText));
     _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps));
+    _setComparisons.clear();
+  }
+
+  void _startPhaseTimer() {
+    _phaseTimer?.cancel();
+    _phaseTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      setState(() {
+        if (_phaseSecondsLeft > 0) {
+          _phaseSecondsLeft--;
+        } else {
+          _phaseTimer?.cancel();
+          _onPhaseTimerEnd();
+        }
+      });
+    });
+  }
+
+  void _onPhaseTimerEnd() {
+    if (_phase == _SessionPhase.warmup) {
+      setState(() => _phase = _SessionPhase.exercise);
+    } else if (_phase == _SessionPhase.cooldown) {
+      _goToSummary();
+    }
+  }
+
+  void _skipPhase() {
+    _phaseTimer?.cancel();
+    _onPhaseTimerEnd();
+  }
+
+  void _finishExercises() {
+    if (_cooldownMinutes > 0) {
+      setState(() {
+        _phase = _SessionPhase.cooldown;
+        _phaseSecondsLeft = _cooldownMinutes * 60;
+      });
+      _startPhaseTimer();
+    } else {
+      _goToSummary();
+    }
   }
 
   int _parseDefaultReps(String range) {
@@ -174,6 +242,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final displayWeight = double.tryParse(weightText) ?? 0.0;
     final weightKg = useKg ? displayWeight : displayWeight / 2.20462;
 
+    // Compute comparison with last session
+    final lastWeight = _lastSets[we.exerciseId]?['weight'] as double?;
+    if (lastWeight != null && weightKg > 0) {
+      final diff = weightKg - lastWeight;
+      _setComparisons[index] = diff > 0.001 ? 1 : (diff < -0.001 ? -1 : 0);
+    } else {
+      _setComparisons[index] = null;
+    }
+
     // Optimistic update — instant visual feedback
     setState(() => _sets[index] = setData.copyWith(completed: true));
     _lastRestSeconds = 0;
@@ -184,14 +261,22 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     } else {
       final isLastExercise = _currentExerciseIndex >= _exercises.length - 1;
       if (isLastExercise) {
-        if (mounted) _goToSummary();
+        if (mounted) _finishExercises();
       } else {
-        _startRest(we.restSeconds, goToNext: true);
+        final next = _exercises[_currentExerciseIndex + 1];
+        final inSameSuperset = we.supersetGroup != null &&
+            we.supersetGroup == next.supersetGroup;
+        if (inSameSuperset) {
+          // No rest inside a superset — advance immediately
+          if (mounted) _advanceExercise();
+        } else {
+          _startRest(we.restSeconds, goToNext: true);
+        }
       }
     }
 
-    // Save to DB in background
-    await TrainingService.saveSet(
+    // Save to DB in background; show retry snackbar on failure
+    final saved = await TrainingService.saveSet(
       widget.sessionId,
       we.id,
       index + 1,
@@ -200,6 +285,28 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       rpe: setData.rpe,
       restSeconds: restSecondsToSave,
     );
+
+    if (!saved && mounted) {
+      final sessionId = widget.sessionId;
+      final weId = we.id;
+      final setNum = index + 1;
+      final w = weightKg > 0 ? weightKg : null;
+      final r = setData.reps;
+      final rpe = setData.rpe;
+      final rest = restSecondsToSave;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Не удалось сохранить подход'),
+          action: SnackBarAction(
+            label: 'Повторить',
+            onPressed: () => TrainingService.saveSet(
+              sessionId, weId, setNum,
+              weight: w, reps: r, rpe: rpe, restSeconds: rest,
+            ),
+          ),
+        ),
+      );
+    }
 
     EventLogger.setCompleted(
       exerciseId: we.exerciseId,
@@ -345,6 +452,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         body: const Center(child: Text('Нет упражнений')),
       );
     }
+    if (_phase == _SessionPhase.warmup || _phase == _SessionPhase.cooldown) {
+      return _PhaseScreen(
+        isWarmup: _phase == _SessionPhase.warmup,
+        secondsLeft: _phaseSecondsLeft,
+        onSkip: _skipPhase,
+        onExit: _confirmExit,
+      );
+    }
     if (_resting) {
       return _RestScreen(
         seconds: _restSeconds,
@@ -394,6 +509,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Superset badge
+                    if (we.supersetGroup != null) ...[
+                      _SupersetBadge(
+                        exercises: _exercises,
+                        currentIndex: _currentExerciseIndex,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     Text(
                       we.exercise?.name ?? '?',
                       style: const TextStyle(
@@ -479,6 +602,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                           data: _sets[i],
                           isActive: i == activeIndex && !_sets[i].completed,
                           weightController: _weightControllers[i],
+                          comparison: _setComparisons[i],
                           onRepsChanged: (v) => setState(
                               () => _sets[i] = _sets[i].copyWith(reps: v)),
                           onRpeChanged: (v) =>
@@ -523,6 +647,8 @@ class _SetBlock extends StatelessWidget {
   final _SetData data;
   final bool isActive;
   final TextEditingController weightController;
+  // 1 = better than last, 0 = same, -1 = worse, null = no previous data
+  final int? comparison;
   final ValueChanged<int> onRepsChanged;
   final ValueChanged<int?> onRpeChanged;
   final VoidCallback? onComplete;
@@ -532,6 +658,7 @@ class _SetBlock extends StatelessWidget {
     required this.data,
     required this.isActive,
     required this.weightController,
+    this.comparison,
     required this.onRepsChanged,
     required this.onRpeChanged,
     this.onComplete,
@@ -648,12 +775,31 @@ class _SetBlock extends StatelessWidget {
                 ),
               )
             else
-              const SizedBox(
+              SizedBox(
                 width: 38,
                 height: 38,
                 child: Center(
-                  child: Icon(Icons.check_circle,
-                      color: AppColors.accent, size: 22),
+                  child: comparison == null
+                      ? const Icon(Icons.check_circle,
+                          color: AppColors.accent, size: 22)
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              comparison! > 0
+                                  ? Icons.arrow_upward
+                                  : comparison! < 0
+                                      ? Icons.arrow_downward
+                                      : Icons.remove,
+                              size: 18,
+                              color: comparison! > 0
+                                  ? const Color(0xFF30D158)
+                                  : comparison! < 0
+                                      ? AppColors.error
+                                      : AppColors.textSecondary,
+                            ),
+                          ],
+                        ),
                 ),
               ),
           ],
@@ -808,6 +954,149 @@ class _AddSetButton extends StatelessWidget {
                     color: AppColors.accent,
                     fontSize: 14,
                     fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Значок суперсета ─────────────────────────────────────────────────────────
+
+class _SupersetBadge extends StatelessWidget {
+  final List<WorkoutExercise> exercises;
+  final int currentIndex;
+
+  const _SupersetBadge({
+    required this.exercises,
+    required this.currentIndex,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final group = exercises[currentIndex].supersetGroup!;
+
+    // Build ordered list of unique groups to derive a letter
+    final seenGroups = <int>[];
+    for (final e in exercises) {
+      if (e.supersetGroup != null && !seenGroups.contains(e.supersetGroup)) {
+        seenGroups.add(e.supersetGroup!);
+      }
+    }
+    final letter =
+        String.fromCharCode('A'.codeUnitAt(0) + seenGroups.indexOf(group));
+
+    // Count position within the group up to currentIndex
+    int pos = 0;
+    for (int i = 0; i <= currentIndex; i++) {
+      if (exercises[i].supersetGroup == group) pos++;
+    }
+    final total =
+        exercises.where((e) => e.supersetGroup == group).length;
+
+    const colors = [
+      Color(0xFF30D158),
+      Color(0xFFFF9F0A),
+      Color(0xFFFF453A),
+      Color(0xFFBF5AF2),
+    ];
+    final color = colors[seenGroups.indexOf(group) % colors.length];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.link, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            'Суперсет $letter  ·  $pos / $total',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Экран разминки / заминки ─────────────────────────────────────────────────
+
+class _PhaseScreen extends StatelessWidget {
+  final bool isWarmup;
+  final int secondsLeft;
+  final VoidCallback onSkip;
+  final VoidCallback onExit;
+
+  const _PhaseScreen({
+    required this.isWarmup,
+    required this.secondsLeft,
+    required this.onSkip,
+    required this.onExit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final m = secondsLeft ~/ 60;
+    final s = secondsLeft % 60;
+    final timeStr =
+        '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    final label = isWarmup ? 'Разминка' : 'Заминка';
+    final icon = isWarmup ? Icons.directions_walk : Icons.self_improvement;
+    final skipLabel = isWarmup ? 'Пропустить разминку' : 'Пропустить заминку';
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: onExit,
+        ),
+        title: Text(label),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 64, color: AppColors.accent),
+            const SizedBox(height: 24),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              timeStr,
+              style: const TextStyle(
+                fontSize: 72,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 48),
+            SizedBox(
+              width: 220,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: onSkip,
+                child: Text(
+                  skipLabel,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
           ],
         ),
       ),

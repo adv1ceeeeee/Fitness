@@ -80,6 +80,32 @@ class UseCmNotifier extends StateNotifier<bool> {
   }
 }
 
+// ─── Notifications enabled ───────────────────────────────────────────────────
+
+final notificationsEnabledProvider =
+    StateNotifierProvider<NotificationsEnabledNotifier, bool>(
+  (ref) => NotificationsEnabledNotifier(),
+);
+
+class NotificationsEnabledNotifier extends StateNotifier<bool> {
+  static const _key = 'notifications_enabled';
+
+  NotificationsEnabledNotifier() : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) state = prefs.getBool(_key) ?? true;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, enabled);
+    state = enabled;
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Convert kg value to display value + label depending on unit preference.

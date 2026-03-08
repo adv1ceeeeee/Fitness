@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
+import 'package:sportwai/services/cache_service.dart';
 import 'package:sportwai/services/training_service.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -23,26 +24,59 @@ class _TodayScreenState extends State<TodayScreen> {
     _load();
   }
 
+  bool _fromCache = false;
+
   Future<void> _load() async {
     setState(() => _loading = true);
-    final workout = await TrainingService.getTodayWorkout();
-    if (workout != null) {
-      final ex =
-          await TrainingService.getWorkoutExercisesForToday(workout.id);
-      if (mounted) {
-        setState(() {
-          _workout = workout;
-          _exercises = ex;
-          _loading = false;
+    try {
+      final workout = await TrainingService.getTodayWorkout();
+      if (workout != null) {
+        final ex = await TrainingService.getWorkoutExercisesForToday(workout.id);
+        await CacheService.saveTodayWorkout({
+          'workout': workout.toJson(),
+          'exercises': ex.map((e) => e.toJson()).toList(),
         });
+        if (mounted) {
+          setState(() {
+            _workout = workout;
+            _exercises = ex;
+            _fromCache = false;
+            _loading = false;
+          });
+        }
+      } else {
+        await CacheService.saveTodayWorkout(null);
+        if (mounted) {
+          setState(() {
+            _workout = null;
+            _exercises = [];
+            _fromCache = false;
+            _loading = false;
+          });
+        }
       }
-    } else {
+    } catch (_) {
+      final cached = await CacheService.loadTodayWorkout();
       if (mounted) {
-        setState(() {
-          _workout = null;
-          _exercises = [];
-          _loading = false;
-        });
+        if (cached != null) {
+          final workout = Workout.fromJson(cached['workout'] as Map<String, dynamic>);
+          final exercises = (cached['exercises'] as List<dynamic>)
+              .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+              .toList();
+          setState(() {
+            _workout = workout;
+            _exercises = exercises;
+            _fromCache = true;
+            _loading = false;
+          });
+        } else {
+          setState(() {
+            _workout = null;
+            _exercises = [];
+            _fromCache = true;
+            _loading = false;
+          });
+        }
       }
     }
   }
@@ -73,7 +107,8 @@ class _TodayScreenState extends State<TodayScreen> {
               : _WorkoutContent(
                   workout: _workout!,
                   exercises: _exercises,
-                  onStart: _startWorkout,
+                  onStart: _fromCache ? null : _startWorkout,
+                  fromCache: _fromCache,
                 ),
     );
   }
@@ -129,12 +164,14 @@ class _NoWorkoutToday extends StatelessWidget {
 class _WorkoutContent extends StatelessWidget {
   final Workout workout;
   final List<WorkoutExercise> exercises;
-  final VoidCallback onStart;
+  final VoidCallback? onStart;
+  final bool fromCache;
 
   const _WorkoutContent({
     required this.workout,
     required this.exercises,
     required this.onStart,
+    this.fromCache = false,
   });
 
   @override
@@ -246,14 +283,33 @@ class _WorkoutContent extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.all(24),
-          child: SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              onPressed: onStart,
-              child: const Text('Начать тренировку'),
-            ),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: Column(
+            children: [
+              if (fromCache)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.wifi_off, size: 13, color: AppColors.textSecondary),
+                      SizedBox(width: 4),
+                      Text(
+                        'Нет соединения \u2014 данные из кеша',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: onStart,
+                  child: const Text('Начать тренировку'),
+                ),
+              ),
+            ],
           ),
         ),
       ],

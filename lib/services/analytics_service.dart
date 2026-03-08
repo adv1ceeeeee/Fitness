@@ -101,9 +101,48 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
 
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    final startStr = startOfWeek.toIso8601String().split('T')[0];
+    final startStr = DateTime.now()
+        .subtract(const Duration(days: 7))
+        .toIso8601String()
+        .split('T')[0];
+
+    final res = await _client
+        .from('training_sessions')
+        .select()
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', startStr);
+
+    return (res as List).length;
+  }
+
+  static Future<int> getWorkoutsThisMonth() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final startStr = DateTime.now()
+        .subtract(const Duration(days: 30))
+        .toIso8601String()
+        .split('T')[0];
+
+    final res = await _client
+        .from('training_sessions')
+        .select()
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', startStr);
+
+    return (res as List).length;
+  }
+
+  static Future<int> getWorkoutsThisYear() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final startStr = DateTime.now()
+        .subtract(const Duration(days: 365))
+        .toIso8601String()
+        .split('T')[0];
 
     final res = await _client
         .from('training_sessions')

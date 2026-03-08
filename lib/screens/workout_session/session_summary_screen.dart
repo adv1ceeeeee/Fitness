@@ -28,11 +28,18 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
 
   // Grouped exercise data: exerciseName → list of _SetRow
   final List<_ExerciseGroup> _groups = [];
+  final TextEditingController _notesCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadSets();
+  }
+
+  @override
+  void dispose() {
+    _notesCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSets() async {
@@ -85,7 +92,57 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
     return '$s сек';
   }
 
+  /// Returns sets that have no reps (null or 0) — grouped for display.
+  List<String> _invalidSetDescriptions() {
+    final result = <String>[];
+    for (final group in _groups) {
+      for (final set in group.sets) {
+        if ((set.reps ?? 0) == 0) {
+          result.add('${group.name}, подход ${set.setNumber}');
+        }
+      }
+    }
+    return result;
+  }
+
+  Future<bool> _confirmSaveWithWarnings(List<String> warnings) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text(
+          'Не указаны повторения',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          'В следующих подходах не указаны повторения:\n\n'
+          '${warnings.join('\n')}\n\nСохранить всё равно?',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Сохранить всё равно',
+                style: TextStyle(color: AppColors.accent)),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Future<void> _save() async {
+    // Validate before saving
+    final warnings = _invalidSetDescriptions();
+    if (warnings.isNotEmpty) {
+      final proceed = await _confirmSaveWithWarnings(warnings);
+      if (!proceed) return;
+    }
+
     setState(() => _saving = true);
     try {
       // Update edited sets
@@ -103,6 +160,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
       await TrainingService.completeSession(
         widget.sessionId,
         durationSeconds: widget.durationSeconds,
+        notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       );
       // Clear global session state
       ref.read(activeSessionProvider.notifier).stop();
@@ -183,7 +241,24 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                   const SizedBox(height: 20),
                   // ── Exercise groups ────────────────────────────────────
                   ..._groups.map((group) => _ExerciseCard(group: group)),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
+                  // ── Notes ─────────────────────────────────────────────
+                  TextField(
+                    controller: _notesCtrl,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Заметки к тренировке (самочувствие, что помогло…)',
+                      filled: true,
+                      fillColor: AppColors.card,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      contentPadding: const EdgeInsets.all(16),
+                    ),
+                    style: const TextStyle(color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 24),
                   // ── Save button ────────────────────────────────────────
                   SizedBox(
                     height: 56,
@@ -507,6 +582,8 @@ class _SetEditSheetState extends State<_SetEditSheet> {
     widget.set.rpe = _rpe;
     widget.onSave();
     Navigator.pop(context);
+    // Autosave: persist immediately so changes survive navigation without saving
+    TrainingService.updateSet(widget.set.id, weight: w, reps: r, rpe: _rpe);
   }
 
   @override

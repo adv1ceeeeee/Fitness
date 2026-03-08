@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/auth_service.dart';
@@ -58,13 +58,13 @@ class ProfileService {
 
   /// Загружает аватарку в Supabase Storage и возвращает публичный URL.
   /// Требует bucket "avatars" с публичным доступом в Supabase Dashboard.
-  static Future<String> uploadAvatar(File imageFile) async {
+  static Future<String> uploadAvatar(Uint8List bytes) async {
     final userId = AuthService.currentUser!.id;
     final path = '$userId.jpg';
 
-    await _client.storage.from('avatars').upload(
+    await _client.storage.from('avatars').uploadBinary(
           path,
-          imageFile,
+          bytes,
           fileOptions: const FileOptions(upsert: true, contentType: 'image/jpeg'),
         );
 

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:image_picker/image_picker.dart';
@@ -191,7 +190,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final url = await ProfileService.uploadAvatar(File(picked.path));
+      final bytes = await picked.readAsBytes();
+      final url = await ProfileService.uploadAvatar(bytes);
       await ProfileService.updateProfile({'avatar_url': url});
       setState(() => _avatarUrl = url);
       if (mounted) {

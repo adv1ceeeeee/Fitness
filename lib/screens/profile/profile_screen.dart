@@ -8,7 +8,10 @@ import 'package:sportwai/screens/profile/edit_profile_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
+import 'package:sportwai/services/export_service.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/widgets/avatar_widget.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -20,8 +23,10 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Profile? _profile;
-  bool _notifications = true;
   int _totalWorkouts = 0;
+  int _yearWorkouts = 0;
+  int _monthWorkouts = 0;
+  int _weekWorkouts = 0;
   int _bestStreak = 0;
   Map<String, dynamic>? _latestMetrics;
 
@@ -39,12 +44,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _loadStats() async {
-    final total = await AnalyticsService.getTotalWorkouts();
-    final streak = await AnalyticsService.getBestStreak();
+    final results = await Future.wait([
+      AnalyticsService.getTotalWorkouts(),
+      AnalyticsService.getWorkoutsThisYear(),
+      AnalyticsService.getWorkoutsThisMonth(),
+      AnalyticsService.getWorkoutsThisWeek(),
+      AnalyticsService.getBestStreak(),
+    ]);
     if (mounted) {
       setState(() {
-        _totalWorkouts = total;
-        _bestStreak = streak;
+        _totalWorkouts = results[0];
+        _yearWorkouts = results[1];
+        _monthWorkouts = results[2];
+        _weekWorkouts = results[3];
+        _bestStreak = results[4];
       });
     }
   }
@@ -76,6 +89,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (g == 'male') return 'Мужской';
     if (g == 'female') return 'Женский';
     return '—';
+  }
+
+  Future<void> _toggleNotifications(bool enabled) async {
+    if (enabled) {
+      final granted = await NotificationService.requestPermission();
+      if (!granted) return;
+      final workouts = await WorkoutService.getMyWorkouts();
+      final days = workouts.expand((w) => w.days).toList();
+      await NotificationService.scheduleWorkoutReminders(days);
+    } else {
+      await NotificationService.cancelAll();
+    }
+    await ref.read(notificationsEnabledProvider.notifier).setEnabled(enabled);
   }
 
   Future<void> _openEdit() async {
@@ -165,6 +191,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               // Статистика
               const _SectionTitle('Статистика'),
               _StatCard(label: 'Тренировок всего', value: '$_totalWorkouts'),
+              _StatCard(label: 'За последний год', value: '$_yearWorkouts'),
+              _StatCard(label: 'За последний месяц', value: '$_monthWorkouts'),
+              _StatCard(label: 'За последнюю неделю', value: '$_weekWorkouts'),
               _StatCard(label: 'Лучший стрик', value: '$_bestStreak дней'),
               const SizedBox(height: 24),
 
@@ -207,7 +236,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
               _SettingsRow(
-                label: 'Единицы измерения',
+                label: 'Единицы веса',
                 trailing: Builder(builder: (context) {
                   final useKg = ref.watch(useKgProvider);
                   return Row(
@@ -231,6 +260,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 }),
               ),
               _SettingsRow(
+                label: 'Единицы длины',
+                trailing: Builder(builder: (context) {
+                  final useCm = ref.watch(useCmProvider);
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('см'),
+                        selected: useCm,
+                        onSelected: (_) =>
+                            ref.read(useCmProvider.notifier).setUseCm(true),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('дюймы'),
+                        selected: !useCm,
+                        onSelected: (_) =>
+                            ref.read(useCmProvider.notifier).setUseCm(false),
+                      ),
+                    ],
+                  );
+                }),
+              ),
+              _SettingsRow(
                 label: 'Тёмная тема',
                 trailing: Builder(builder: (context) {
                   final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
@@ -243,10 +296,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               _SettingsRow(
                 label: 'Уведомления',
-                trailing: Switch(
-                  value: _notifications,
-                  onChanged: (v) => setState(() => _notifications = v),
-                ),
+                trailing: Builder(builder: (context) {
+                  final enabled = ref.watch(notificationsEnabledProvider);
+                  return Switch(
+                    value: enabled,
+                    onChanged: _toggleNotifications,
+                  );
+                }),
               ),
               const SizedBox(height: 16),
               Material(
@@ -264,14 +320,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+              Material(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await ExportService.exportData();
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Не удалось экспортировать данные')),
+                      );
+                    }
+                  },
+                  child: const ListTile(
+                    leading: Icon(Icons.download, color: AppColors.accent),
+                    title: Text(
+                      'Экспорт данных',
+                      style: TextStyle(color: AppColors.textPrimary),
+                    ),
+                    subtitle: Text(
+                      'Сохранить все тренировки и метрики в JSON',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
                 height: 56,
                 child: OutlinedButton.icon(
                   onPressed: () async {
+                    final router = GoRouter.of(context);
                     await AuthService.signOut();
-                    if (mounted) context.go('/');
+                    if (mounted) router.go('/');
                   },
                   icon: const Icon(Icons.logout),
                   label: const Text('Выйти'),

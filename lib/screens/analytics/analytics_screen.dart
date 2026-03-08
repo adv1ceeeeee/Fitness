@@ -1,8 +1,15 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
+import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/profile_service.dart';
@@ -15,12 +22,15 @@ class AnalyticsScreen extends StatefulWidget {
 }
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
+  final _shareKey = GlobalKey();
+
   Profile? _profile;
   int _totalWorkouts = 0;
   int _bestStreak = 0;
   int _workoutsThisWeek = 0;
   double _volumeThisWeek = 0;
   bool _loading = true;
+  bool _sharing = false;
 
   List<Map<String, dynamic>> _trackedExercises = [];
   Map<String, dynamic>? _selectedExercise;
@@ -28,6 +38,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   bool _loadingChart = false;
 
   Map<String, double> _bodyWeightData = {};
+  List<Achievement> _achievements = [];
 
   @override
   void initState() {
@@ -44,6 +55,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final volume = await AnalyticsService.getVolumeThisWeek();
     final tracked = await AnalyticsService.getTrackedExercises();
     final bodyHistory = await BodyMetricsService.getHistory();
+    final achievements = await AchievementService.getAchievements();
 
     final bodyWeightData = <String, double>{};
     for (final row in bodyHistory) {
@@ -63,6 +75,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _volumeThisWeek = volume;
         _trackedExercises = tracked;
         _bodyWeightData = bodyWeightData;
+        _achievements = achievements;
         _loading = false;
       });
     }
@@ -73,6 +86,28 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     setState(() => _loadingChart = true);
     final data = await AnalyticsService.getExerciseMaxWeight(exerciseId);
     if (mounted) setState(() { _exerciseProgress = data; _loadingChart = false; });
+  }
+
+  Future<void> _shareAsImage() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      final boundary = _shareKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/sportwai_progress.png');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: 'Мой прогресс в SportWAI',
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   static String _goalDisplay(String? goal) {
@@ -126,6 +161,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 _StreakCard(
                   streak: _bestStreak,
                   totalWorkouts: _totalWorkouts,
+                ),
+                const SizedBox(height: 12),
+                Material(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: () => context.push('/history'),
+                    borderRadius: BorderRadius.circular(14),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Icon(Icons.history_rounded, color: AppColors.accent),
+                          SizedBox(width: 12),
+                          Text(
+                            'История тренировок',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Spacer(),
+                          Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -258,6 +320,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ],
                 const SizedBox(height: 32),
                 const Text(
+                  'Достижения',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _AchievementsGrid(achievements: _achievements),
+                const SizedBox(height: 32),
+                const Text(
                   'Поделиться прогрессом',
                   style: TextStyle(
                     fontSize: 18,
@@ -266,36 +339,37 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Material(
-                  color: AppColors.card,
-                  borderRadius: BorderRadius.circular(16),
-                  child: InkWell(
-                    onTap: () {
-                      final name = _profile?.fullName?.split(' ').first ?? 'Атлет';
-                      final text =
-                          'Мои достижения в Sportify:\n'
-                          '🔥 Стрик: $_bestStreak дней\n'
-                          '💪 Тренировок всего: $_totalWorkouts\n'
-                          '📅 За неделю: $_workoutsThisWeek тренировок\n'
-                          '🏋 Объём за неделю: ${_volumeThisWeek.toStringAsFixed(0)} кг\n'
-                          '\nПрисоединяйся, $name тренируется в Sportify!';
-                      Share.share(text);
-                    },
-                    borderRadius: BorderRadius.circular(16),
-                    child: const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Row(
-                        children: [
-                          Icon(Icons.share, color: AppColors.accent, size: 32),
-                          SizedBox(width: 16),
-                          Text(
-                            'Создать картинку с достижениями',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: AppColors.textPrimary,
+                RepaintBoundary(
+                  key: _shareKey,
+                  child: _ShareCard(
+                    name: _profile?.fullName?.split(' ').first ?? 'Атлет',
+                    streak: _bestStreak,
+                    totalWorkouts: _totalWorkouts,
+                    workoutsThisWeek: _workoutsThisWeek,
+                    volumeThisWeek: _volumeThisWeek,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _sharing ? null : _shareAsImage,
+                    icon: _sharing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
                             ),
-                          ),
-                        ],
+                          )
+                        : const Icon(Icons.ios_share_rounded),
+                    label: const Text('Поделиться картинкой'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                   ),
@@ -496,6 +570,238 @@ class _ProgressChart extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AchievementsGrid extends StatelessWidget {
+  final List<Achievement> achievements;
+
+  const _AchievementsGrid({required this.achievements});
+
+  @override
+  Widget build(BuildContext context) {
+    if (achievements.isEmpty) return const SizedBox.shrink();
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: achievements.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.88,
+      ),
+      itemBuilder: (context, i) {
+        final a = achievements[i];
+        final locked = !a.unlocked;
+        return Tooltip(
+          message: a.description,
+          child: Container(
+            decoration: BoxDecoration(
+              color: locked
+                  ? AppColors.card.withValues(alpha: 0.5)
+                  : AppColors.card,
+              borderRadius: BorderRadius.circular(14),
+              border: a.unlocked
+                  ? Border.all(color: AppColors.accent.withValues(alpha: 0.4), width: 1.5)
+                  : null,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ColorFiltered(
+                  colorFilter: locked
+                      ? const ColorFilter.matrix([
+                          0.2, 0, 0, 0, 0,
+                          0, 0.2, 0, 0, 0,
+                          0, 0, 0.2, 0, 0,
+                          0, 0, 0, 1, 0,
+                        ])
+                      : const ColorFilter.mode(
+                          Colors.transparent, BlendMode.dst),
+                  child: Text(a.emoji,
+                      style: const TextStyle(fontSize: 28)),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  a.title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: locked
+                        ? AppColors.textSecondary.withValues(alpha: 0.5)
+                        : AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ShareCard extends StatelessWidget {
+  final String name;
+  final int streak;
+  final int totalWorkouts;
+  final int workoutsThisWeek;
+  final double volumeThisWeek;
+
+  const _ShareCard({
+    required this.name,
+    required this.streak,
+    required this.totalWorkouts,
+    required this.workoutsThisWeek,
+    required this.volumeThisWeek,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1C1C1E), Color(0xFF2C2C2E)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.fitness_center, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'SportWAI',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Прогресс $name',
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              const Text('🔥', style: TextStyle(fontSize: 36)),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$streak дней',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const Text(
+                    'Стрик',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _MiniStat(
+                  icon: '💪',
+                  value: '$totalWorkouts',
+                  label: 'Тренировок',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MiniStat(
+                  icon: '📅',
+                  value: '$workoutsThisWeek',
+                  label: 'За неделю',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _MiniStat(
+                  icon: '🏋',
+                  value: '${volumeThisWeek.toStringAsFixed(0)} кг',
+                  label: 'Объём',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String icon;
+  final String value;
+  final String label;
+
+  const _MiniStat({required this.icon, required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3A3A3C),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 18)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF8E8E93)),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

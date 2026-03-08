@@ -132,6 +132,61 @@ void main() {
     });
   });
 
+  // ─── Session summary validation ──────────────────────────────────────────
+
+  group('Session summary: invalid set detection', () {
+    /// Mirrors _invalidSetDescriptions logic from SessionSummaryScreen.
+    List<String> invalidSetDescriptions(
+        List<({String name, List<int?> repsList})> groups) {
+      final result = <String>[];
+      for (final group in groups) {
+        for (var i = 0; i < group.repsList.length; i++) {
+          final reps = group.repsList[i];
+          if ((reps ?? 0) == 0) {
+            result.add('${group.name}, подход ${i + 1}');
+          }
+        }
+      }
+      return result;
+    }
+
+    test('no warnings when all sets have reps', () {
+      final groups = [
+        (name: 'Жим лёжа', repsList: [8, 10, 8]),
+        (name: 'Тяга', repsList: [12, 12]),
+      ];
+      expect(invalidSetDescriptions(groups), isEmpty);
+    });
+
+    test('detects null reps', () {
+      final groups = [(name: 'Приседания', repsList: [null, 10])];
+      final warnings = invalidSetDescriptions(groups);
+      expect(warnings, ['Приседания, подход 1']);
+    });
+
+    test('detects zero reps', () {
+      final groups = [(name: 'Подтягивания', repsList: [0])];
+      expect(invalidSetDescriptions(groups), ['Подтягивания, подход 1']);
+    });
+
+    test('detects multiple invalid sets across exercises', () {
+      final groups = [
+        (name: 'Жим', repsList: [null, 8]),
+        (name: 'Тяга', repsList: [0, 0]),
+      ];
+      final warnings = invalidSetDescriptions(groups);
+      expect(warnings.length, 3);
+      expect(warnings[0], 'Жим, подход 1');
+      expect(warnings[1], 'Тяга, подход 1');
+      expect(warnings[2], 'Тяга, подход 2');
+    });
+
+    test('positive reps 1 passes validation', () {
+      final groups = [(name: 'Отжимания', repsList: [1])];
+      expect(invalidSetDescriptions(groups), isEmpty);
+    });
+  });
+
   // ─── getLastSetsForExercises (pure logic) ─────────────────────────────────
 
   group('getLastSetsForExercises logic', () {

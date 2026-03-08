@@ -7,6 +7,8 @@ class Workout {
   final List<int> days;
   final bool isStandard;
   final int cycleWeeks;
+  final int warmupMinutes;
+  final int cooldownMinutes;
   final DateTime createdAt;
   final DateTime updatedAt;
   List<WorkoutExercise>? exercises;
@@ -18,6 +20,8 @@ class Workout {
     required this.days,
     this.isStandard = false,
     this.cycleWeeks = 8,
+    this.warmupMinutes = 0,
+    this.cooldownMinutes = 0,
     required this.createdAt,
     required this.updatedAt,
     this.exercises,
@@ -34,6 +38,8 @@ class Workout {
           [],
       isStandard: json['is_standard'] as bool? ?? false,
       cycleWeeks: json['cycle_weeks'] as int? ?? 8,
+      warmupMinutes: json['warmup_minutes'] as int? ?? 0,
+      cooldownMinutes: json['cooldown_minutes'] as int? ?? 0,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -46,6 +52,8 @@ class Workout {
         'days': days,
         'is_standard': isStandard,
         'cycle_weeks': cycleWeeks,
+        'warmup_minutes': warmupMinutes,
+        'cooldown_minutes': cooldownMinutes,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };

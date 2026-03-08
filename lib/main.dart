@@ -7,6 +7,7 @@ import 'package:sportwai/config/app_config.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/router.dart';
+import 'package:sportwai/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +23,8 @@ void main() async {
     url: AppConfig.supabaseUrl,
     anonKey: AppConfig.supabaseAnonKey,
   );
+
+  await NotificationService.initialize();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -48,7 +51,7 @@ class SportifyApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Sportify',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
       routerConfig: AppRouter.router,

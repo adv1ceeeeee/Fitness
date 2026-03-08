@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout.dart';
+import 'package:sportwai/services/cache_service.dart';
+import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
 
@@ -17,6 +19,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   List<Workout> _workouts = [];
+  Map<String, Map<String, dynamic>> _sessionInfo = {};
 
   @override
   void initState() {
@@ -32,8 +35,23 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   }
 
   Future<void> _loadWorkouts() async {
-    final list = await WorkoutService.getMyWorkouts();
-    if (mounted) setState(() => _workouts = list);
+    try {
+      final list = await WorkoutService.getMyWorkouts();
+      final inactiveIds =
+          list.where((w) => w.days.isEmpty).map((w) => w.id).toList();
+      final info =
+          await TrainingService.getLastSessionInfoForWorkouts(inactiveIds);
+      await CacheService.saveWorkouts(list);
+      if (mounted) {
+        setState(() {
+          _workouts = list;
+          _sessionInfo = info;
+        });
+      }
+    } catch (_) {
+      final cached = await CacheService.loadWorkouts();
+      if (mounted) setState(() => _workouts = cached);
+    }
   }
 
   @override
@@ -76,6 +94,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                 children: [
                   _MyProgramsTab(
                     workouts: _workouts,
+                    sessionInfo: _sessionInfo,
                     onRefresh: _loadWorkouts,
                     onDelete: (id) async {
                       await WorkoutService.deleteWorkout(id);
@@ -103,6 +122,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
 
 class _MyProgramsTab extends StatefulWidget {
   final List<Workout> workouts;
+  final Map<String, Map<String, dynamic>> sessionInfo;
   final VoidCallback onRefresh;
   final VoidCallback onCreateTap;
   final void Function(Workout) onWorkoutTap;
@@ -110,6 +130,7 @@ class _MyProgramsTab extends StatefulWidget {
 
   const _MyProgramsTab({
     required this.workouts,
+    required this.sessionInfo,
     required this.onRefresh,
     required this.onCreateTap,
     required this.onWorkoutTap,
@@ -153,15 +174,28 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     await prefs.setStringList(_kHidden, _hiddenIds.toList());
   }
 
+  // Active programs (have scheduled days) — reorderable
   List<Workout> get _sortedWorkouts {
+    final active = widget.workouts.where((w) => w.days.isNotEmpty).toList();
     final Map<String, int> orderMap = {
       for (int i = 0; i < _orderedIds.length; i++) _orderedIds[i]: i,
     };
-    return [...widget.workouts]..sort((a, b) {
-        final ia = orderMap[a.id] ?? 999999;
-        final ib = orderMap[b.id] ?? 999999;
-        return ia.compareTo(ib);
-      });
+    return active..sort((a, b) {
+      final ia = orderMap[a.id] ?? 999999;
+      final ib = orderMap[b.id] ?? 999999;
+      return ia.compareTo(ib);
+    });
+  }
+
+  // One-time / inactive workouts (no scheduled days) — sorted by last session date
+  List<Workout> get _inactiveWorkouts {
+    final inactive = widget.workouts.where((w) => w.days.isEmpty).toList();
+    inactive.sort((a, b) {
+      final da = widget.sessionInfo[a.id]?['date'] as String? ?? '';
+      final db = widget.sessionInfo[b.id]?['date'] as String? ?? '';
+      return db.compareTo(da); // most recent first
+    });
+    return inactive;
   }
 
   void _onReorder(int oldIndex, int newIndex) {
@@ -229,6 +263,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
   @override
   Widget build(BuildContext context) {
     final sorted = _sortedWorkouts;
+    final inactive = _inactiveWorkouts;
 
     return NotificationListener<ScrollNotification>(
       onNotification: (_) {
@@ -242,6 +277,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           buildDefaultDragHandles: false,
           onReorder: _onReorder,
           header: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Material(
                 color: AppColors.accent.withValues(alpha: 0.2),
@@ -270,7 +306,20 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                 ),
               ),
               const SizedBox(height: 24),
-              if (sorted.isEmpty)
+              if (sorted.isNotEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'Действующие программы',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              if (sorted.isEmpty && inactive.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(32),
                   child: Text(
@@ -281,6 +330,39 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                 ),
             ],
           ),
+          footer: inactive.isEmpty
+              ? const SizedBox.shrink()
+              : Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Завершённые / неактивные',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      for (final w in inactive)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _InactiveWorkoutCard(
+                            workout: w,
+                            sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
+                            durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
+                            onTap: () => widget.onWorkoutTap(w),
+                            onDelete: () => _confirmDelete(w),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
           children: [
             for (int i = 0; i < sorted.length; i++)
               ReorderableDelayedDragStartListener(
@@ -562,6 +644,115 @@ class _WorkoutCardContent extends StatelessWidget {
             size: 20,
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Inactive / Completed Workout Card ───────────────────────────────────────
+
+class _InactiveWorkoutCard extends StatelessWidget {
+  final Workout workout;
+  final String? sessionDate;   // 'yyyy-MM-dd'
+  final int? durationSeconds;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const _InactiveWorkoutCard({
+    required this.workout,
+    required this.onTap,
+    required this.onDelete,
+    this.sessionDate,
+    this.durationSeconds,
+  });
+
+  String _formatDate(String? raw) {
+    if (raw == null || raw.length < 10) return '';
+    // raw = 'yyyy-MM-dd'
+    return '${raw.substring(8, 10)}.${raw.substring(5, 7)}.${raw.substring(0, 4)}';
+  }
+
+  String _formatDuration(int? seconds) {
+    if (seconds == null || seconds <= 0) return '';
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    if (h > 0) return '$hч $mмин';
+    return '$mмин';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateStr = _formatDate(sessionDate);
+    final durStr = _formatDuration(durationSeconds);
+    final hasInfo = dateStr.isNotEmpty || durStr.isNotEmpty;
+
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.event_note_rounded,
+                  color: AppColors.textSecondary,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      workout.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (hasInfo) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        [dateStr, durStr]
+                            .where((s) => s.isNotEmpty)
+                            .join('  ·  '),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Не завершена',
+                        style: TextStyle(
+                            fontSize: 13, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline,
+                    color: AppColors.error, size: 20),
+                onPressed: onDelete,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

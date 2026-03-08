@@ -10,6 +10,8 @@ class WorkoutExercise {
   final int restSeconds;
   final double? targetWeight;
   final int? targetRpe;
+  final int? durationMinutes;
+  final int? supersetGroup;
   Exercise? exercise;
 
   WorkoutExercise({
@@ -22,8 +24,12 @@ class WorkoutExercise {
     required this.restSeconds,
     this.targetWeight,
     this.targetRpe,
+    this.durationMinutes,
+    this.supersetGroup,
     this.exercise,
   });
+
+  bool get isCardio => exercise?.category == 'cardio';
 
   factory WorkoutExercise.fromJson(Map<String, dynamic> json) {
     return WorkoutExercise(
@@ -36,6 +42,8 @@ class WorkoutExercise {
       restSeconds: json['rest_seconds'] as int? ?? 90,
       targetWeight: (json['target_weight'] as num?)?.toDouble(),
       targetRpe: json['target_rpe'] as int?,
+      durationMinutes: json['duration_minutes'] as int?,
+      supersetGroup: json['superset_group'] as int?,
       exercise: json['exercises'] != null
           ? Exercise.fromJson(json['exercises'] as Map<String, dynamic>)
           : null,
@@ -52,5 +60,7 @@ class WorkoutExercise {
         'rest_seconds': restSeconds,
         'target_weight': targetWeight,
         'target_rpe': targetRpe,
+        'duration_minutes': durationMinutes,
+        'superset_group': supersetGroup,
       };
 }

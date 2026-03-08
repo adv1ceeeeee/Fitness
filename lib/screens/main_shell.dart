@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/providers/connectivity_provider.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 
@@ -51,16 +52,43 @@ class _MainShellState extends ConsumerState<MainShell> {
   }
 
   void _onTap(int index) {
-    if (index != _currentIndex) {
-      context.go(_routes[index]);
-    }
+    // Always go to the root of the tab — handles both switching tabs
+    // and popping back to root when the same tab is tapped again.
+    context.go(_routes[index]);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isOnline = ref.isOnline;
     return Scaffold(
       extendBody: true, // body renders behind the glass bottom bar
-      body: widget.child,
+      body: Column(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            height: isOnline ? 0 : 28,
+            color: const Color(0xFFFF9500),
+            child: isOnline
+                ? const SizedBox.shrink()
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.wifi_off, size: 14, color: Colors.black87),
+                      SizedBox(width: 6),
+                      Text(
+                        'Нет соединения — данные могут быть устаревшими',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          Expanded(child: widget.child),
+        ],
+      ),
       floatingActionButton: _PlayStopFab(location: widget.location),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: _GlassNavBar(
@@ -166,19 +194,57 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     if (ref.read(activeSessionProvider).isActive) return;
     final open = await TrainingService.getOpenSession();
     if (open == null || !mounted) return;
+
     final sessionId = open['id'] as String;
     final workoutId = open['workout_id'] as String;
     final workoutName =
         (open['workouts'] as Map<String, dynamic>?)?['name'] as String? ??
             'Тренировка';
     final createdAt = DateTime.tryParse(open['created_at'] as String? ?? '');
-    ref.read(activeSessionProvider.notifier).start(
-          sessionId: sessionId,
-          workoutId: workoutId,
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        useRootNavigator: true,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: AppColors.card,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => _RecoverySheet(
           workoutName: workoutName,
-          startTime: createdAt,
-        );
-    _startTicker();
+          createdAt: createdAt,
+          onResume: () {
+            Navigator.pop(ctx);
+            ref.read(activeSessionProvider.notifier).start(
+                  sessionId: sessionId,
+                  workoutId: workoutId,
+                  workoutName: workoutName,
+                  startTime: createdAt,
+                );
+            _startTicker();
+            context.push('/session/$sessionId');
+          },
+          onRestart: () async {
+            Navigator.pop(ctx);
+            await TrainingService.deleteSession(sessionId);
+            final newSession =
+                await TrainingService.getOrCreateTodaySession(workoutId);
+            if (!mounted || newSession == null) return;
+            ref.read(activeSessionProvider.notifier).start(
+                  sessionId: newSession.id,
+                  workoutId: workoutId,
+                  workoutName: workoutName,
+                );
+            _startTicker();
+            context.push('/session/${newSession.id}');
+          },
+          onDismiss: () => Navigator.pop(ctx),
+        ),
+      );
+    });
   }
 
   @override
@@ -444,6 +510,112 @@ class _StartChoiceSheet extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Recovery sheet ───────────────────────────────────────────────────────────
+
+class _RecoverySheet extends StatelessWidget {
+  final String workoutName;
+  final DateTime? createdAt;
+  final VoidCallback onResume;
+  final Future<void> Function() onRestart;
+  final VoidCallback onDismiss;
+
+  const _RecoverySheet({
+    required this.workoutName,
+    required this.createdAt,
+    required this.onResume,
+    required this.onRestart,
+    required this.onDismiss,
+  });
+
+  String _timeAgo() {
+    if (createdAt == null) return '';
+    final diff = DateTime.now().difference(createdAt!);
+    if (diff.inMinutes < 60) return '${diff.inMinutes} мин назад';
+    if (diff.inHours < 24) return '${diff.inHours} ч назад';
+    return '${diff.inDays} дн назад';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.fitness_center,
+                    color: AppColors.accent, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Незавершённая тренировка',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$workoutName · ${_timeAgo()}',
+                      style: const TextStyle(
+                          fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: onResume,
+              child: const Text('Продолжить'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: OutlinedButton(
+              onPressed: onRestart,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textPrimary,
+                side: const BorderSide(color: AppColors.textSecondary),
+              ),
+              child: const Text('Начать заново'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: TextButton(
+              onPressed: onDismiss,
+              child: const Text('Отмена',
+                  style: TextStyle(color: AppColors.textSecondary)),
             ),
           ),
         ],
