@@ -1,23 +1,79 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/services/auth_service.dart';
 
-/// Lightweight fire-and-forget event logger.
+/// Lightweight event logger with queue-based batching.
+///
+/// Events are buffered locally and flushed to Supabase either:
+/// - when the queue reaches [_batchSize] events, or
+/// - after [_flushInterval] of inactivity.
+/// Call [flushOnExit] when the app is backgrounded/detached to drain the queue.
+///
 /// All methods are safe to call without await — errors are silently swallowed
 /// so logging never breaks user-facing flows.
 class EventLogger {
   static SupabaseClient get _client => Supabase.instance.client;
+
+  static final List<Map<String, dynamic>> _queue = [];
+  static Timer? _flushTimer;
+
+  static const _batchSize = 20;
+  static const _maxQueueSize = 200;
+  static const _flushInterval = Duration(seconds: 30);
+
+  @visibleForTesting
+  static int get queueLength => _queue.length;
 
   // ─── Core ────────────────────────────────────────────────────────────────
 
   static void log(String event, {Map<String, dynamic>? props}) {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
+    if (_queue.length >= _maxQueueSize) return; // drop events at cap
 
-    _client.from('user_events').insert({
+    _queue.add({
       'user_id': userId,
       'event': event,
       if (props != null && props.isNotEmpty) 'props': props,
-    }).then((_) {}, onError: (_) {});
+      'created_at': DateTime.now().toUtc().toIso8601String(),
+    });
+
+    if (_queue.length >= _batchSize) {
+      _flush();
+    } else {
+      _flushTimer ??= Timer(_flushInterval, _flush);
+    }
+  }
+
+  static void _flush() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (_queue.isEmpty) return;
+
+    final batch = List<Map<String, dynamic>>.from(_queue);
+    _queue.clear();
+
+    _client.from('user_events').insert(batch).then(
+          (_) {},
+          onError: (e) => debugPrint('[EventLogger] flush failed: $e'),
+        );
+  }
+
+  /// Flush remaining events synchronously — call on app pause/detach.
+  static Future<void> flushOnExit() async {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (_queue.isEmpty) return;
+
+    final batch = List<Map<String, dynamic>>.from(_queue);
+    _queue.clear();
+
+    try {
+      await _client.from('user_events').insert(batch);
+    } catch (e) {
+      debugPrint('[EventLogger] flushOnExit failed: $e');
+    }
   }
 
   // ─── Workout ─────────────────────────────────────────────────────────────

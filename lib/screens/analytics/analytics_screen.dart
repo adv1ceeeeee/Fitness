@@ -48,36 +48,50 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final profile = await ProfileService.getProfile();
-    final total = await AnalyticsService.getTotalWorkouts();
-    final streak = await AnalyticsService.getBestStreak();
-    final weekCount = await AnalyticsService.getWorkoutsThisWeek();
-    final volume = await AnalyticsService.getVolumeThisWeek();
-    final tracked = await AnalyticsService.getTrackedExercises();
-    final bodyHistory = await BodyMetricsService.getHistory();
-    final achievements = await AchievementService.getAchievements();
+    try {
+      await Future(() async {
+        final profile = await ProfileService.getProfile();
+        final total = await AnalyticsService.getTotalWorkouts();
+        final streak = await AnalyticsService.getBestStreak();
+        final weekCount = await AnalyticsService.getWorkoutsThisWeek();
+        final volume = await AnalyticsService.getVolumeThisWeek();
+        final tracked = await AnalyticsService.getTrackedExercises();
+        final bodyHistory = await BodyMetricsService.getHistory();
+        final achievements = await AchievementService.getAchievements();
 
-    final bodyWeightData = <String, double>{};
-    for (final row in bodyHistory) {
-      final date = row['date'] as String?;
-      final w = row['weight_kg'];
-      if (date != null && w != null) {
-        bodyWeightData[date] = (w as num).toDouble();
+        final bodyWeightData = <String, double>{};
+        for (final row in bodyHistory) {
+          final date = row['date'] as String?;
+          final w = row['weight_kg'];
+          if (date != null && w != null) {
+            bodyWeightData[date] = (w as num).toDouble();
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _profile = profile;
+            _totalWorkouts = total;
+            _bestStreak = streak;
+            _workoutsThisWeek = weekCount;
+            _volumeThisWeek = volume;
+            _trackedExercises = tracked;
+            _bodyWeightData = bodyWeightData;
+            _achievements = achievements;
+            _loading = false;
+          });
+        }
+      }).timeout(const Duration(seconds: 15));
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Не удалось загрузить статистику'),
+            action: SnackBarAction(label: 'Повторить', onPressed: _load),
+          ),
+        );
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _profile = profile;
-        _totalWorkouts = total;
-        _bestStreak = streak;
-        _workoutsThisWeek = weekCount;
-        _volumeThisWeek = volume;
-        _trackedExercises = tracked;
-        _bodyWeightData = bodyWeightData;
-        _achievements = achievements;
-        _loading = false;
-      });
     }
   }
 
@@ -137,7 +151,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           onRefresh: _load,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.fromLTRB(
+                24, 24, 24, MediaQuery.of(context).padding.bottom + 80),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -163,31 +178,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   totalWorkouts: _totalWorkouts,
                 ),
                 const SizedBox(height: 12),
-                Material(
-                  color: AppColors.card,
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    onTap: () => context.push('/history'),
-                    borderRadius: BorderRadius.circular(14),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      child: Row(
-                        children: [
-                          Icon(Icons.history_rounded, color: AppColors.accent),
-                          SizedBox(width: 12),
-                          Text(
-                            'История тренировок',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          Spacer(),
-                          Icon(Icons.chevron_right, color: AppColors.textSecondary, size: 20),
-                        ],
-                      ),
-                    ),
-                  ),
+                _NavCard(
+                  icon: Icons.history_rounded,
+                  label: 'История тренировок',
+                  onTap: () => context.push('/history'),
+                ),
+                const SizedBox(height: 8),
+                _NavCard(
+                  icon: Icons.emoji_events_rounded,
+                  label: 'Личные рекорды',
+                  onTap: () => context.push('/records'),
                 ),
                 const SizedBox(height: 24),
                 const Text(
@@ -802,6 +802,41 @@ class _MiniStat extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NavCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _NavCard({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.accent),
+              const SizedBox(width: 12),
+              Text(label,
+                  style: const TextStyle(
+                      fontSize: 15, color: AppColors.textPrimary)),
+              const Spacer(),
+              const Icon(Icons.chevron_right,
+                  color: AppColors.textSecondary, size: 20),
+            ],
+          ),
+        ),
       ),
     );
   }

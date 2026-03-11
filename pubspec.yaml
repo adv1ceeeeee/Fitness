@@ -28,6 +28,7 @@ dependencies:
   crypto: ^3.0.3
   flutter_local_notifications: ^18.0.1
   timezone: ^0.9.4
+  sentry_flutter: ^8.13.2
 
 dev_dependencies:
   flutter_test:

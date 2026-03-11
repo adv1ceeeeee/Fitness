@@ -10,8 +10,20 @@ import 'package:sportwai/services/workout_service.dart';
 
 class AddExercisesScreen extends StatefulWidget {
   final String workoutId;
+  /// IDs of sections that come after this one (empty = single-section program).
+  final List<String> pendingSectionIds;
+  /// 0-based index of the current section (for display).
+  final int sectionIndex;
+  /// Total number of sections in the program.
+  final int totalSections;
 
-  const AddExercisesScreen({super.key, required this.workoutId});
+  const AddExercisesScreen({
+    super.key,
+    required this.workoutId,
+    this.pendingSectionIds = const [],
+    this.sectionIndex = 0,
+    this.totalSections = 1,
+  });
 
   @override
   State<AddExercisesScreen> createState() => _AddExercisesScreenState();
@@ -741,9 +753,29 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       catalogWidgets.addAll(_buildExerciseTiles(group.value));
     }
 
+    final isMultiSection = widget.totalSections > 1;
+    final sectionTitle = isMultiSection
+        ? '${widget.sectionIndex + 1}/${widget.totalSections}: ${workout?.name ?? ''}'
+        : (workout?.name ?? 'Программа');
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(workout?.name ?? 'Программа'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(sectionTitle),
+            if (days.isNotEmpty)
+              Text(
+                days.map((d) => _dayLabels[d]).join(' · '),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.go('/workouts'),
@@ -754,6 +786,24 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Редактировать программу',
               onPressed: _showEditWorkoutDialog,
+            ),
+          if (widget.pendingSectionIds.isNotEmpty)
+            TextButton(
+              onPressed: () => context.pushReplacement(
+                '/workouts/${widget.pendingSectionIds.first}/exercises',
+                extra: {
+                  'pendingIds': widget.pendingSectionIds.skip(1).toList(),
+                  'sectionIndex': widget.sectionIndex + 1,
+                  'totalSections': widget.totalSections,
+                },
+              ),
+              child: const Text(
+                'Далее →',
+                style: TextStyle(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
         ],
       ),
@@ -822,7 +872,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.fromLTRB(
+                  16, 0, 16, MediaQuery.of(context).padding.bottom + 80),
               children: [
                 // Упражнения в программе
                 if (_programExercises.isNotEmpty) ...[
@@ -1006,6 +1057,26 @@ class _ProgramExerciseCard extends StatelessWidget {
                           color: AppColors.textSecondary, size: 22),
                     ),
                   ),
+                  // Order number badge
+                  if (supersetLabel == null)
+                    Container(
+                      width: 24,
+                      height: 24,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${dragIndex + 1}',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   // Superset badge
                   if (supersetLabel != null) ...[
                     Container(

@@ -114,6 +114,65 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (updated == true) _loadProfile();
   }
 
+  void _showExportSheet(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(ctx).padding.bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Формат экспорта',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _ExportBtn(
+              icon: Icons.data_object,
+              label: 'JSON',
+              subtitle: 'Полный дамп всех данных',
+              onTap: () async {
+                Navigator.pop(ctx);
+                try {
+                  await ExportService.exportData();
+                } catch (_) {
+                  messenger.showSnackBar(const SnackBar(
+                      content: Text('Не удалось экспортировать данные')));
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            _ExportBtn(
+              icon: Icons.table_chart_outlined,
+              label: 'CSV',
+              subtitle: 'Таблица подходов для Excel / Google Sheets',
+              onTap: () async {
+                Navigator.pop(ctx);
+                try {
+                  await ExportService.exportCsv();
+                } catch (_) {
+                  messenger.showSnackBar(const SnackBar(
+                      content: Text('Не удалось экспортировать данные')));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -326,16 +385,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 borderRadius: BorderRadius.circular(12),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () async {
-                    final messenger = ScaffoldMessenger.of(context);
-                    try {
-                      await ExportService.exportData();
-                    } catch (e) {
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('Не удалось экспортировать данные')),
-                      );
-                    }
-                  },
+                  onTap: () => _showExportSheet(context),
                   child: const ListTile(
                     leading: Icon(Icons.download, color: AppColors.accent),
                     title: Text(
@@ -343,7 +393,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       style: TextStyle(color: AppColors.textPrimary),
                     ),
                     subtitle: Text(
-                      'Сохранить все тренировки и метрики в JSON',
+                      'Сохранить все тренировки и метрики',
                       style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                     ),
                   ),
@@ -555,6 +605,58 @@ class _SettingsRow extends StatelessWidget {
               Text(label,
                   style: const TextStyle(color: AppColors.textPrimary)),
               trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExportBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ExportBtn({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.accent, size: 22),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AppColors.textSecondary),
             ],
           ),
         ),

@@ -87,8 +87,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Не удалось загрузить календарь'),
+            action: SnackBarAction(label: 'Повторить', onPressed: _load),
+          ),
+        );
+      }
     }
   }
 
@@ -450,9 +458,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             color: AppColors.accent, label: 'Выполнено'),
                         const SizedBox(width: 16),
                         _LegendDot(
-                          color:
-                              AppColors.accent.withValues(alpha: 0.35),
+                          color: AppColors.accent.withValues(alpha: 0.35),
                           label: 'Запланировано',
+                        ),
+                        const SizedBox(width: 16),
+                        const _LegendDot(
+                          color: AppColors.error,
+                          label: 'Пропущено',
                         ),
                       ],
                     ),
@@ -863,7 +875,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
   List<Exercise> _exercises = [];
   // exerciseId → params
   final Map<String, _ExerciseParams> _selected = {};
-  String? _expandedId;
+  final Set<String> _expandedIds = {};
   bool _loading = true;
   bool _saving = false;
   String _search = '';
@@ -888,19 +900,23 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
   void _toggleExercise(String id) {
     setState(() {
       if (_selected.containsKey(id)) {
-        // already selected → deselect and collapse
         _selected.remove(id);
-        if (_expandedId == id) _expandedId = null;
+        _expandedIds.remove(id);
       } else {
-        // not selected → select with defaults and expand params
         _selected[id] = _ExerciseParams();
-        _expandedId = id;
+        _expandedIds.add(id);
       }
     });
   }
 
   void _toggleExpand(String id) {
-    setState(() => _expandedId = _expandedId == id ? null : id);
+    setState(() {
+      if (_expandedIds.contains(id)) {
+        _expandedIds.remove(id);
+      } else {
+        _expandedIds.add(id);
+      }
+    });
   }
 
   Future<void> _confirm() async {
@@ -913,12 +929,15 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
         cycleWeeks: 0,
       );
       for (final entry in _selected.entries) {
+        final exercise = _exercises.firstWhere((e) => e.id == entry.key);
+        final isCardio = exercise.category == 'cardio';
         await WorkoutService.addExerciseToWorkout(
           workout.id,
           entry.key,
-          sets: entry.value.sets,
-          repsRange: entry.value.repsRange,
-          restSeconds: entry.value.restSeconds,
+          sets: isCardio ? 1 : entry.value.sets,
+          repsRange: isCardio ? '1' : entry.value.repsRange,
+          restSeconds: isCardio ? 0 : entry.value.restSeconds,
+          durationMinutes: isCardio ? entry.value.durationMinutes : null,
         );
       }
       await TrainingService.scheduleSession(workout.id, widget.date);
@@ -1032,7 +1051,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                                 ...items.map((ex) {
                                   final params = _selected[ex.id];
                                   final isSelected = params != null;
-                                  final isExpanded = _expandedId == ex.id;
+                                  final isExpanded = _expandedIds.contains(ex.id);
                                   return _ExerciseItem(
                                     exercise: ex,
                                     isSelected: isSelected,
@@ -1101,14 +1120,26 @@ class _ExerciseParams {
   int sets;
   String repsRange;
   int restSeconds;
+  int durationMinutes;
 
-  _ExerciseParams({this.sets = 3, this.repsRange = '8-12', this.restSeconds = 90});
+  _ExerciseParams({
+    this.sets = 3,
+    this.repsRange = '8-12',
+    this.restSeconds = 90,
+    this.durationMinutes = 30,
+  });
 
-  _ExerciseParams copyWith({int? sets, String? repsRange, int? restSeconds}) =>
+  _ExerciseParams copyWith({
+    int? sets,
+    String? repsRange,
+    int? restSeconds,
+    int? durationMinutes,
+  }) =>
       _ExerciseParams(
         sets: sets ?? this.sets,
         repsRange: repsRange ?? this.repsRange,
         restSeconds: restSeconds ?? this.restSeconds,
+        durationMinutes: durationMinutes ?? this.durationMinutes,
       );
 }
 
@@ -1205,7 +1236,9 @@ class _ExerciseItemState extends State<_ExerciseItem> {
                           child: Row(
                             children: [
                               Text(
-                                '${p.sets}×${p.repsRange}',
+                                widget.exercise.category == 'cardio'
+                                    ? '${p.durationMinutes} мин'
+                                    : '${p.sets}×${p.repsRange}',
                                 style: const TextStyle(
                                   color: AppColors.textSecondary,
                                   fontSize: 12,
@@ -1253,105 +1286,156 @@ class _ExerciseItemState extends State<_ExerciseItem> {
                           const Divider(color: Color(0xFF2C2C2E), height: 1),
                           const SizedBox(height: 12),
 
-                          // Sets stepper
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text('Подходы',
-                                    style: TextStyle(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 13)),
-                              ),
-                              _Stepper(
-                                value: p.sets,
-                                min: 1,
-                                max: 10,
-                                onChanged: (v) =>
-                                    _updateParams(p.copyWith(sets: v)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Reps range
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text('Повторения',
-                                    style: TextStyle(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 13)),
-                              ),
-                              SizedBox(
-                                width: 80,
-                                child: TextField(
-                                  controller: _repsCtrl,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                      color: AppColors.textPrimary,
-                                      fontSize: 14),
-                                  decoration: InputDecoration(
-                                    filled: true,
-                                    fillColor: AppColors.card,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 8),
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                  ),
-                                  onChanged: (v) =>
-                                      _updateParams(p.copyWith(repsRange: v)),
+                          if (widget.exercise.category == 'cardio') ...[
+                            // Cardio: duration slider only
+                            const Text('Длительность',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13)),
+                            const SizedBox(height: 8),
+                            Center(
+                              child: Text(
+                                '${p.durationMinutes} мин',
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Rest presets
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text('Отдых',
+                            ),
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: AppColors.accent,
+                                inactiveTrackColor:
+                                    AppColors.accent.withValues(alpha: 0.2),
+                                thumbColor: AppColors.accent,
+                                overlayColor:
+                                    AppColors.accent.withValues(alpha: 0.12),
+                              ),
+                              child: Slider(
+                                value: p.durationMinutes.clamp(5, 120).toDouble(),
+                                min: 5,
+                                max: 120,
+                                divisions: 23,
+                                label: '${p.durationMinutes} мин',
+                                onChanged: (v) => _updateParams(
+                                    p.copyWith(
+                                        durationMinutes: (v / 5).round() * 5)),
+                              ),
+                            ),
+                            const Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('5 мин',
                                     style: TextStyle(
                                         color: AppColors.textSecondary,
-                                        fontSize: 13)),
-                              ),
-                              Wrap(
-                                spacing: 6,
-                                children: [60, 90, 120, 180].map((sec) {
-                                  final active = p.restSeconds == sec;
-                                  return GestureDetector(
-                                    onTap: () => _updateParams(
-                                        p.copyWith(restSeconds: sec)),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: active
-                                            ? AppColors.accent
-                                            : AppColors.card,
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        '${sec}с',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: active
-                                              ? Colors.white
-                                              : AppColors.textSecondary,
-                                          fontWeight: active
-                                              ? FontWeight.w600
-                                              : FontWeight.w400,
-                                        ),
+                                        fontSize: 11)),
+                                Text('120 мин',
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11)),
+                              ],
+                            ),
+                          ] else ...[
+                            // Regular exercise: sets / reps / rest
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text('Подходы',
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 13)),
+                                ),
+                                _Stepper(
+                                  value: p.sets,
+                                  min: 1,
+                                  max: 10,
+                                  onChanged: (v) =>
+                                      _updateParams(p.copyWith(sets: v)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text('Повторения',
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 13)),
+                                ),
+                                SizedBox(
+                                  width: 80,
+                                  child: TextField(
+                                    controller: _repsCtrl,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 14),
+                                    decoration: InputDecoration(
+                                      filled: true,
+                                      fillColor: AppColors.card,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 8),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide.none,
                                       ),
                                     ),
-                                  );
-                                }).toList(),
-                              ),
-                            ],
-                          ),
+                                    onChanged: (v) =>
+                                        _updateParams(p.copyWith(repsRange: v)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text('Отдых',
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 13)),
+                                ),
+                                Wrap(
+                                  spacing: 6,
+                                  children: [60, 90, 120, 180].map((sec) {
+                                    final active = p.restSeconds == sec;
+                                    return GestureDetector(
+                                      onTap: () => _updateParams(
+                                          p.copyWith(restSeconds: sec)),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: active
+                                              ? AppColors.accent
+                                              : AppColors.card,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '$secс',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: active
+                                                ? Colors.white
+                                                : AppColors.textSecondary,
+                                            fontWeight: active
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     )
@@ -1463,6 +1547,9 @@ class _DayCell extends StatelessWidget {
     final hasCompleted = events.any((e) => e.completed);
     // Show semi-transparent dot for any upcoming event (cyclic OR one-time scheduled)
     final hasPlanned = events.any((e) => !e.completed);
+    final today = DateTime.now();
+    final isPast = day.isBefore(DateTime(today.year, today.month, today.day));
+    final hasMissed = isPast && hasPlanned && !hasCompleted;
 
     // Selected circle is independently sized so the text stays at 14px
     final content = Column(
@@ -1502,7 +1589,9 @@ class _DayCell extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? Colors.black.withValues(alpha: 0.5)
-                        : AppColors.accent.withValues(alpha: 0.5),
+                        : hasMissed
+                            ? AppColors.error
+                            : AppColors.accent.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                   ),
                 ),

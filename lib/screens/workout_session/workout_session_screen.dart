@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
@@ -10,7 +11,9 @@ import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
+import 'package:sportwai/services/workout_service.dart';
 
 enum _SessionPhase { warmup, exercise, cooldown }
 
@@ -51,6 +54,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   int _totalExpectedSets = 0;
   int _currentExerciseIndex = 0;
   bool _loading = true;
+  bool _loadError = false;
   _SessionPhase _phase = _SessionPhase.exercise;
   int _warmupMinutes = 0;
   int _cooldownMinutes = 0;
@@ -58,6 +62,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   Timer? _phaseTimer;
   bool _resting = false;
   int _restSeconds = 0;
+  int _targetRestSeconds = 0;
   Timer? _restTimer;
   bool _goToNextAfterRest = false;
   DateTime? _restStartedAt;
@@ -111,11 +116,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   }
 
   Future<void> _loadSession() async {
+    if (mounted) setState(() => _loadError = false);
+    try {
     final sessionRes = await Supabase.instance.client
         .from('training_sessions')
         .select('workout_id')
         .eq('id', widget.sessionId)
-        .single();
+        .single()
+        .timeout(const Duration(seconds: 15));
 
     final workoutId = sessionRes['workout_id'] as String;
 
@@ -158,6 +166,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         }
       });
       if (warmupMins > 0) _startPhaseTimer();
+    }
+    } catch (e, st) {
+      debugPrint('_loadSession error: $e\n$st');
+      if (mounted) setState(() { _loading = false; _loadError = true; });
     }
   }
 
@@ -334,16 +346,21 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
   }
 
-  void _startRest(int _, {required bool goToNext}) {
+  void _startRest(int targetSeconds, {required bool goToNext}) {
     _restTimer?.cancel();
     _goToNextAfterRest = goToNext;
     _restStartedAt = DateTime.now();
+    _targetRestSeconds = targetSeconds;
     setState(() {
       _resting = true;
       _restSeconds = 0;
     });
     _restTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (mounted) setState(() => _restSeconds++);
+      if (!mounted) return;
+      setState(() => _restSeconds++);
+      if (_restSeconds == _targetRestSeconds && _targetRestSeconds > 0) {
+        HapticFeedback.heavyImpact();
+      }
     });
   }
 
@@ -381,6 +398,71 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       _sets.add(_SetData(reps: defaultReps));
       _weightControllers.add(TextEditingController());
     });
+  }
+
+  Future<void> _showReplaceExercise() async {
+    final exercises = await ExerciseService.getExercises();
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Exercise>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (_, sc) => Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Заменить упражнение',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                controller: sc,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: exercises.length,
+                itemBuilder: (_, i) {
+                  final ex = exercises[i];
+                  return ListTile(
+                    title: Text(ex.name,
+                        style: const TextStyle(color: AppColors.textPrimary)),
+                    subtitle: Text(
+                      Exercise.categoryDisplayName(ex.category),
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                    onTap: () => Navigator.pop(ctx, ex),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final we = _currentExercise!;
+    // Persist the replacement to the workout_exercise record
+    await WorkoutService.updateExerciseInWorkout(we.id, picked.id);
+    // Update local state
+    final updated = we.copyWithExercise(picked);
+    setState(() {
+      _exercises[_currentExerciseIndex] = updated;
+      _initExercise(updated);
+    });
+    // Load last sets for new exercise
+    final lastSets = await AnalyticsService.getLastSetsForExercises([picked.id]);
+    if (mounted) setState(() => _lastSets[picked.id] = lastSets[picked.id] ?? {});
   }
 
   void _confirmExit() {
@@ -446,6 +528,24 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    if (_loadError) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Тренировка')),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Не удалось загрузить тренировку', textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadSession,
+                child: const Text('Повторить'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_exercises.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Тренировка')),
@@ -463,6 +563,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     if (_resting) {
       return _RestScreen(
         seconds: _restSeconds,
+        targetSeconds: _targetRestSeconds,
         onSkip: _skipRest,
         onExit: _confirmExit,
       );
@@ -489,6 +590,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.swap_horiz_rounded),
+              tooltip: 'Заменить упражнение',
+              onPressed: _showReplaceExercise,
+            ),
+          ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(4),
             child: LinearProgressIndicator(
@@ -1108,11 +1216,13 @@ class _PhaseScreen extends StatelessWidget {
 
 class _RestScreen extends StatelessWidget {
   final int seconds;
+  final int targetSeconds;
   final VoidCallback onSkip;
   final VoidCallback onExit;
 
   const _RestScreen({
     required this.seconds,
+    required this.targetSeconds,
     required this.onSkip,
     required this.onExit,
   });
@@ -1123,6 +1233,10 @@ class _RestScreen extends StatelessWidget {
     final s = seconds % 60;
     final timeStr =
         '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    final done = targetSeconds > 0 && seconds >= targetSeconds;
+    final progress = targetSeconds > 0
+        ? (seconds / targetSeconds).clamp(0.0, 1.0)
+        : 0.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -1138,17 +1252,42 @@ class _RestScreen extends StatelessWidget {
           children: [
             Text(
               timeStr,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 72,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: done ? AppColors.accent : AppColors.textPrimary,
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              'Отдых',
-              style: TextStyle(fontSize: 20, color: AppColors.textSecondary),
-            ),
+            const SizedBox(height: 8),
+            if (targetSeconds > 0) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 48),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 6,
+                    backgroundColor: AppColors.surface,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      done ? AppColors.accent : AppColors.accent.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                done ? 'Можно продолжать!' : 'Цель: ${targetSeconds ~/ 60}:${(targetSeconds % 60).toString().padLeft(2, '0')}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: done ? AppColors.accent : AppColors.textSecondary,
+                  fontWeight: done ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ] else
+              const Text(
+                'Отдых',
+                style: TextStyle(fontSize: 20, color: AppColors.textSecondary),
+              ),
             const SizedBox(height: 48),
             SizedBox(
               width: 200,

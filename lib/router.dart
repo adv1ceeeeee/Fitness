@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/screens/auth/welcome_screen.dart';
 import 'package:sportwai/screens/auth/login_screen.dart';
 import 'package:sportwai/screens/auth/register_screen.dart';
@@ -21,6 +22,7 @@ import 'package:sportwai/screens/main_shell.dart';
 import 'package:sportwai/screens/onboarding/onboarding_check_screen.dart';
 import 'package:sportwai/screens/history/history_screen.dart';
 import 'package:sportwai/screens/profile/body_metrics_screen.dart';
+import 'package:sportwai/screens/analytics/personal_records_screen.dart';
 
 // ── Transition helpers ────────────────────────────────────────────────────────
 
@@ -60,6 +62,22 @@ CustomTransitionPage<void> _fadePage(GoRouterState state, Widget child) {
   );
 }
 
+// ─── Analytics observer ───────────────────────────────────────────────────────
+
+class _ScreenViewObserver extends NavigatorObserver {
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    final name = route.settings.name;
+    if (name != null && name.isNotEmpty) EventLogger.screenView(name);
+  }
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) {
+    final name = newRoute?.settings.name;
+    if (name != null && name.isNotEmpty) EventLogger.screenView(name);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppRouter {
@@ -68,6 +86,7 @@ class AppRouter {
 
   static final router = GoRouter(
     navigatorKey: _rootNavigatorKey,
+    observers: [_ScreenViewObserver()],
     initialLocation: '/',
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
@@ -190,7 +209,17 @@ class AppRouter {
             path: '/workouts/:id/exercises',
             pageBuilder: (context, state) {
               final id = state.pathParameters['id']!;
-              return _slideUpPage(state, AddExercisesScreen(workoutId: id));
+              final extra = state.extra as Map<String, dynamic>?;
+              return _slideUpPage(
+                state,
+                AddExercisesScreen(
+                  workoutId: id,
+                  pendingSectionIds:
+                      (extra?['pendingIds'] as List?)?.cast<String>() ?? [],
+                  sectionIndex: extra?['sectionIndex'] as int? ?? 0,
+                  totalSections: extra?['totalSections'] as int? ?? 1,
+                ),
+              );
             },
           ),
           GoRoute(
@@ -202,6 +231,11 @@ class AppRouter {
             path: '/history',
             pageBuilder: (context, state) =>
                 _slideUpPage(state, const HistoryScreen()),
+          ),
+          GoRoute(
+            path: '/records',
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const PersonalRecordsScreen()),
           ),
         ],
       ),

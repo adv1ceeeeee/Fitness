@@ -36,7 +36,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
 
   Future<void> _loadWorkouts() async {
     try {
-      final list = await WorkoutService.getMyWorkouts();
+      final list = await WorkoutService.getMyWorkouts()
+          .timeout(const Duration(seconds: 15));
       final inactiveIds =
           list.where((w) => w.days.isEmpty).map((w) => w.id).toList();
       final info =
@@ -260,6 +261,20 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     }
   }
 
+  Future<void> _duplicateWorkout(Workout w) async {
+    setState(() => _openSwipeId = null);
+    try {
+      await WorkoutService.duplicateWorkout(w.id);
+      widget.onRefresh();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось скопировать программу')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final sorted = _sortedWorkouts;
@@ -320,12 +335,41 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                   ),
                 ),
               if (sorted.isEmpty && inactive.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(32),
-                  child: Text(
-                    'Пока нет программ.\nСоздайте первую!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 32),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.fitness_center_rounded,
+                          size: 48,
+                          color: AppColors.accent,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Нет программ тренировок',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Создайте свою или выберите\nготовую во вкладке «Стандартные»',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -377,6 +421,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                   onTap: () => widget.onWorkoutTap(sorted[i]),
                   onToggleHide: () => _toggleHidden(sorted[i].id),
                   onDelete: () => _confirmDelete(sorted[i]),
+                  onCopy: () => _duplicateWorkout(sorted[i]),
                 ),
               ),
           ],
@@ -397,6 +442,7 @@ class _SwipeableCard extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onToggleHide;
   final VoidCallback onDelete;
+  final VoidCallback onCopy;
 
   const _SwipeableCard({
     required this.workout,
@@ -407,6 +453,7 @@ class _SwipeableCard extends StatefulWidget {
     required this.onTap,
     required this.onToggleHide,
     required this.onDelete,
+    required this.onCopy,
   });
 
   @override
@@ -418,7 +465,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
   late AnimationController _ctrl;
   late Animation<double> _anim;
 
-  static const _actionWidth = 116.0;
+  static const _actionWidth = 160.0;
 
   @override
   void initState() {
@@ -483,6 +530,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
                         isHidden: widget.isHidden,
                         onToggleHide: widget.onToggleHide,
                         onDelete: widget.onDelete,
+                        onCopy: widget.onCopy,
                       ),
                     ),
                   ),
@@ -525,13 +573,27 @@ class _ActionPanel extends StatelessWidget {
   final bool isHidden;
   final VoidCallback onToggleHide;
   final VoidCallback onDelete;
+  final VoidCallback onCopy;
 
   const _ActionPanel({
     required this.width,
     required this.isHidden,
     required this.onToggleHide,
     required this.onDelete,
+    required this.onCopy,
   });
+
+  Widget _btn({required VoidCallback onTap, required IconData icon, required Color bg, Color iconColor = Colors.white}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+        child: Icon(icon, color: iconColor, size: 20),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -541,39 +603,22 @@ class _ActionPanel extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Eye toggle
-          GestureDetector(
+          _btn(
             onTap: onToggleHide,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.textSecondary.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                isHidden ? Icons.visibility_off : Icons.visibility,
-                color: AppColors.textSecondary,
-                size: 22,
-              ),
-            ),
+            icon: isHidden ? Icons.visibility_off : Icons.visibility,
+            bg: AppColors.textSecondary.withValues(alpha: 0.15),
+            iconColor: AppColors.textSecondary,
           ),
-          // Delete button
-          GestureDetector(
+          _btn(
+            onTap: onCopy,
+            icon: Icons.copy_rounded,
+            bg: AppColors.accent.withValues(alpha: 0.15),
+            iconColor: AppColors.accent,
+          ),
+          _btn(
             onTap: onDelete,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(
-                color: AppColors.error,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.delete_outline,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
+            icon: Icons.delete_outline,
+            bg: AppColors.error,
           ),
         ],
       ),

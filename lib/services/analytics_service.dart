@@ -1,5 +1,15 @@
+import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/services/auth_service.dart';
+
+/// Compact data about one notable improvement vs the previous session.
+typedef WorkoutInsight = ({
+  String exerciseName,
+  double prevValue,
+  double newValue,
+  bool isWeight, // true = weight kg, false = total reps
+  String sessionDate, // 'yyyy-MM-dd'
+});
 
 class AnalyticsService {
   static SupabaseClient get _client => Supabase.instance.client;
@@ -267,6 +277,127 @@ class AnalyticsService {
     return result;
   }
 
+  /// Compares the last two completed sessions of the same workout and returns
+  /// the most notable improvement (weight PR or reps increase), or null if
+  /// there is nothing to highlight.
+  static Future<WorkoutInsight?> getLastWorkoutInsight() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+
+    // Last 5 completed sessions (enough to find a pair for the same workout)
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, workout_id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(5);
+
+    final sessions = (sessRes as List).cast<Map<String, dynamic>>();
+    if (sessions.length < 2) return null;
+
+    final latest = sessions[0];
+
+    // Find the most recent previous session for the same workout
+    Map<String, dynamic>? prev;
+    for (int i = 1; i < sessions.length; i++) {
+      if (sessions[i]['workout_id'] == latest['workout_id']) {
+        prev = sessions[i];
+        break;
+      }
+    }
+    if (prev == null) return null;
+
+    final latestId = latest['id'] as String;
+    final prevId = prev['id'] as String;
+
+    // Sets for both sessions
+    final allSets = await _client
+        .from('sets')
+        .select('training_session_id, workout_exercise_id, weight, reps')
+        .inFilter('training_session_id', [latestId, prevId])
+        .eq('completed', true);
+
+    final sets = (allSets as List).cast<Map<String, dynamic>>();
+    if (sets.isEmpty) return null;
+
+    // Exercise names for the workout_exercise IDs in these sets
+    final weIds =
+        sets.map((s) => s['workout_exercise_id'] as String).toSet().toList();
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(name)')
+        .inFilter('id', weIds);
+
+    final exerciseNames = <String, String>{};
+    for (final we in weRes as List) {
+      final ex = (we as Map)['exercises'] as Map?;
+      if (ex != null) exerciseNames[we['id'] as String] = ex['name'] as String;
+    }
+
+    // Aggregate per session
+    final latestMaxW = <String, double>{};
+    final latestReps = <String, int>{};
+    final prevMaxW = <String, double>{};
+    final prevReps = <String, int>{};
+
+    for (final s in sets) {
+      final sid = s['training_session_id'] as String;
+      final weId = s['workout_exercise_id'] as String;
+      final w = (s['weight'] as num?)?.toDouble() ?? 0;
+      final r = (s['reps'] as num?)?.toInt() ?? 0;
+
+      if (sid == latestId) {
+        latestMaxW[weId] = max(latestMaxW[weId] ?? 0, w);
+        latestReps[weId] = (latestReps[weId] ?? 0) + r;
+      } else if (sid == prevId) {
+        prevMaxW[weId] = max(prevMaxW[weId] ?? 0, w);
+        prevReps[weId] = (prevReps[weId] ?? 0) + r;
+      }
+    }
+
+    // Best weight improvement
+    String? bestWeId;
+    double bestDiff = 0;
+    for (final weId in latestMaxW.keys) {
+      if (!exerciseNames.containsKey(weId)) continue;
+      final lw = latestMaxW[weId] ?? 0;
+      final pw = prevMaxW[weId] ?? 0;
+      if (lw > 0 && pw > 0 && lw > pw && (lw - pw) > bestDiff) {
+        bestDiff = lw - pw;
+        bestWeId = weId;
+      }
+    }
+    if (bestWeId != null) {
+      return (
+        exerciseName: exerciseNames[bestWeId]!,
+        prevValue: prevMaxW[bestWeId]!,
+        newValue: latestMaxW[bestWeId]!,
+        isWeight: true,
+        sessionDate: latest['date'] as String,
+      );
+    }
+
+    // Best reps improvement (only if weight unchanged or exercise has no weight)
+    for (final weId in latestReps.keys) {
+      if (!exerciseNames.containsKey(weId)) continue;
+      final lr = latestReps[weId] ?? 0;
+      final pr = prevReps[weId] ?? 0;
+      if (lr > pr && pr > 0) {
+        return (
+          exerciseName: exerciseNames[weId]!,
+          prevValue: pr.toDouble(),
+          newValue: lr.toDouble(),
+          isWeight: false,
+          sessionDate: latest['date'] as String,
+        );
+      }
+    }
+
+    return null;
+  }
+
   static Future<double> getVolumeThisWeek() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
@@ -297,5 +428,79 @@ class AnalyticsService {
       volume += w * r;
     }
     return volume;
+  }
+
+  /// Returns the all-time personal best (max weight) per exercise.
+  /// Result: list of {exerciseName, exerciseId, weightKg, date}.
+  static Future<List<Map<String, dynamic>>> getPersonalRecords() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('completed', true);
+    final sessionIds =
+        (sessionsRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return [];
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id, weight, training_session_id')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .not('weight', 'is', null);
+
+    // Find max weight per workout_exercise_id
+    final maxPerWe = <String, double>{};
+    final datePerWe = <String, String>{};
+    final sessionDates = <String, String>{};
+    final sessionsListRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .inFilter('id', sessionIds);
+    for (final s in sessionsListRes as List) {
+      sessionDates[s['id'] as String] = s['date'] as String;
+    }
+    for (final set in setsRes as List) {
+      final weId = set['workout_exercise_id'] as String;
+      final w = (set['weight'] as num).toDouble();
+      final sid = set['training_session_id'] as String;
+      if (!maxPerWe.containsKey(weId) || w > maxPerWe[weId]!) {
+        maxPerWe[weId] = w;
+        datePerWe[weId] = sessionDates[sid] ?? '';
+      }
+    }
+    if (maxPerWe.isEmpty) return [];
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(id, name)')
+        .inFilter('id', maxPerWe.keys.toList());
+
+    // Deduplicate by exercise_id — keep the highest weight
+    final bestByExercise = <String, Map<String, dynamic>>{};
+    for (final we in weRes as List) {
+      final ex = we['exercises'] as Map<String, dynamic>?;
+      if (ex == null) continue;
+      final exerciseId = ex['id'] as String;
+      final weId = we['id'] as String;
+      final w = maxPerWe[weId] ?? 0;
+      if (!bestByExercise.containsKey(exerciseId) ||
+          w > (bestByExercise[exerciseId]!['weightKg'] as double)) {
+        bestByExercise[exerciseId] = {
+          'exerciseId': exerciseId,
+          'exerciseName': ex['name'] as String,
+          'weightKg': w,
+          'date': datePerWe[weId] ?? '',
+        };
+      }
+    }
+
+    final result = bestByExercise.values.toList();
+    result.sort((a, b) => (a['exerciseName'] as String)
+        .compareTo(b['exerciseName'] as String));
+    return result;
   }
 }

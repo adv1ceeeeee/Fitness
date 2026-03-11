@@ -26,17 +26,59 @@ class WorkoutService {
     String name,
     List<int> days, {
     int cycleWeeks = 8,
+    String? groupId,
   }) async {
-    final userId = AuthService.currentUser!.id;
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) throw StateError('createWorkout called while not authenticated');
     final res = await _client.from('workouts').insert({
       'user_id': userId,
       'name': name,
       'days': days,
       'is_standard': false,
       'cycle_weeks': cycleWeeks,
+      if (groupId != null) 'group_id': groupId,
     }).select().single();
 
     return Workout.fromJson(res);
+  }
+
+  /// Creates multiple workouts that form a multi-section program.
+  /// All sections share the same group_id (= first workout's id).
+  static Future<List<Workout>> createWorkoutGroup(
+    List<({String name, List<int> days, int cycleWeeks})> sections,
+  ) async {
+    if (sections.isEmpty || sections.length > 7) {
+      throw ArgumentError('sections must have 1–7 entries, got ${sections.length}');
+    }
+
+    // Create first section to get the group ID
+    final first = await createWorkout(
+      sections.first.name,
+      sections.first.days,
+      cycleWeeks: sections.first.cycleWeeks,
+    );
+
+    if (sections.length == 1) return [first];
+
+    // Use first workout's id as group_id for all sections
+    final groupId = first.id;
+    await _client
+        .from('workouts')
+        .update({'group_id': groupId})
+        .eq('id', first.id);
+
+    final rest = await Future.wait(
+      sections.skip(1).map(
+            (s) => createWorkout(
+              s.name,
+              s.days,
+              cycleWeeks: s.cycleWeeks,
+              groupId: groupId,
+            ),
+          ),
+    );
+
+    return [first, ...rest];
   }
 
   static Future<void> addExerciseToWorkout(
@@ -153,9 +195,45 @@ class WorkoutService {
 
   static const _absent = Object();
 
+  /// Replaces the exercise_id of a workout_exercise row (used during session swap).
+  static Future<void> updateExerciseInWorkout(
+      String workoutExerciseId, String newExerciseId) async {
+    await _client
+        .from('workout_exercises')
+        .update({'exercise_id': newExerciseId})
+        .eq('id', workoutExerciseId);
+  }
+
   /// Delete a workout and all its exercises.
   static Future<void> deleteWorkout(String id) async {
     await _client.from('workout_exercises').delete().eq('workout_id', id);
     await _client.from('workouts').delete().eq('id', id);
+  }
+
+  /// Creates a copy of a workout with all its exercises.
+  /// The new workout gets name "Копия: <original>" and same days/settings.
+  static Future<Workout> duplicateWorkout(String id) async {
+    final original = await getWorkout(id);
+    if (original == null) throw StateError('Workout $id not found');
+
+    final copy = await createWorkout(
+      'Копия: ${original.name}',
+      original.days,
+      cycleWeeks: original.cycleWeeks,
+    );
+
+    final exercises = await getWorkoutExercises(id);
+    for (final we in exercises) {
+      await addExerciseToWorkout(
+        copy.id,
+        we.exerciseId,
+        sets: we.sets,
+        repsRange: we.repsRange,
+        restSeconds: we.restSeconds,
+        targetWeight: we.targetWeight,
+        durationMinutes: we.durationMinutes,
+      );
+    }
+    return copy;
   }
 }

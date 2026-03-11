@@ -31,6 +31,21 @@ class WorkoutExercise {
 
   bool get isCardio => exercise?.category == 'cardio';
 
+  WorkoutExercise copyWithExercise(Exercise newExercise) => WorkoutExercise(
+        id: id,
+        workoutId: workoutId,
+        exerciseId: newExercise.id,
+        order: order,
+        sets: sets,
+        repsRange: repsRange,
+        restSeconds: restSeconds,
+        targetWeight: targetWeight,
+        targetRpe: targetRpe,
+        durationMinutes: durationMinutes,
+        supersetGroup: supersetGroup,
+        exercise: newExercise,
+      );
+
   factory WorkoutExercise.fromJson(Map<String, dynamic> json) {
     return WorkoutExercise(
       id: json['id'] as String,

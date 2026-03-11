@@ -39,6 +39,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
 
+    // Validate numeric fields
+    final ageText = _ageController.text.trim();
+    final weightText = _weightController.text.trim().replaceAll(',', '.');
+    if (ageText.isNotEmpty) {
+      final age = int.tryParse(ageText);
+      if (age == null || age < 1 || age > 120) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Укажи реальный возраст (1–120 лет)')),
+          );
+        }
+        return;
+      }
+    }
+    if (weightText.isNotEmpty) {
+      final weight = double.tryParse(weightText);
+      if (weight == null || weight < 1 || weight > 500) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Укажи реальный вес (1–500 кг)')),
+          );
+        }
+        return;
+      }
+    }
+
     final now = DateTime.now();
     final months = (now.year - _trainingStart.year) * 12 +
         (now.month - _trainingStart.month);
@@ -52,12 +78,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     await ProfileService.updateProfile({
       'gender': _gender,
-      'age': _ageController.text.isNotEmpty
-          ? int.tryParse(_ageController.text)
-          : null,
-      'weight': _weightController.text.isNotEmpty
-          ? double.tryParse(_weightController.text.replaceAll(',', '.'))
-          : null,
+      'age': ageText.isNotEmpty ? int.tryParse(ageText) : null,
+      'weight': weightText.isNotEmpty ? double.tryParse(weightText) : null,
       'goal': _goal,
       'level': level,
       'training_start_date': startDateStr,
@@ -357,7 +379,7 @@ class _Page3State extends State<_Page3> {
     'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
     'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
   ];
-  static final int _startYear = 1970;
+  static const int _startYear = 1970;
   static final int _endYear = DateTime.now().year;
 
   late final FixedExtentScrollController _monthCtrl;
