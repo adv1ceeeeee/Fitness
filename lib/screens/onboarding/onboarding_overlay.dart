@@ -6,6 +6,7 @@ import 'package:sportwai/config/theme.dart';
 Future<void> showOnboardingIfNeeded(BuildContext context) async {
   return showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     isScrollControlled: true,
     isDismissible: false,
     enableDrag: false,

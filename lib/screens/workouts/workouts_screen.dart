@@ -335,42 +335,45 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                   ),
                 ),
               if (sorted.isEmpty && inactive.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 32),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
+                SizedBox(
+                  height: MediaQuery.of(context).size.height - 300,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.fitness_center_rounded,
+                            size: 48,
+                            color: AppColors.accent,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.fitness_center_rounded,
-                          size: 48,
-                          color: AppColors.accent,
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Нет программ тренировок',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Нет программ тренировок',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Создайте свою или выберите\nготовую во вкладке «Стандартные»',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Создайте свою или выберите\nготовую во вкладке «Стандартные»',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
             ],

@@ -37,7 +37,40 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Map<String, double> _exerciseProgress = {};
   bool _loadingChart = false;
 
-  Map<String, double> _bodyWeightData = {};
+  List<Map<String, dynamic>> _bodyHistory = [];
+  String _selectedBodyMetric = 'weight_kg';
+
+  static const _bodyMetricOptions = <String, String>{
+    'weight_kg':        'Вес (кг)',
+    'neck_cm':          'Шея (см)',
+    'shoulders_cm':     'Плечи (см)',
+    'chest_cm':         'Грудь (см)',
+    'waist_cm':         'Талия (см)',
+    'hips_cm':          'Бёдра (см)',
+    'left_thigh_cm':    'Бедро лев. (см)',
+    'right_thigh_cm':   'Бедро пр. (см)',
+    'left_calf_cm':     'Голень лев. (см)',
+    'right_calf_cm':    'Голень пр. (см)',
+    'left_forearm_cm':  'Предплечье лев. (см)',
+    'right_forearm_cm': 'Предплечье пр. (см)',
+  };
+
+  Map<String, double> get _bodyMetricData {
+    final result = <String, double>{};
+    for (final row in _bodyHistory) {
+      final date = row['date'] as String?;
+      final v = row[_selectedBodyMetric];
+      if (date != null && v != null) {
+        result[date] = (v as num).toDouble();
+      }
+    }
+    return result;
+  }
+
+  List<String> get _availableBodyMetrics => _bodyMetricOptions.keys
+      .where((k) => _bodyHistory.any((r) => r[k] != null))
+      .toList();
+
   List<Achievement> _achievements = [];
   List<Map<String, dynamic>> _weeklyVolume = [];
   Map<String, int> _muscleBalance = {};
@@ -63,15 +96,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final weeklyVol = await AnalyticsService.getWeeklyVolumeHistory();
         final muscleBalance = await AnalyticsService.getMuscleGroupBalance();
 
-        final bodyWeightData = <String, double>{};
-        for (final row in bodyHistory) {
-          final date = row['date'] as String?;
-          final w = row['weight_kg'];
-          if (date != null && w != null) {
-            bodyWeightData[date] = (w as num).toDouble();
-          }
-        }
-
         if (mounted) {
           setState(() {
             _profile = profile;
@@ -80,7 +104,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _workoutsThisWeek = weekCount;
             _volumeThisWeek = volume;
             _trackedExercises = tracked;
-            _bodyWeightData = bodyWeightData;
+            _bodyHistory = bodyHistory;
             _achievements = achievements;
             _weeklyVolume = weeklyVol;
             _muscleBalance = muscleBalance;
@@ -240,7 +264,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 _VolumeBarChart(weeks: _weeklyVolume),
                 const SizedBox(height: 32),
                 const Text(
-                  'Динамика веса тела',
+                  'Динамика параметров тела',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -248,7 +272,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (_bodyWeightData.isEmpty)
+                if (_bodyHistory.isEmpty)
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
@@ -263,8 +287,53 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       ),
                     ),
                   )
-                else
-                  _ProgressChart(data: _bodyWeightData),
+                else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: DropdownButton<String>(
+                      value: _availableBodyMetrics.contains(_selectedBodyMetric)
+                          ? _selectedBodyMetric
+                          : _availableBodyMetrics.first,
+                      isExpanded: true,
+                      underline: const SizedBox.shrink(),
+                      dropdownColor: AppColors.card,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                      items: _availableBodyMetrics.map((key) {
+                        return DropdownMenuItem<String>(
+                          value: key,
+                          child: Text(_bodyMetricOptions[key] ?? key),
+                        );
+                      }).toList(),
+                      onChanged: (key) {
+                        if (key != null) {
+                          setState(() => _selectedBodyMetric = key);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_bodyMetricData.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppColors.card,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Нет данных по этому параметру',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    )
+                  else
+                    _ProgressChart(data: _bodyMetricData),
+                ],
                 const SizedBox(height: 32),
                 const Text(
                   'Прогресс по упражнению',
@@ -1039,82 +1108,86 @@ class _MuscleBalanceChart extends StatelessWidget {
         title: '${(pct * 100).round()}%',
         titleStyle: const TextStyle(
           color: Colors.white,
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
-        radius: 52,
+        radius: 21,
         titlePositionPercentageOffset: 0.65,
       );
     }).toList();
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 160,
-            height: 160,
-            child: PieChart(
-              PieChartData(
-                sections: sections,
-                centerSpaceRadius: 42,
-                sectionsSpace: 2,
-                startDegreeOffset: -90,
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 140,
+              height: 140,
+              child: PieChart(
+                PieChartData(
+                  sections: sections,
+                  centerSpaceRadius: 52,
+                  sectionsSpace: 2,
+                  startDegreeOffset: -90,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: entries.asMap().entries.map((e) {
-                final colorIndex = e.key % _colors.length;
-                final cat = e.value.key;
-                final count = e.value.value;
-                final pct = count / total;
-                final label = _labels[cat] ?? cat;
-                final color = _colors[colorIndex];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 7),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
+            const SizedBox(width: 20),
+            SizedBox(
+              width: 160,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: entries.asMap().entries.map((e) {
+                  final colorIndex = e.key % _colors.length;
+                  final cat = e.value.key;
+                  final count = e.value.value;
+                  final pct = count / total;
+                  final label = _labels[cat] ?? cat;
+                  final color = _colors[colorIndex];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          label,
-                          style: const TextStyle(
-                              color: AppColors.textPrimary, fontSize: 13),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 13),
+                          ),
                         ),
-                      ),
-                      Text(
-                        '${(pct * 100).round()}%',
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                        Text(
+                          '${(pct * 100).round()}%',
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

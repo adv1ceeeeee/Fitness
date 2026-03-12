@@ -155,193 +155,86 @@ class _BodySilhouetteWidgetState extends State<BodySilhouetteWidget>
   }
 
   List<Widget> _buildLabels(_Measures m, double w, double h) {
-    // silhouette canvas occupies 42% of w, centred → canvas left = w * 0.29
-    final canvasLeft = w * 0.29;
-    final canvasRight = w * 0.71;
-    final cx = w * 0.50; // centre of silhouette
-
-    // ── Reference half-widths (same fractions as _BodyPainter) ──────────────
-    final u = (w * 0.42) * 0.5; // half of canvas width
+    final cx = w * 0.50;
+    final u = (w * 0.42) * 0.5;
     double hw(double ref, double measured, double frac) {
       final norm = (measured / ref).clamp(0.70, 1.40);
       return u * frac * norm;
     }
 
-    final shoulderEdge = cx + hw(114.0, m.shoulder, 0.76);
-    final chestEdge    = cx + hw( 97.0, m.chest,    0.58);
-    final waistEdge    = cx - hw( 84.0, m.waist,    0.38); // left
-    final hipEdge      = cx - hw( 96.0, m.hips,     0.60); // left
-    final thighEdge    = cx + hw( 57.0, m.thigh,    0.29);
-    final calfEdge     = cx + hw( 37.0, m.calf,     0.22);
+    // Text column width on each side
+    final sideW = (w * 0.29 - 4).clamp(48.0, 120.0);
 
-    final leftLabels = <_LabelDef>[
-      _LabelDef('Плечи',  '${m.shoulder.toStringAsFixed(0)} см', h * 0.195, shoulderEdge, true),
-      _LabelDef('Талия',  '${m.waist.toStringAsFixed(0)} см',   h * 0.430, waistEdge,    true),
-      _LabelDef('Бёдра',  '${m.hips.toStringAsFixed(0)} см',    h * 0.530, hipEdge,      true),
+    final shoulderX = cx - hw(114.0, m.shoulder, 0.76);
+    final chestX    = cx + hw( 97.0, m.chest,    0.58);
+    final waistX    = cx - hw( 84.0, m.waist,    0.38);
+    final hipX      = cx - hw( 96.0, m.hips,     0.60);
+    final thighX    = cx + hw( 57.0, m.thigh,    0.29);
+    final calfX     = cx + hw( 37.0, m.calf,     0.22);
+
+    Widget leftLabel(String label, String value, double y, double silX) {
+      final top = (y - 14).clamp(0.0, h - 28);
+      // Span from left edge → silhouette point; text flush-left, line fills rest
+      return Positioned(
+        top: top,
+        left: 0,
+        right: (w - silX).clamp(0.0, w),
+        child: Row(
+          children: [
+            SizedBox(width: sideW, child: _labelCol(label, value, CrossAxisAlignment.end)),
+            Expanded(child: CustomPaint(painter: _LinePainter(fromLeft: true))),
+          ],
+        ),
+      );
+    }
+
+    Widget rightLabel(String label, String value, double y, double silX) {
+      final top = (y - 14).clamp(0.0, h - 28);
+      // Span from silhouette point → right edge; line fills left part, text flush-right
+      return Positioned(
+        top: top,
+        left: silX,
+        right: 0,
+        child: Row(
+          children: [
+            Expanded(child: CustomPaint(painter: _LinePainter(fromLeft: false))),
+            SizedBox(width: sideW, child: _labelCol(label, value, CrossAxisAlignment.start)),
+          ],
+        ),
+      );
+    }
+
+    return [
+      leftLabel('Плечи',  '${m.shoulder.toStringAsFixed(0)} см', h * 0.195, shoulderX),
+      leftLabel('Талия',  '${m.waist.toStringAsFixed(0)} см',    h * 0.430, waistX),
+      leftLabel('Бёдра',  '${m.hips.toStringAsFixed(0)} см',     h * 0.530, hipX),
+      rightLabel('Грудь',  '${m.chest.toStringAsFixed(0)} см',   h * 0.290, chestX),
+      rightLabel('Бедро',  '${m.thigh.toStringAsFixed(0)} см',   h * 0.648, thighX),
+      rightLabel('Голень', '${m.calf.toStringAsFixed(0)} см',    h * 0.835, calfX),
     ];
-    final rightLabels = <_LabelDef>[
-      _LabelDef('Грудь',  '${m.chest.toStringAsFixed(0)} см',   h * 0.290, chestEdge,  false),
-      _LabelDef('Бедро',  '${m.thigh.toStringAsFixed(0)} см',   h * 0.648, thighEdge,  false),
-      _LabelDef('Голень', '${m.calf.toStringAsFixed(0)} см',    h * 0.835, calfEdge,   false),
-    ];
-
-    return [...leftLabels, ...rightLabels].map((lbl) {
-      const textH = 28.0;
-      final top = (lbl.yPos - textH / 2).clamp(0.0, h - textH);
-
-      if (lbl.isLeft) {
-        return Positioned(
-          top: top,
-          left: 0,
-          child: _LabelLeft(
-            label: lbl.label,
-            value: lbl.value,
-            lineEndX: lbl.silhouetteX - 0,
-            containerLeft: 0,
-            textAreaW: canvasLeft - 4,
-          ),
-        );
-      } else {
-        return Positioned(
-          top: top,
-          right: 0,
-          child: _LabelRight(
-            label: lbl.label,
-            value: lbl.value,
-            lineStartX: lbl.silhouetteX - canvasRight,
-            textAreaW: w - canvasRight - 4,
-            totalW: w,
-            silhouetteEdge: lbl.silhouetteX,
-            canvasRight: canvasRight,
-          ),
-        );
-      }
-    }).toList();
   }
-}
 
-class _LabelDef {
-  final String label;
-  final String value;
-  final double yPos;
-  final double silhouetteX;
-  final bool isLeft;
-  const _LabelDef(this.label, this.value, this.yPos, this.silhouetteX, this.isLeft);
-}
-
-// ─── Label widgets ────────────────────────────────────────────────────────────
-
-class _LabelLeft extends StatelessWidget {
-  final String label;
-  final String value;
-  final double lineEndX;
-  final double containerLeft;
-  final double textAreaW;
-
-  const _LabelLeft({
-    required this.label,
-    required this.value,
-    required this.lineEndX,
-    required this.containerLeft,
-    required this.textAreaW,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: lineEndX,
-      height: 28,
-      child: Row(
-        children: [
-          SizedBox(
-            width: textAreaW,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 9,
-                        height: 1.1)),
-                Text(value,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        height: 1.1)),
-              ],
-            ),
-          ),
-          const Expanded(
-            child: CustomPaint(
-              painter: _LinePainter(fromLeft: true),
-            ),
-          ),
-        ],
-      ),
+  Widget _labelCol(String label, String value, CrossAxisAlignment align) {
+    return Column(
+      crossAxisAlignment: align,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 9, height: 1.1)),
+        Text(value,
+            style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                height: 1.1)),
+      ],
     );
   }
 }
 
-class _LabelRight extends StatelessWidget {
-  final String label;
-  final String value;
-  final double lineStartX;
-  final double textAreaW;
-  final double totalW;
-  final double silhouetteEdge;
-  final double canvasRight;
 
-  const _LabelRight({
-    required this.label,
-    required this.value,
-    required this.lineStartX,
-    required this.textAreaW,
-    required this.totalW,
-    required this.silhouetteEdge,
-    required this.canvasRight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final lineWidth = (totalW - silhouetteEdge - 4).clamp(4.0, 80.0);
-    return SizedBox(
-      width: totalW - silhouetteEdge + textAreaW,
-      height: 28,
-      child: Row(
-        children: [
-          SizedBox(
-            width: lineWidth,
-            child: const CustomPaint(
-              painter: _LinePainter(fromLeft: false),
-            ),
-          ),
-          SizedBox(
-            width: textAreaW,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 9,
-                        height: 1.1)),
-                Text(value,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        height: 1.1)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _LinePainter extends CustomPainter {
   final bool fromLeft;
@@ -434,16 +327,12 @@ class _BodyPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    // ── Head ─────────────────────────────────────────────────────────────────
-    canvas.drawCircle(Offset(cx, headCY), headR, fill);
-    canvas.drawCircle(Offset(cx, headCY), headR, stroke);
-
-    // ── Neck ─────────────────────────────────────────────────────────────────
-    final neckTopY = headCY + headR - 3;
-    final neckRect = Rect.fromLTRB(cx - neckHW, neckTopY, cx + neckHW, neckBotY + 2);
-    canvas.drawRect(neckRect, fill);
-    canvas.drawLine(Offset(cx - neckHW, neckTopY), Offset(cx - neckHW, neckBotY), stroke);
-    canvas.drawLine(Offset(cx + neckHW, neckTopY), Offset(cx + neckHW, neckBotY), stroke);
+    // ── Arms (drawn before torso so torso fill covers the inner overlap) ─────
+    for (final s in [1.0, -1.0]) {
+      final arm = _buildArm(cx: cx, h: h, s: s, shoulderHW: shoulderHW);
+      canvas.drawPath(arm, fill);
+      canvas.drawPath(arm, stroke);
+    }
 
     // ── Torso (+ crotch) ─────────────────────────────────────────────────────
     final torso = Path()..moveTo(cx + neckHW, neckBotY);
@@ -515,6 +404,66 @@ class _BodyPainter extends CustomPainter {
       canvas.drawPath(leg, fill);
       canvas.drawPath(leg, stroke);
     }
+
+    // ── Head ─────────────────────────────────────────────────────────────────
+    canvas.drawCircle(Offset(cx, headCY), headR, fill);
+    canvas.drawCircle(Offset(cx, headCY), headR, stroke);
+
+    // ── Neck ─────────────────────────────────────────────────────────────────
+    final neckTopY = headCY + headR - 3;
+    final neckRect = Rect.fromLTRB(cx - neckHW, neckTopY, cx + neckHW, neckBotY + 2);
+    canvas.drawRect(neckRect, fill);
+    canvas.drawLine(Offset(cx - neckHW, neckTopY), Offset(cx - neckHW, neckBotY), stroke);
+    canvas.drawLine(Offset(cx + neckHW, neckTopY), Offset(cx + neckHW, neckBotY), stroke);
+  }
+
+  Path _buildArm({
+    required double cx, required double h, required double s,
+    required double shoulderHW,
+  }) {
+    // Y levels
+    final topY = h * 0.200;
+    final midY = h * 0.370;
+    final elbY = h * 0.490;
+    final wriY = h * 0.690;
+
+    // Outer/inner X distances from centre at each level
+    final oTop = shoulderHW;
+    final iTop = shoulderHW - cx * 0.30;
+    final oMid = cx * 0.640;
+    final iMid = cx * 0.470;
+    final oElb = cx * 0.680;
+    final iElb = cx * 0.530;
+    final oWri = cx * 0.560;
+    final iWri = cx * 0.440;
+    final tipX = (oWri + iWri) / 2;
+    final tipY = wriY + h * 0.026;
+
+    final p = Path()..moveTo(cx + s * oTop, topY);
+    // Outer edge downward
+    p.cubicTo(cx + s * oTop,        topY + h * 0.04,
+              cx + s * oMid * 1.02, midY - h * 0.02,
+              cx + s * oMid,        midY);
+    p.cubicTo(cx + s * oMid * 0.99, midY + h * 0.02,
+              cx + s * oElb * 1.02, elbY - h * 0.02,
+              cx + s * oElb,        elbY);
+    p.cubicTo(cx + s * oElb * 0.98, elbY + h * 0.02,
+              cx + s * oWri * 1.01, wriY - h * 0.02,
+              cx + s * oWri,        wriY);
+    // Rounded hand tip
+    p.quadraticBezierTo(cx + s * tipX, tipY, cx + s * iWri, wriY);
+    // Inner edge upward
+    p.cubicTo(cx + s * iWri,        wriY - h * 0.02,
+              cx + s * iElb * 1.00, elbY + h * 0.02,
+              cx + s * iElb,        elbY);
+    p.cubicTo(cx + s * iElb * 1.00, elbY - h * 0.02,
+              cx + s * iMid * 1.00, midY + h * 0.02,
+              cx + s * iMid,        midY);
+    p.cubicTo(cx + s * iMid,        midY - h * 0.02,
+              cx + s * iTop,        topY + h * 0.04,
+              cx + s * iTop,        topY);
+    p.close();
+    return p;
   }
 
   Path _buildLeg({

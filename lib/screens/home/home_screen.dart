@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
@@ -97,10 +98,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _showOnboardingOnce() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    final key = 'onboarding_shown_${user.id}';
     final prefs = await SharedPreferences.getInstance();
-    final shown = prefs.getBool('onboarding_shown') ?? false;
-    if (shown) return;
-    await prefs.setBool('onboarding_shown', true);
+
+    // Fast path: already cached locally
+    if (prefs.getBool(key) == true) return;
+
+    // Fallback: check Supabase so port changes don't re-show onboarding
+    try {
+      final row = await Supabase.instance.client
+          .from('user_events')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('event', 'onboarding_shown')
+          .limit(1)
+          .maybeSingle();
+      if (row != null) {
+        await prefs.setBool(key, true); // cache locally for next time
+        return;
+      }
+    } catch (_) {
+      // offline — fall through and show onboarding
+    }
+
+    // Mark as shown both locally and in Supabase
+    await prefs.setBool(key, true);
+    try {
+      await Supabase.instance.client.from('user_events').insert({
+        'user_id': user.id,
+        'event': 'onboarding_shown',
+        'props': <String, dynamic>{},
+      });
+    } catch (_) {}
+
     if (mounted) await showOnboardingIfNeeded(context);
   }
 
@@ -191,11 +223,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  String get _userId =>
+      Supabase.instance.client.auth.currentUser?.id ?? 'anon';
+
   Future<(String, double?, DateTime?)> _loadGoalPrefs() async {
+    final uid = _userId;
     final prefs = await SharedPreferences.getInstance();
-    final metric = prefs.getString('home_goal_metric') ?? 'weight_kg';
-    final targetStr = prefs.getString('home_goal_target_$metric');
-    final startStr = prefs.getString('home_goal_start_$metric');
+    final metric = prefs.getString('home_goal_metric_$uid') ?? 'weight_kg';
+    final targetStr = prefs.getString('home_goal_target_${uid}_$metric');
+    final startStr = prefs.getString('home_goal_start_${uid}_$metric');
     return (
       metric,
       targetStr != null ? double.tryParse(targetStr) : null,
@@ -204,10 +240,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _saveGoalMetric(String metric) async {
+    final uid = _userId;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('home_goal_metric', metric);
-    final targetStr = prefs.getString('home_goal_target_$metric');
-    final startStr = prefs.getString('home_goal_start_$metric');
+    await prefs.setString('home_goal_metric_$uid', metric);
+    final targetStr = prefs.getString('home_goal_target_${uid}_$metric');
+    final startStr = prefs.getString('home_goal_start_${uid}_$metric');
     setState(() {
       _goalMetric = metric;
       _goalTarget = targetStr != null ? double.tryParse(targetStr) : null;
@@ -216,19 +253,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _saveGoalTarget(double? value) async {
+    final uid = _userId;
     final prefs = await SharedPreferences.getInstance();
     if (value == null) {
-      await prefs.remove('home_goal_target_$_goalMetric');
-      await prefs.remove('home_goal_start_$_goalMetric');
+      await prefs.remove('home_goal_target_${uid}_$_goalMetric');
+      await prefs.remove('home_goal_start_${uid}_$_goalMetric');
       setState(() {
         _goalTarget = null;
         _goalStartDate = null;
       });
     } else {
-      await prefs.setString('home_goal_target_$_goalMetric', value.toString());
-      // Reset start date whenever the target value changes
+      await prefs.setString('home_goal_target_${uid}_$_goalMetric', value.toString());
       final today = DateTime.now().toIso8601String().split('T')[0];
-      await prefs.setString('home_goal_start_$_goalMetric', today);
+      await prefs.setString('home_goal_start_${uid}_$_goalMetric', today);
       setState(() {
         _goalTarget = value;
         _goalStartDate = DateTime.parse(today);
@@ -473,6 +510,21 @@ class _BodyProgressCard extends StatelessWidget {
     return (v as num?)?.toDouble();
   }
 
+  String? get _measurementDate {
+    final ts = latestMetrics?['updated_at'] as String?;
+    if (ts != null) {
+      final dt = DateTime.tryParse(ts)?.toLocal();
+      if (dt != null) {
+        final d = '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year.toString().substring(2)}';
+        final t = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        return '$d $t';
+      }
+    }
+    final d = latestMetrics?['date'] as String?;
+    if (d == null || d.length < 10) return null;
+    return '${d.substring(8, 10)}.${d.substring(5, 7)}.${d.substring(2, 4)}';
+  }
+
   String get _unit => _metricOptions[metric]?.$2 ?? '';
   String get _label => _metricOptions[metric]?.$1 ?? metric;
 
@@ -683,6 +735,7 @@ class _BodyProgressCard extends StatelessWidget {
                   Expanded(child: _MetricBox(
                     label: 'Фактический',
                     value: '${fmtMetricValue(current)} $_unit',
+                    subtitle: _measurementDate,
                     onTap: null,
                   )),
                   const SizedBox(width: 8),
@@ -750,12 +803,14 @@ class _MetricBox extends StatelessWidget {
   final String label;
   final String value;
   final String? hint;
+  final String? subtitle;
   final VoidCallback? onTap;
 
   const _MetricBox({
     required this.label,
     required this.value,
     this.hint,
+    this.subtitle,
     required this.onTap,
   });
 
@@ -796,6 +851,14 @@ class _MetricBox extends StatelessWidget {
                     : AppColors.textPrimary,
               ),
             ),
+            if (subtitle != null)
+              Text(
+                subtitle!,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
             if (hint != null)
               Text(
                 hint!,

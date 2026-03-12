@@ -264,12 +264,25 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
 
     // Optimistic update — instant visual feedback
-    setState(() => _sets[index] = setData.copyWith(completed: true));
+    setState(() {
+      _sets[index] = setData.copyWith(completed: true);
+      // Drop-set: auto-fill next set with half the current weight
+      if (we.isDropSet && index + 1 < _sets.length && weightKg > 0) {
+        final half = weightKg / 2;
+        final useKgLocal = ref.read(useKgProvider);
+        final displayHalf = useKgLocal ? half : half * 2.20462;
+        _weightControllers[index + 1].text =
+            displayHalf.toStringAsFixed(displayHalf % 1 == 0 ? 0 : 1);
+      }
+    });
     _lastRestSeconds = 0;
 
     final nowAllDone = _sets.every((s) => s.completed);
     if (!nowAllDone) {
-      _startRest(we.restSeconds, goToNext: false);
+      // Drop-set: no rest between sets — go straight to next set
+      if (!we.isDropSet) {
+        _startRest(we.restSeconds, goToNext: false);
+      }
     } else {
       final isLastExercise = _currentExerciseIndex >= _exercises.length - 1;
       if (isLastExercise) {
@@ -617,6 +630,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Drop-set badge
+                    if (we.isDropSet) ...[
+                      const _DropSetBadge(),
+                      const SizedBox(height: 8),
+                    ],
                     // Superset badge
                     if (we.supersetGroup != null) ...[
                       _SupersetBadge(
@@ -703,22 +721,28 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
                     // Блоки подходов
                     ...List.generate(_sets.length, (i) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _SetBlock(
-                          index: i,
-                          data: _sets[i],
-                          isActive: i == activeIndex && !_sets[i].completed,
-                          weightController: _weightControllers[i],
-                          comparison: _setComparisons[i],
-                          onRepsChanged: (v) => setState(
-                              () => _sets[i] = _sets[i].copyWith(reps: v)),
-                          onRpeChanged: (v) =>
-                              setState(() => _sets[i].rpe = v),
-                          onComplete: (!_sets[i].completed && i == activeIndex)
-                              ? () => _completeSet(i)
-                              : null,
-                        ),
+                      return Column(
+                        children: [
+                          if (we.isDropSet && i > 0)
+                            const _DropSetDivider(),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _SetBlock(
+                              index: i,
+                              data: _sets[i],
+                              isActive: i == activeIndex && !_sets[i].completed,
+                              weightController: _weightControllers[i],
+                              comparison: _setComparisons[i],
+                              onRepsChanged: (v) => setState(
+                                  () => _sets[i] = _sets[i].copyWith(reps: v)),
+                              onRpeChanged: (v) =>
+                                  setState(() => _sets[i].rpe = v),
+                              onComplete: (!_sets[i].completed && i == activeIndex)
+                                  ? () => _completeSet(i)
+                                  : null,
+                            ),
+                          ),
+                        ],
                       );
                     }),
                     const SizedBox(height: 4),
@@ -1064,6 +1088,66 @@ class _AddSetButton extends StatelessWidget {
                     fontWeight: FontWeight.w500)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Значок дроп-сета ────────────────────────────────────────────────────────
+
+class _DropSetBadge extends StatelessWidget {
+  const _DropSetBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF6B00).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFF6B00).withValues(alpha: 0.4)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.trending_down, size: 14, color: Color(0xFFFF6B00)),
+          SizedBox(width: 4),
+          Text(
+            'Дроп-сет — без отдыха между подходами',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFFFF6B00),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Разделитель дроп-сета ────────────────────────────────────────────────────
+
+class _DropSetDivider extends StatelessWidget {
+  const _DropSetDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          const SizedBox(width: 44),
+          const Icon(Icons.arrow_downward, size: 14, color: Color(0xFFFF6B00)),
+          const SizedBox(width: 4),
+          Text(
+            'Снизьте вес',
+            style: TextStyle(
+              fontSize: 11,
+              color: const Color(0xFFFF6B00).withValues(alpha: 0.8),
+            ),
+          ),
+        ],
       ),
     );
   }

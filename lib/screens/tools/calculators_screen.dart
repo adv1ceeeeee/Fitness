@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/services/body_metrics_service.dart';
 
 class CalculatorsScreen extends StatefulWidget {
   const CalculatorsScreen({super.key});
@@ -124,6 +125,21 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
   int _exerciseIndex = 0;
   double? _result;
   List<({String name, String source, double value})> _breakdown = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillBodyWeight();
+  }
+
+  Future<void> _prefillBodyWeight() async {
+    final metrics = await BodyMetricsService.getLatest();
+    final w = (metrics?['weight_kg'] as num?)?.toDouble();
+    if (w != null && w > 0 && mounted) {
+      setState(() => _bodyWeightCtrl.text =
+          w == w.truncateToDouble() ? w.toInt().toString() : w.toString());
+    }
+  }
 
   void _calculate() {
     final w = double.tryParse(_weightCtrl.text.replaceAll(',', '.'));
@@ -320,7 +336,7 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '${ratio.toStringAsFixed(2)}× веса тела',
+                        '×${ratio.toStringAsFixed(2)} веса тела',
                         style: const TextStyle(
                           color: AppColors.accent,
                           fontSize: 13,
@@ -454,13 +470,112 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
 
 // ─── Plate calculator ─────────────────────────────────────────────────────────
 
-enum _SetType { general, specific, leadIn }
+enum WarmupSetType { joint, general, specific, leadIn }
 
-class _WarmupSet {
+class WarmupSet {
   final double weight;
   final int reps;
-  final _SetType type;
-  const _WarmupSet(this.weight, this.reps, this.type);
+  final WarmupSetType type;
+  const WarmupSet(this.weight, this.reps, this.type);
+}
+
+// ── Pure top-level functions (extracted for testability) ──────────────────────
+
+const plateWeightsKg = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25];
+const plateWeightsLb = [45.0, 35.0, 25.0, 10.0, 5.0, 2.5];
+
+/// Greedy plate calculation — largest plates first, one side of the bar.
+List<double> calculatePlates(
+    double target, double barWeight, List<double> availablePlates) {
+  final perSide = (target - barWeight) / 2;
+  if (perSide <= 0) return [];
+  var remaining = perSide;
+  final result = <double>[];
+  for (final plate in availablePlates) {
+    while (remaining >= plate - 0.001) {
+      result.add(plate);
+      remaining -= plate;
+    }
+  }
+  return result;
+}
+
+/// Plate calculation with [primary] as dominant plate, remainder filled with
+/// smaller plates. Returns plates for one side of the bar.
+List<double> calculatePlatesWithPrimary(double target, double barWeight,
+    double primary, List<double> availablePlates) {
+  final perSide = (target - barWeight) / 2;
+  if (perSide <= 0) return [];
+  var remaining = perSide;
+  final result = <double>[];
+  while (remaining >= primary - 0.001) {
+    result.add(primary);
+    remaining -= primary;
+  }
+  for (final plate in availablePlates) {
+    if (plate >= primary) continue;
+    while (remaining >= plate - 0.001) {
+      result.add(plate);
+      remaining -= plate;
+    }
+  }
+  return result;
+}
+
+/// Groups a flat list of plates into {plate: count}.
+Map<double, int> groupPlates(List<double> plates) {
+  final map = <double, int>{};
+  for (final p in plates) {
+    map[p] = (map[p] ?? 0) + 1;
+  }
+  return map;
+}
+
+/// Builds a progressive warmup scheme from bar to [target].
+/// [barWeight] and [useKg] determine step rounding.
+List<WarmupSet> buildWarmupSets(
+    double target, double barWeight, bool useKg) {
+  final step = useKg ? 2.5 : 5.0;
+  double snap(double w) => (w / step).round() * step;
+
+  final sets = <WarmupSet>[
+    const WarmupSet(0, 0, WarmupSetType.joint),
+    WarmupSet(barWeight, 10, WarmupSetType.general),
+  ];
+
+  final ratio = target / barWeight;
+  if (ratio < 1.5) return sets;
+
+  final List<double> pcts;
+  final List<int> reps;
+  final List<WarmupSetType> types;
+
+  if (ratio < 2.5) {
+    pcts  = [0.60];
+    reps  = [5];
+    types = [WarmupSetType.leadIn];
+  } else if (ratio < 4.0) {
+    pcts  = [0.45, 0.75];
+    reps  = [5, 3];
+    types = [WarmupSetType.specific, WarmupSetType.leadIn];
+  } else if (ratio < 6.0) {
+    pcts  = [0.40, 0.60, 0.80];
+    reps  = [8, 5, 2];
+    types = [WarmupSetType.specific, WarmupSetType.specific, WarmupSetType.leadIn];
+  } else {
+    pcts  = [0.35, 0.52, 0.67, 0.83];
+    reps  = [8, 5, 3, 1];
+    types = [WarmupSetType.specific, WarmupSetType.specific,
+             WarmupSetType.specific, WarmupSetType.leadIn];
+  }
+
+  for (var i = 0; i < pcts.length; i++) {
+    final w = snap(target * pcts[i]).clamp(barWeight, target - step);
+    if (sets.any((s) => (s.weight - w).abs() < 0.01)) continue;
+    sets.add(WarmupSet(w, reps[i], types[i]));
+  }
+
+  return sets;
 }
 
 class _PlateCalculatorTab extends StatefulWidget {
@@ -485,65 +600,17 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
   List<double> get _bars => _useKg ? _barWeightsKg : _barWeightsLb;
   String get _unit => _useKg ? 'кг' : 'lb';
 
-  /// Builds a progressive warmup scheme from bar to [target].
-  /// Intermediate weights are rounded to the nearest practical step.
-  List<_WarmupSet> _buildWarmup(double target) {
-    final step = _useKg ? 2.5 : 5.0;
-    double snap(double w) => (w / step).round() * step;
+  List<WarmupSet> _buildWarmup(double target) =>
+      buildWarmupSets(target, _barWeight, _useKg);
 
-    // Always start with bar-only set
-    final sets = <_WarmupSet>[_WarmupSet(_barWeight, 10, _SetType.general)];
+  List<double> _calculate(double target) =>
+      calculatePlates(target, _barWeight, _plates);
 
-    final ratio = target / _barWeight;
-    if (ratio < 1.5) return sets; // target barely above bar — bar warmup is enough
+  List<double> _calculateWithPrimary(double target, double primary) =>
+      calculatePlatesWithPrimary(target, _barWeight, primary, _plates);
 
-    // Intermediate percentage targets and reps depend on how heavy the lift is
-    final List<double> pcts;
-    final List<int> reps;
-    final List<_SetType> types;
-
-    if (ratio < 2.5) {
-      pcts  = [0.60];
-      reps  = [5];
-      types = [_SetType.leadIn];
-    } else if (ratio < 4.0) {
-      pcts  = [0.45, 0.75];
-      reps  = [5, 3];
-      types = [_SetType.specific, _SetType.leadIn];
-    } else if (ratio < 6.0) {
-      pcts  = [0.40, 0.60, 0.80];
-      reps  = [8, 5, 2];
-      types = [_SetType.specific, _SetType.specific, _SetType.leadIn];
-    } else {
-      pcts  = [0.35, 0.52, 0.67, 0.83];
-      reps  = [8, 5, 3, 1];
-      types = [_SetType.specific, _SetType.specific, _SetType.specific, _SetType.leadIn];
-    }
-
-    for (var i = 0; i < pcts.length; i++) {
-      final w = snap(target * pcts[i]).clamp(_barWeight, target - step);
-      // skip duplicates
-      if (sets.any((s) => (s.weight - w).abs() < 0.01)) continue;
-      sets.add(_WarmupSet(w, reps[i], types[i]));
-    }
-
-    return sets;
-  }
-
-  /// Returns list of plates to put on ONE side of the bar.
-  List<double> _calculate(double target) {
-    final perSide = (target - _barWeight) / 2;
-    if (perSide <= 0) return [];
-    var remaining = perSide;
-    final result = <double>[];
-    for (final plate in _plates) {
-      while (remaining >= plate - 0.001) {
-        result.add(plate);
-        remaining -= plate;
-      }
-    }
-    return result;
-  }
+  List<double> get _primaryPlates =>
+      _useKg ? [25.0, 20.0, 15.0, 10.0] : [45.0, 35.0, 25.0, 10.0];
 
   @override
   void dispose() {
@@ -709,24 +776,63 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
               const Text('Без блинов',
                   style: TextStyle(color: AppColors.textSecondary))
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _groupPlates(plates).entries.map((e) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _plateColor(e.key),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${e.value}×${e.key.toStringAsFixed(e.key == e.key.truncate() ? 0 : 2)} $_unit',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
+              Column(
+                children: _primaryPlates.map((primary) {
+                  final variant = _calculateWithPrimary(target, primary);
+                  final hasPrimary =
+                      variant.any((p) => (p - primary).abs() < 0.001);
+                  if (!hasPrimary) return const SizedBox.shrink();
+                  final grouped = _groupPlates(variant);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 52,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _plateColor(primary)
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '${primary.toStringAsFixed(primary == primary.truncate() ? 0 : 1)} $_unit',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _plateColor(primary),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: grouped.entries.map((e) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: _plateColor(e.key),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '${e.value}×${e.key.toStringAsFixed(e.key == e.key.truncate() ? 0 : 2)} $_unit',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 }).toList(),
@@ -748,11 +854,58 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
             ..._buildWarmup(target).asMap().entries.map((e) {
               final i = e.key;
               final s = e.value;
+              const jointColor = Color(0xFF30D158);
               final (color, label) = switch (s.type) {
-                _SetType.general  => (const Color(0xFF636366), 'Общая разминка'),
-                _SetType.specific => (const Color(0xFF007AFF), 'Специфическая'),
-                _SetType.leadIn   => (const Color(0xFFFF9500), 'Подводящий'),
+                WarmupSetType.joint    => (jointColor, 'Суставная разминка'),
+                WarmupSetType.general  => (const Color(0xFF636366), 'Общая разминка'),
+                WarmupSetType.specific => (const Color(0xFF007AFF), 'Специфическая'),
+                WarmupSetType.leadIn   => (const Color(0xFFFF9500), 'Подводящий'),
               };
+              // Joint warmup row — no weight/reps, just description
+              if (s.type == WarmupSetType.joint) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text('${i + 1}',
+                            style: const TextStyle(
+                                color: jointColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Резинки / гантели / гриф без блинов',
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 13),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(label,
+                            style: const TextStyle(
+                                color: jointColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                );
+              }
               final wStr = s.weight.toStringAsFixed(
                   s.weight == s.weight.truncate() ? 0 : 1);
               return Padding(
@@ -859,13 +1012,7 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
     );
   }
 
-  Map<double, int> _groupPlates(List<double> plates) {
-    final map = <double, int>{};
-    for (final p in plates) {
-      map[p] = (map[p] ?? 0) + 1;
-    }
-    return map;
-  }
+  Map<double, int> _groupPlates(List<double> plates) => groupPlates(plates);
 
   Color _plateColor(double weight) {
     if (_useKg) {

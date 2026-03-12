@@ -109,107 +109,254 @@ class _MonthHeader extends StatelessWidget {
 
 // ─── Session card ──────────────────────────────────────────────────────────────
 
-class _SessionCard extends StatelessWidget {
+class _SessionCard extends StatefulWidget {
   final Map<String, dynamic> session;
-
   const _SessionCard({required this.session});
 
   @override
+  State<_SessionCard> createState() => _SessionCardState();
+}
+
+class _SessionCardState extends State<_SessionCard> {
+  bool _expanded = false;
+  bool _loadingDetails = false;
+  // grouped: exerciseName → list of completed sets
+  List<_ExerciseSummary>? _details;
+
+  Future<void> _toggle() async {
+    if (_expanded) {
+      setState(() => _expanded = false);
+      return;
+    }
+    setState(() => _expanded = true);
+    if (_details != null) return; // already loaded
+    setState(() => _loadingDetails = true);
+    try {
+      final sets = await TrainingService.getSessionSets(
+          widget.session['id'] as String);
+      final grouped = <String, _ExerciseSummary>{};
+      for (final s in sets) {
+        if (s['completed'] != true) continue;
+        final ex = s['workout_exercises'] as Map<String, dynamic>?;
+        final name =
+            (ex?['exercises'] as Map<String, dynamic>?)?['name'] as String? ??
+                'Упражнение';
+        grouped.putIfAbsent(name, () => _ExerciseSummary(name));
+        grouped[name]!.addSet(
+          weight: (s['weight'] as num?)?.toDouble(),
+          reps: s['reps'] as int?,
+        );
+      }
+      if (mounted) {
+        setState(() {
+          _details = grouped.values.toList();
+          _loadingDetails = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingDetails = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final date = DateTime.parse(session['date'] as String);
+    final date = DateTime.parse(widget.session['date'] as String);
     final workoutName =
-        (session['workouts'] as Map<String, dynamic>?)?['name'] as String? ??
+        (widget.session['workouts'] as Map<String, dynamic>?)?['name']
+                as String? ??
             'Тренировка';
-    final durSec = session['duration_seconds'] as int?;
-    final notes = session['notes'] as String?;
+    final durSec = widget.session['duration_seconds'] as int?;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Date badge
-              Container(
-                width: 48,
-                alignment: Alignment.center,
-                child: Column(
-                  children: [
-                    Text(
-                      '${date.day}',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.accent,
-                      ),
-                    ),
-                    Text(
-                      _weekday(date.weekday),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 4),
-              const VerticalDivider(width: 24, thickness: 1),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      workoutName,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    if (durSec != null) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          const Icon(Icons.timer_outlined,
-                              size: 13, color: AppColors.textSecondary),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatDuration(durSec),
-                            style: const TextStyle(
-                                fontSize: 13, color: AppColors.textSecondary),
-                          ),
-                        ],
-                      ),
-                    ],
-                    if (notes != null && notes.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        notes,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary.withValues(alpha: 0.8),
-                          fontStyle: FontStyle.italic,
+        clipBehavior: Clip.hardEdge,
+        child: InkWell(
+          onTap: _toggle,
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header row ──────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        alignment: Alignment.center,
+                        child: Column(
+                          children: [
+                            Text(
+                              '${date.day}',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.accent,
+                              ),
+                            ),
+                            Text(
+                              weekdayShort(date.weekday),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(width: 4),
+                      const VerticalDivider(width: 24, thickness: 1),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              workoutName,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            if (durSec != null) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.timer_outlined,
+                                      size: 13,
+                                      color: AppColors.textSecondary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    formatSessionDuration(durSec),
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: _expanded ? 0.5 : 0.0,
+                        duration: const Duration(milliseconds: 280),
+                        child: const Icon(Icons.keyboard_arrow_down_rounded,
+                            color: AppColors.textSecondary, size: 20),
+                      ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+
+                // ── Expanded details ────────────────────────────────────────
+                if (_expanded) ...[
+                  const Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: AppColors.separator,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+                  if (_loadingDetails)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  else if (_details == null || _details!.isEmpty)
+                    const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Text('Нет данных о подходах',
+                          style: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 13)),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _details!.map((ex) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ex.name,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  children: ex.sets.asMap().entries.map((e) {
+                                    final i = e.key + 1;
+                                    final set = e.value;
+                                    final label = set.weight != null &&
+                                            set.reps != null
+                                        ? '$i. ${set.weight!.toStringAsFixed(set.weight! % 1 == 0 ? 0 : 1)} кг × ${set.reps}'
+                                        : set.reps != null
+                                            ? '$i. ${set.reps} повт.'
+                                            : '$i. —';
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        label,
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  static String _formatDuration(int sec) => formatSessionDuration(sec);
-  static String _weekday(int d) => weekdayShort(d);
+// ─── Exercise summary helper ───────────────────────────────────────────────────
+
+class _SetEntry {
+  final double? weight;
+  final int? reps;
+  const _SetEntry({this.weight, this.reps});
+}
+
+class _ExerciseSummary {
+  final String name;
+  final List<_SetEntry> sets = [];
+  _ExerciseSummary(this.name);
+  void addSet({double? weight, int? reps}) =>
+      sets.add(_SetEntry(weight: weight, reps: reps));
 }
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
