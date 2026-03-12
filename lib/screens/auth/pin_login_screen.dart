@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/services/biometric_service.dart';
 import 'package:sportwai/services/pin_service.dart';
 import 'package:sportwai/widgets/pin_pad.dart';
 
@@ -15,11 +16,47 @@ class PinLoginScreen extends StatefulWidget {
 class _PinLoginScreenState extends State<PinLoginScreen> {
   String? _errorText;
   bool _blocked = false;
+  bool _showBiometric = false;
   final _padKey = GlobalKey<PinPadState>();
 
   String get _nickname {
     final meta = Supabase.instance.client.auth.currentUser?.userMetadata;
     return meta?['nickname'] as String? ?? '';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initBiometric();
+  }
+
+  Future<void> _initBiometric() async {
+    final available = await BiometricService.isAvailable();
+    final enabled = await BiometricService.isEnabled();
+    if (available && enabled && mounted) {
+      setState(() => _showBiometric = true);
+      // Prompt automatically on screen open
+      _tryBiometric();
+    }
+  }
+
+  Future<void> _tryBiometric() async {
+    final ok = await BiometricService.authenticate();
+    if (!ok || !mounted) return;
+    _unlockSession();
+  }
+
+  void _unlockSession() {
+    final session = Supabase.instance.client.auth.currentSession;
+    if (!mounted) return;
+    if (session != null) {
+      context.go('/onboarding-check');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сессия истекла. Войдите с паролем.')),
+      );
+      context.go('/login');
+    }
   }
 
   Future<void> _onPinComplete(String pin) async {
@@ -46,23 +83,8 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
       return;
     }
 
-    // PIN correct
     await PinService.resetFailed();
-
-    // Check if Supabase session is still alive
-    final session = Supabase.instance.client.auth.currentSession;
-    if (!mounted) return;
-
-    if (session != null) {
-      context.go('/onboarding-check');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Сессия истекла. Войдите с паролем.'),
-        ),
-      );
-      context.go('/login');
-    }
+    _unlockSession();
   }
 
   @override
@@ -74,7 +96,6 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
           child: Column(
             children: [
               const SizedBox(height: 48),
-              // Avatar placeholder
               CircleAvatar(
                 radius: 36,
                 backgroundColor: AppColors.accent.withValues(alpha: 0.15),
@@ -106,16 +127,12 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
               if (_blocked)
                 const Column(
                   children: [
-                    Icon(Icons.lock_outline,
-                        size: 48, color: AppColors.error),
+                    Icon(Icons.lock_outline, size: 48, color: AppColors.error),
                     SizedBox(height: 12),
                     Text(
                       'PIN заблокирован.\nВойдите с паролем.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.error,
-                        fontSize: 16,
-                      ),
+                      style: TextStyle(color: AppColors.error, fontSize: 16),
                     ),
                   ],
                 )
@@ -126,6 +143,13 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
                   errorText: _errorText,
                 ),
               const Spacer(),
+              if (_showBiometric && !_blocked)
+                IconButton(
+                  onPressed: _tryBiometric,
+                  icon: const Icon(Icons.fingerprint_rounded, size: 36),
+                  color: AppColors.accent,
+                  tooltip: 'Войти по биометрии',
+                ),
               TextButton(
                 onPressed: () => context.go('/login'),
                 child: const Text(

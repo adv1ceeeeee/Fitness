@@ -7,6 +7,7 @@ import 'package:sportwai/services/cache_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
+import 'package:sportwai/widgets/skeleton.dart';
 
 class WorkoutsScreen extends StatefulWidget {
   const WorkoutsScreen({super.key});
@@ -20,6 +21,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   late TabController _tabController;
   List<Workout> _workouts = [];
   Map<String, Map<String, dynamic>> _sessionInfo = {};
+  bool _loading = true;
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   }
 
   Future<void> _loadWorkouts() async {
+    setState(() => _loading = true);
     try {
       final list = await WorkoutService.getMyWorkouts()
           .timeout(const Duration(seconds: 15));
@@ -47,11 +50,12 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
         setState(() {
           _workouts = list;
           _sessionInfo = info;
+          _loading = false;
         });
       }
     } catch (_) {
       final cached = await CacheService.loadWorkouts();
-      if (mounted) setState(() => _workouts = cached);
+      if (mounted) setState(() { _workouts = cached; _loading = false; });
     }
   }
 
@@ -96,6 +100,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                   _MyProgramsTab(
                     workouts: _workouts,
                     sessionInfo: _sessionInfo,
+                    loading: _loading,
                     onRefresh: _loadWorkouts,
                     onDelete: (id) async {
                       await WorkoutService.deleteWorkout(id);
@@ -124,6 +129,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
 class _MyProgramsTab extends StatefulWidget {
   final List<Workout> workouts;
   final Map<String, Map<String, dynamic>> sessionInfo;
+  final bool loading;
   final VoidCallback onRefresh;
   final VoidCallback onCreateTap;
   final void Function(Workout) onWorkoutTap;
@@ -136,6 +142,7 @@ class _MyProgramsTab extends StatefulWidget {
     required this.onCreateTap,
     required this.onWorkoutTap,
     required this.onDelete,
+    this.loading = false,
   });
 
   @override
@@ -277,6 +284,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.loading) return const WorkoutListSkeleton();
+
     final sorted = _sortedWorkouts;
     final inactive = _inactiveWorkouts;
 

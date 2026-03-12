@@ -13,6 +13,7 @@ import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/widgets/skeleton.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -168,7 +169,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: SingleChildScrollView(child: AnalyticsSkeleton()),
       );
     }
 

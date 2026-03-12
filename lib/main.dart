@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,9 +11,30 @@ import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/router.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
+import 'package:sportwai/services/offline_queue_service.dart';
+
+void _setupErrorHandlers() {
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    if (AppConfig.sentryDsn.isNotEmpty) {
+      Sentry.captureException(
+        details.exception,
+        stackTrace: details.stack,
+      );
+    }
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('[Uncaught] $error\n$stack');
+    if (AppConfig.sentryDsn.isNotEmpty) {
+      Sentry.captureException(error, stackTrace: stack);
+    }
+    return true;
+  };
+}
 
 Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _setupErrorHandlers();
   await initializeDateFormatting('ru_RU', null);
 
   // Lock to portrait — all layouts are designed for vertical
@@ -27,6 +49,7 @@ Future<void> _bootstrap() async {
   );
 
   await NotificationService.initialize();
+  OfflineQueueService.init();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

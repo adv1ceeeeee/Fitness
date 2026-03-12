@@ -46,6 +46,11 @@ CREATE INDEX IF NOT EXISTS weight_logs_user_measured_at_idx
 -- ── 2. Schema hardening ───────────────────────────────────────────────────────
 
 -- Ensure nickname is lowercase only (prevents duplicate-by-case attacks)
+-- First normalise existing data, then add the constraint.
+UPDATE public.profiles
+  SET nickname = lower(nickname)
+  WHERE nickname IS NOT NULL AND nickname <> lower(nickname);
+
 ALTER TABLE public.profiles
   DROP CONSTRAINT IF EXISTS profiles_nickname_lowercase;
 ALTER TABLE public.profiles

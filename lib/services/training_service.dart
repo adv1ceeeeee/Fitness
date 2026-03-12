@@ -4,6 +4,8 @@ import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/offline_queue_service.dart';
+import 'package:sportwai/utils/retry.dart';
 
 class TrainingService {
   static SupabaseClient get _client => Supabase.instance.client;
@@ -135,19 +137,28 @@ class TrainingService {
     int? restSeconds,
   }) async {
     try {
-      await _client.from('sets').insert({
-        'training_session_id': sessionId,
-        'workout_exercise_id': workoutExerciseId,
-        'set_number': setNumber,
-        'weight': weight,
-        'reps': reps,
-        'rpe': rpe,
-        'completed': true,
-        if (restSeconds != null) 'rest_seconds': restSeconds,
-      });
+      await retryWithBackoff(() => _client.from('sets').insert({
+            'training_session_id': sessionId,
+            'workout_exercise_id': workoutExerciseId,
+            'set_number': setNumber,
+            'weight': weight,
+            'reps': reps,
+            'rpe': rpe,
+            'completed': true,
+            if (restSeconds != null) 'rest_seconds': restSeconds,
+          }));
       return true;
     } catch (e) {
-      debugPrint('[TrainingService.saveSet] error: $e');
+      debugPrint('[TrainingService.saveSet] error: $e — queuing for offline retry');
+      await OfflineQueueService.enqueue(
+        sessionId: sessionId,
+        workoutExerciseId: workoutExerciseId,
+        setNumber: setNumber,
+        weight: weight,
+        reps: reps,
+        rpe: rpe,
+        restSeconds: restSeconds,
+      );
       return false;
     }
   }
@@ -321,8 +332,10 @@ class TrainingService {
   }
 
   /// All completed sessions, newest first, with workout name and duration.
+  /// Pass [offset] for pagination (page size = [limit]).
   static Future<List<Map<String, dynamic>>> getCompletedSessions({
-    int limit = 100,
+    int limit = 20,
+    int offset = 0,
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
@@ -333,7 +346,7 @@ class TrainingService {
         .eq('user_id', userId)
         .eq('completed', true)
         .order('date', ascending: false)
-        .limit(limit);
+        .range(offset, offset + limit - 1);
 
     return (res as List).cast<Map<String, dynamic>>();
   }

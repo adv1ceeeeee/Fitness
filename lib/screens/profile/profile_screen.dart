@@ -7,6 +7,7 @@ import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/screens/profile/edit_profile_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/biometric_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/export_service.dart';
 import 'package:sportwai/services/notification_service.dart';
@@ -29,6 +30,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _weekWorkouts = 0;
   int _bestStreak = 0;
   Map<String, dynamic>? _latestMetrics;
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
 
   @override
   void initState() {
@@ -36,6 +39,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _loadProfile();
     _loadStats();
     _loadMetrics();
+    _loadBiometric();
+  }
+
+  Future<void> _loadBiometric() async {
+    final available = await BiometricService.isAvailable();
+    final enabled = await BiometricService.isEnabled();
+    if (mounted) setState(() { _biometricAvailable = available; _biometricEnabled = enabled; });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    await BiometricService.setEnabled(value);
+    if (mounted) setState(() => _biometricEnabled = value);
   }
 
   Future<void> _loadProfile() async {
@@ -112,6 +127,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
     if (updated == true) _loadProfile();
+  }
+
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final router = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Удалить аккаунт?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'Все данные будут удалены безвозвратно: тренировки, история, метрики.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await AuthService.deleteAccount();
+      if (mounted) router.go('/');
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Не удалось удалить аккаунт. Попробуйте позже.')),
+      );
+    }
   }
 
   void _showExportSheet(BuildContext context) {
@@ -363,6 +415,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   );
                 }),
               ),
+              if (_biometricAvailable)
+                _SettingsRow(
+                  label: 'Вход по биометрии',
+                  trailing: Switch(
+                    value: _biometricEnabled,
+                    onChanged: _toggleBiometric,
+                  ),
+                ),
               const SizedBox(height: 16),
               Material(
                 color: AppColors.card,
@@ -434,6 +494,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.error,
                     side: const BorderSide(color: AppColors.error),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => _confirmDeleteAccount(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                  ),
+                  child: const Text(
+                    'Удалить аккаунт',
+                    style: TextStyle(fontSize: 13),
                   ),
                 ),
               ),

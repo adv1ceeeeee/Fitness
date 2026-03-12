@@ -49,6 +49,13 @@ class AuthService {
     return _client.auth.signOut();
   }
 
+  /// Permanently deletes the current user account and all associated data.
+  /// Calls the `delete-account` Edge Function which uses the admin client.
+  static Future<void> deleteAccount() async {
+    await _client.functions.invoke('delete-account', method: HttpMethod.post);
+    await _client.auth.signOut();
+  }
+
   static Stream<AuthState> get authStateChanges =>
       _client.auth.onAuthStateChange;
 }

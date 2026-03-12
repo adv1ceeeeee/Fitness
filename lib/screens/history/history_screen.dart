@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/training_service.dart';
+import 'package:sportwai/widgets/skeleton.dart';
 
 // ─── Pure helpers (top-level for testability) ─────────────────────────────────
 
@@ -24,20 +25,62 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
+const _kPageSize = 20;
+
 class _HistoryScreenState extends State<HistoryScreen> {
+  final _scrollController = ScrollController();
   List<Map<String, dynamic>> _sessions = [];
   bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_loadingMore &&
+        _hasMore) {
+      _loadMore();
+    }
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final sessions = await TrainingService.getCompletedSessions();
-    if (mounted) setState(() { _sessions = sessions; _loading = false; });
+    setState(() { _loading = true; _hasMore = true; });
+    final sessions = await TrainingService.getCompletedSessions(
+        limit: _kPageSize, offset: 0);
+    if (mounted) {
+      setState(() {
+        _sessions = sessions;
+        _loading = false;
+        _hasMore = sessions.length == _kPageSize;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    final more = await TrainingService.getCompletedSessions(
+        limit: _kPageSize, offset: _sessions.length);
+    if (mounted) {
+      setState(() {
+        _sessions.addAll(more);
+        _loadingMore = false;
+        _hasMore = more.length == _kPageSize;
+      });
+    }
   }
 
   @override
@@ -45,15 +88,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('История тренировок')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SingleChildScrollView(child: HistoryListSkeleton())
           : _sessions.isEmpty
               ? _EmptyHistory()
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
+                    controller: _scrollController,
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                    itemCount: _sessions.length,
+                    itemCount: _sessions.length + (_loadingMore ? 1 : 0),
                     itemBuilder: (context, i) {
+                      if (i == _sessions.length) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        );
+                      }
                       final s = _sessions[i];
                       final prevDate = i > 0
                           ? _parseDate(_sessions[i - 1]['date'] as String)
