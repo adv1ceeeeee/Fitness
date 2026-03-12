@@ -63,6 +63,51 @@ class BodyMetricsService {
         .maybeSingle();
   }
 
+  // ── Weight logs ──────────────────────────────────────────────────────────────
+
+  /// Returns all weight_logs rows for today (local date), newest first.
+  static Future<List<Map<String, dynamic>>> getTodayWeightLogs() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final todayStart = DateTime.now();
+    final startOfDay = DateTime(todayStart.year, todayStart.month, todayStart.day)
+        .toUtc()
+        .toIso8601String();
+    final endOfDay =
+        DateTime(todayStart.year, todayStart.month, todayStart.day, 23, 59, 59, 999)
+            .toUtc()
+            .toIso8601String();
+
+    final res = await _client
+        .from('weight_logs')
+        .select()
+        .eq('user_id', userId)
+        .gte('measured_at', startOfDay)
+        .lte('measured_at', endOfDay)
+        .order('measured_at', ascending: true);
+
+    return (res as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Inserts a timestamped weight_log entry.
+  /// If [updateDaily] is true, also upserts body_metrics.weight_kg for today.
+  static Future<void> logWeight(double weightKg,
+      {bool updateDaily = true}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+
+    await _client.from('weight_logs').insert({
+      'user_id': userId,
+      'weight_kg': weightKg,
+      'measured_at': DateTime.now().toUtc().toIso8601String(),
+    });
+
+    if (updateDaily) {
+      await upsert(weightKg: weightKg);
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getHistory() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];

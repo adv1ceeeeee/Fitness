@@ -12,6 +12,7 @@ class WorkoutExercise {
   final int? targetRpe;
   final int? durationMinutes;
   final int? supersetGroup;
+  final bool isDropSet;
   Exercise? exercise;
 
   WorkoutExercise({
@@ -26,6 +27,7 @@ class WorkoutExercise {
     this.targetRpe,
     this.durationMinutes,
     this.supersetGroup,
+    this.isDropSet = false,
     this.exercise,
   });
 
@@ -43,6 +45,7 @@ class WorkoutExercise {
         targetRpe: targetRpe,
         durationMinutes: durationMinutes,
         supersetGroup: supersetGroup,
+        isDropSet: isDropSet,
         exercise: newExercise,
       );
 
@@ -59,6 +62,7 @@ class WorkoutExercise {
       targetRpe: json['target_rpe'] as int?,
       durationMinutes: json['duration_minutes'] as int?,
       supersetGroup: json['superset_group'] as int?,
+      isDropSet: json['is_drop_set'] as bool? ?? false,
       exercise: json['exercises'] != null
           ? Exercise.fromJson(json['exercises'] as Map<String, dynamic>)
           : null,
@@ -77,5 +81,6 @@ class WorkoutExercise {
         'target_rpe': targetRpe,
         'duration_minutes': durationMinutes,
         'superset_group': supersetGroup,
+        'is_drop_set': isDropSet,
       };
 }

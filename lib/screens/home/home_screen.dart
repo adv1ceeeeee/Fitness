@@ -290,6 +290,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onAddMetrics: () => context.push('/body-metrics'),
                 ),
 
+                const SizedBox(height: 12),
+                _QuickWeightCard(
+                  currentWeight: (_latestBodyMetrics?['weight_kg'] as num?)?.toDouble(),
+                  onSaved: () async {
+                    if (mounted) _load();
+                  },
+                ),
                 const SizedBox(height: 24),
                 const Text(
                   'Быстрые действия',
@@ -1133,6 +1140,218 @@ class _ActionCard extends StatelessWidget {
                   ],
                 ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Quick weight logging card ────────────────────────────────────────────────
+
+class _QuickWeightCard extends StatefulWidget {
+  final double? currentWeight;
+  final Future<void> Function() onSaved;
+
+  const _QuickWeightCard({this.currentWeight, required this.onSaved});
+
+  @override
+  State<_QuickWeightCard> createState() => _QuickWeightCardState();
+}
+
+class _QuickWeightCardState extends State<_QuickWeightCard> {
+  late final TextEditingController _ctrl;
+  bool _saving = false;
+  bool _saved = false;
+  List<Map<String, dynamic>> _todayLogs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    final hint = widget.currentWeight;
+    _ctrl = TextEditingController(
+        text: hint != null
+            ? (hint % 1 == 0 ? hint.toInt().toString() : hint.toStringAsFixed(1))
+            : '');
+    _loadLogs();
+  }
+
+  Future<void> _loadLogs() async {
+    final logs = await BodyMetricsService.getTodayWeightLogs();
+    if (mounted) setState(() => _todayLogs = logs);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save({bool updateDaily = true}) async {
+    final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
+    if (v == null || v <= 0 || v > 500) return;
+    setState(() => _saving = true);
+    await BodyMetricsService.logWeight(v, updateDaily: updateDaily);
+    await _loadLogs();
+    await widget.onSaved();
+    if (mounted) setState(() { _saving = false; _saved = true; });
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) setState(() => _saved = false);
+  }
+
+  String _formatTime(String isoUtc) {
+    final dt = DateTime.parse(isoUtc).toLocal();
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _actionButton({
+    required String label,
+    required VoidCallback? onTap,
+    bool secondary = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: secondary
+              ? AppColors.surface
+              : AppColors.accent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: secondary ? AppColors.textSecondary : Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasTodayLogs = _todayLogs.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              const Icon(Icons.monitor_weight_outlined,
+                  color: AppColors.accent, size: 22),
+              const SizedBox(width: 10),
+              const Text(
+                'Вес сегодня',
+                style: TextStyle(
+                    color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+              ),
+              if (hasTodayLogs) ...[
+                const Spacer(),
+                // Today's log chips
+                Wrap(
+                  spacing: 6,
+                  children: _todayLogs.map((log) {
+                    final w = (log['weight_kg'] as num).toDouble();
+                    final t = _formatTime(log['measured_at'] as String);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '$t · ${w % 1 == 0 ? w.toInt() : w.toStringAsFixed(1)} кг',
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Input + buttons
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _ctrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600),
+                  decoration: const InputDecoration(
+                    hintText: '—',
+                    suffixText: 'кг',
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  onSubmitted: (_) => _save(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _saved
+                    ? const Icon(Icons.check_circle,
+                        key: ValueKey('check'),
+                        color: AppColors.accent,
+                        size: 28)
+                    : _saving
+                        ? const SizedBox(
+                            key: ValueKey('loader'),
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.accent),
+                          )
+                        : hasTodayLogs
+                            ? Row(
+                                key: const ValueKey('two-btn'),
+                                children: [
+                                  _actionButton(
+                                    label: 'Обновить',
+                                    onTap: () => _save(updateDaily: true),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _actionButton(
+                                    label: '+ Ещё раз',
+                                    onTap: () => _save(updateDaily: false),
+                                    secondary: true,
+                                  ),
+                                ],
+                              )
+                            : _actionButton(
+                                label: 'Сохранить',
+                                onTap: () => _save(),
+                              ),
+              ),
+            ],
+          ),
+          if (hasTodayLogs)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Обновить — заменит ежедневный вес · Ещё раз — сохранит как отдельное взвешивание',
+                style: TextStyle(
+                    color: AppColors.textSecondary, fontSize: 10),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -430,6 +430,134 @@ class AnalyticsService {
     return volume;
   }
 
+  /// Returns weekly training volume (kg×reps) for the past [weeks] weeks.
+  /// Result: list of {label: 'DD.MM', volume: double}, oldest first.
+  static Future<List<Map<String, dynamic>>> getWeeklyVolumeHistory(
+      {int weeks = 8}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final now = DateTime.now();
+    // Snap to start of current week (Monday)
+    final thisMonday =
+        now.subtract(Duration(days: now.weekday - 1));
+    final earliest = thisMonday.subtract(Duration(days: 7 * (weeks - 1)));
+    final earliestStr = earliest.toIso8601String().split('T')[0];
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .gte('date', earliestStr);
+
+    if ((sessionsRes as List).isEmpty) {
+      return List.generate(weeks, (i) {
+        final monday = earliest.add(Duration(days: 7 * i));
+        return {'label': '${monday.day}.${monday.month.toString().padLeft(2, '0')}', 'volume': 0.0};
+      });
+    }
+
+    final sessionIds = sessionsRes.map((e) => e['id'] as String).toList();
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, weight, reps')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true);
+
+    // Build date -> volume map
+    final dateVolume = <String, double>{};
+    final sessionDates = <String, String>{};
+    for (final s in sessionsRes) {
+      sessionDates[s['id'] as String] = s['date'] as String;
+    }
+    for (final set in setsRes as List) {
+      final sid = set['training_session_id'] as String?;
+      if (sid == null) continue;
+      final date = sessionDates[sid];
+      if (date == null) continue;
+      final w = (set['weight'] as num?)?.toDouble() ?? 0;
+      final r = (set['reps'] as num?)?.toInt() ?? 0;
+      dateVolume[date] = (dateVolume[date] ?? 0) + w * r;
+    }
+
+    // Group by ISO week start (Monday)
+    final weekVolume = <String, double>{};
+    dateVolume.forEach((date, vol) {
+      final d = DateTime.parse(date);
+      final monday = d.subtract(Duration(days: d.weekday - 1));
+      final key = monday.toIso8601String().split('T')[0];
+      weekVolume[key] = (weekVolume[key] ?? 0) + vol;
+    });
+
+    return List.generate(weeks, (i) {
+      final monday = earliest.add(Duration(days: 7 * i));
+      final key = monday.toIso8601String().split('T')[0];
+      final label =
+          '${monday.day}.${monday.month.toString().padLeft(2, '0')}';
+      return {'label': label, 'volume': weekVolume[key] ?? 0.0};
+    });
+  }
+
+  /// Returns total completed sets per muscle group for the past [days] days.
+  /// Result: {category: setCount}, e.g. {'chest': 24, 'back': 18, ...}
+  static Future<Map<String, int>> getMuscleGroupBalance(
+      {int days = 30}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final startStr = DateTime.now()
+        .subtract(Duration(days: days))
+        .toIso8601String()
+        .split('T')[0];
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', startStr);
+
+    final sessionIds =
+        (sessionsRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return {};
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true);
+
+    final weIds = (setsRes as List)
+        .map((e) => e['workout_exercise_id'] as String)
+        .toList();
+    if (weIds.isEmpty) return {};
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(category)')
+        .inFilter('id', weIds);
+
+    // Build weId -> category map
+    final weCategory = <String, String>{};
+    for (final we in weRes as List) {
+      final ex = we['exercises'] as Map<String, dynamic>?;
+      if (ex != null) {
+        weCategory[we['id'] as String] = ex['category'] as String? ?? 'other';
+      }
+    }
+
+    final balance = <String, int>{};
+    for (final set in setsRes) {
+      final weId = set['workout_exercise_id'] as String?;
+      if (weId == null) continue;
+      final cat = weCategory[weId];
+      if (cat != null) {
+        balance[cat] = (balance[cat] ?? 0) + 1;
+      }
+    }
+    return balance;
+  }
+
   /// Returns the all-time personal best (max weight) per exercise.
   /// Result: list of {exerciseName, exerciseId, weightKg, date}.
   static Future<List<Map<String, dynamic>>> getPersonalRecords() async {

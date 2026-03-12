@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/settings_provider.dart';
+import 'package:sportwai/screens/profile/body_silhouette_widget.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 
@@ -89,6 +90,12 @@ class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Body silhouette — always shown, uses latest measurement row
+                  BodySilhouetteWidget(
+                    measurements: _history.isNotEmpty ? _history.last : null,
+                  ),
+                  const SizedBox(height: 24),
+
                   if (_history.isNotEmpty) ...[
                     const Text(
                       'Динамика веса',
@@ -487,7 +494,7 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
                   const SizedBox(height: 20),
 
                   // ── Основные ──
-                  _SectionHeader('Основные'),
+                  const _SectionHeader('Основные'),
                   _Field(
                     ctrl: _weightCtrl,
                     label: 'Вес',
@@ -502,7 +509,7 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
                   ),
 
                   // ── Туловище ──
-                  _SectionHeader('Туловище'),
+                  const _SectionHeader('Туловище'),
                   _Field(ctrl: _neckCtrl,      label: 'Обхват шеи',   suffix: lenLabel, hint: useCm ? '37.5' : '14.8'),
                   _Field(ctrl: _shouldersCtrl, label: 'Обхват плеч',  suffix: lenLabel, hint: useCm ? '114.0' : '44.9'),
                   _Field(ctrl: _chestCtrl,     label: 'Обхват груди', suffix: lenLabel, hint: useCm ? '95.0' : '37.4'),
@@ -510,14 +517,14 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
                   _Field(ctrl: _hipsCtrl,      label: 'Обхват таза',  suffix: lenLabel, hint: useCm ? '95.0' : '37.4'),
 
                   // ── Руки ──
-                  _SectionHeader('Руки'),
+                  const _SectionHeader('Руки'),
                   _Field(ctrl: _rightArmCtrl,    label: 'Обхват правого плеча',      suffix: lenLabel, hint: useCm ? '34.0' : '13.4'),
                   _Field(ctrl: _leftArmCtrl,     label: 'Обхват левого плеча',       suffix: lenLabel, hint: useCm ? '34.0' : '13.4'),
                   _Field(ctrl: _rightForearmCtrl, label: 'Обхват правого предплечья', suffix: lenLabel, hint: useCm ? '28.0' : '11.0'),
                   _Field(ctrl: _leftForearmCtrl,  label: 'Обхват левого предплечья',  suffix: lenLabel, hint: useCm ? '28.0' : '11.0'),
 
                   // ── Ноги ──
-                  _SectionHeader('Ноги'),
+                  const _SectionHeader('Ноги'),
                   _Field(ctrl: _rightThighCtrl, label: 'Обхват правого бедра',  suffix: lenLabel, hint: useCm ? '56.0' : '22.0'),
                   _Field(ctrl: _leftThighCtrl,  label: 'Обхват левого бедра',   suffix: lenLabel, hint: useCm ? '56.0' : '22.0'),
                   _Field(ctrl: _rightCalfCtrl,  label: 'Обхват правой голени',  suffix: lenLabel, hint: useCm ? '36.0' : '14.2'),

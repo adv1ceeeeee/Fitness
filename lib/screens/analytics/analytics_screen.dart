@@ -39,6 +39,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Map<String, double> _bodyWeightData = {};
   List<Achievement> _achievements = [];
+  List<Map<String, dynamic>> _weeklyVolume = [];
+  Map<String, int> _muscleBalance = {};
 
   @override
   void initState() {
@@ -58,6 +60,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final tracked = await AnalyticsService.getTrackedExercises();
         final bodyHistory = await BodyMetricsService.getHistory();
         final achievements = await AchievementService.getAchievements();
+        final weeklyVol = await AnalyticsService.getWeeklyVolumeHistory();
+        final muscleBalance = await AnalyticsService.getMuscleGroupBalance();
 
         final bodyWeightData = <String, double>{};
         for (final row in bodyHistory) {
@@ -78,6 +82,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _trackedExercises = tracked;
             _bodyWeightData = bodyWeightData;
             _achievements = achievements;
+            _weeklyVolume = weeklyVol;
+            _muscleBalance = muscleBalance;
             _loading = false;
           });
         }
@@ -218,6 +224,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
                 const SizedBox(height: 32),
                 const Text(
+                  'Тренд объёма нагрузки',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Последние 8 недель (кг × повт.)',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                _VolumeBarChart(weeks: _weeklyVolume),
+                const SizedBox(height: 32),
+                const Text(
                   'Динамика веса тела',
                   style: TextStyle(
                     fontSize: 18,
@@ -318,6 +340,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                               )
                             : _ProgressChart(data: _exerciseProgress),
                 ],
+                const SizedBox(height: 32),
+                const Text(
+                  'Баланс мышечных групп',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Подходы за последние 30 дней',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                _MuscleBalanceChart(balance: _muscleBalance),
                 const SizedBox(height: 32),
                 const Text(
                   'Достижения',
@@ -837,6 +875,246 @@ class _NavCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Volume bar chart ─────────────────────────────────────────────────────────
+
+class _VolumeBarChart extends StatelessWidget {
+  final List<Map<String, dynamic>> weeks;
+
+  const _VolumeBarChart({required this.weeks});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxVol = weeks.fold<double>(
+        0, (m, w) => (w['volume'] as double) > m ? (w['volume'] as double) : m);
+
+    if (maxVol == 0) {
+      return _emptyCard('Завершите тренировку, чтобы увидеть тренд');
+    }
+
+    return Container(
+      height: 180,
+      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: BarChart(
+        BarChartData(
+          maxY: maxVol * 1.15,
+          barTouchData: BarTouchData(
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipColor: (_) => AppColors.surface,
+              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                final vol = rod.toY.round();
+                return BarTooltipItem(
+                  '${weeks[groupIndex]['label']}\n$vol кг',
+                  const TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                );
+              },
+            ),
+          ),
+          titlesData: FlTitlesData(
+            show: true,
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  final i = value.toInt();
+                  if (i < 0 || i >= weeks.length || i % 2 != 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      weeks[i]['label'] as String,
+                      style: const TextStyle(
+                          fontSize: 10, color: AppColors.textSecondary),
+                    ),
+                  );
+                },
+                reservedSize: 24,
+              ),
+            ),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) => const FlLine(
+              color: AppColors.surface,
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: weeks.asMap().entries.map((e) {
+            final vol = (e.value['volume'] as double);
+            final isLast = e.key == weeks.length - 1;
+            return BarChartGroupData(
+              x: e.key,
+              barRods: [
+                BarChartRodData(
+                  toY: vol,
+                  color: isLast
+                      ? AppColors.accent
+                      : AppColors.accent.withValues(alpha: 0.45),
+                  width: 14,
+                  borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(4)),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyCard(String msg) => Container(
+        height: 80,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+            color: AppColors.card, borderRadius: BorderRadius.circular(16)),
+        child: Text(msg,
+            style: const TextStyle(color: AppColors.textSecondary)),
+      );
+}
+
+// ─── Muscle balance chart ─────────────────────────────────────────────────────
+
+class _MuscleBalanceChart extends StatelessWidget {
+  final Map<String, int> balance;
+
+  const _MuscleBalanceChart({required this.balance});
+
+  static const _labels = {
+    'chest': 'Грудь',
+    'back': 'Спина',
+    'shoulders': 'Плечи',
+    'arms': 'Руки',
+    'legs': 'Ноги',
+    'cardio': 'Кардио',
+  };
+
+  static const _colors = [
+    Color(0xFF007AFF),
+    Color(0xFF34C759),
+    Color(0xFFFF9500),
+    Color(0xFFBF5AF2),
+    Color(0xFFFF453A),
+    Color(0xFF30D158),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (balance.isEmpty) {
+      return Container(
+        height: 80,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+            color: AppColors.card, borderRadius: BorderRadius.circular(16)),
+        child: const Text('Нет данных за последние 30 дней',
+            style: TextStyle(color: AppColors.textSecondary)),
+      );
+    }
+
+    final total = balance.values.fold(0, (s, v) => s + v);
+    final entries = balance.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final sections = entries.asMap().entries.map((e) {
+      final colorIndex = e.key % _colors.length;
+      final count = e.value.value;
+      final pct = count / total;
+      final color = _colors[colorIndex];
+      return PieChartSectionData(
+        value: count.toDouble(),
+        color: color,
+        title: '${(pct * 100).round()}%',
+        titleStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+        radius: 52,
+        titlePositionPercentageOffset: 0.65,
+      );
+    }).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 160,
+            height: 160,
+            child: PieChart(
+              PieChartData(
+                sections: sections,
+                centerSpaceRadius: 42,
+                sectionsSpace: 2,
+                startDegreeOffset: -90,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: entries.asMap().entries.map((e) {
+                final colorIndex = e.key % _colors.length;
+                final cat = e.value.key;
+                final count = e.value.value;
+                final pct = count / total;
+                final label = _labels[cat] ?? cat;
+                final color = _colors[colorIndex];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 7),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 13),
+                        ),
+                      ),
+                      Text(
+                        '${(pct * 100).round()}%',
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
       ),
     );
   }

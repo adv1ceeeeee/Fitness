@@ -185,4 +185,86 @@ void main() {
       expect(state.workoutName, 'New workout');
     });
   });
+
+  group('ActiveSessionNotifier.loadPersisted', () {
+    test('returns null when no session persisted', () async {
+      final result = await ActiveSessionNotifier.loadPersisted();
+      expect(result, isNull);
+    });
+
+    test('returns state with all fields when session is persisted', () async {
+      SharedPreferences.setMockInitialValues({
+        'active_session_id': 'sess-42',
+        'active_workout_id': 'work-7',
+        'active_workout_name': 'Грудь',
+        'active_session_start': '2026-01-15T10:30:00.000',
+      });
+
+      final result = await ActiveSessionNotifier.loadPersisted();
+
+      expect(result, isNotNull);
+      expect(result!.sessionId, 'sess-42');
+      expect(result.workoutId, 'work-7');
+      expect(result.workoutName, 'Грудь');
+      expect(result.startTime, DateTime.parse('2026-01-15T10:30:00.000'));
+      expect(result.isActive, isTrue);
+    });
+
+    test('returns state with null optional fields when keys missing', () async {
+      SharedPreferences.setMockInitialValues({
+        'active_session_id': 'sess-1',
+      });
+
+      final result = await ActiveSessionNotifier.loadPersisted();
+
+      expect(result, isNotNull);
+      expect(result!.sessionId, 'sess-1');
+      expect(result.workoutId, isNull);
+      expect(result.workoutName, isNull);
+      expect(result.startTime, isNull);
+    });
+
+    test('returns null startTime for invalid date string', () async {
+      SharedPreferences.setMockInitialValues({
+        'active_session_id': 'sess-2',
+        'active_session_start': 'not-a-date',
+      });
+
+      final result = await ActiveSessionNotifier.loadPersisted();
+
+      expect(result, isNotNull);
+      expect(result!.startTime, isNull);
+    });
+
+    test('persisted state is active', () async {
+      SharedPreferences.setMockInitialValues({
+        'active_session_id': 'sess-active',
+        'active_workout_id': 'w',
+        'active_workout_name': 'Ноги',
+        'active_session_start': DateTime.now().toIso8601String(),
+      });
+
+      final result = await ActiveSessionNotifier.loadPersisted();
+      expect(result!.isActive, isTrue);
+    });
+
+    test('start + stop clears prefs so loadPersisted returns null', () async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+
+      c.read(activeSessionProvider.notifier).start(
+            sessionId: 'sess-x',
+            workoutId: 'w-x',
+            workoutName: 'Test',
+          );
+      // Give async pref write time to complete
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      c.read(activeSessionProvider.notifier).stop();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final result = await ActiveSessionNotifier.loadPersisted();
+      expect(result, isNull);
+    });
+  });
 }

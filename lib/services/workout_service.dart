@@ -181,6 +181,7 @@ class WorkoutService {
     // Pass a boxed int? to explicitly set superset_group (null clears it).
     // Use [_Absent] sentinel to skip the field entirely.
     Object? supersetGroup = _absent,
+    Object? isDropSet = _absent,
   }) async {
     final updates = <String, dynamic>{};
     if (sets != null) updates['sets'] = sets;
@@ -190,6 +191,7 @@ class WorkoutService {
     updates['target_rpe'] = targetRpe;
     updates['duration_minutes'] = durationMinutes;
     if (supersetGroup != _absent) updates['superset_group'] = supersetGroup;
+    if (isDropSet != _absent) updates['is_drop_set'] = isDropSet;
     await _client.from('workout_exercises').update(updates).eq('id', id);
   }
 

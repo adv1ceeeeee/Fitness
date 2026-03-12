@@ -385,6 +385,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 borderRadius: BorderRadius.circular(12),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
+                  onTap: () => context.push('/calculators'),
+                  child: const ListTile(
+                    leading: Icon(Icons.calculate_outlined, color: AppColors.accent),
+                    title: Text(
+                      'Калькуляторы',
+                      style: TextStyle(color: AppColors.textPrimary),
+                    ),
+                    subtitle: Text(
+                      '1ПМ и блины',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Material(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
                   onTap: () => _showExportSheet(context),
                   child: const ListTile(
                     leading: Icon(Icons.download, color: AppColors.accent),

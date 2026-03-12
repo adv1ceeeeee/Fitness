@@ -5,6 +5,7 @@ class Exercise {
   final String? description;
   final String? imageUrl;
   final bool isStandard;
+  final String? userId;
 
   Exercise({
     required this.id,
@@ -13,7 +14,10 @@ class Exercise {
     this.description,
     this.imageUrl,
     this.isStandard = true,
+    this.userId,
   });
+
+  bool get isCustom => !isStandard && userId != null;
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
     return Exercise(
@@ -23,6 +27,7 @@ class Exercise {
       description: json['description'] as String?,
       imageUrl: json['image_url'] as String?,
       isStandard: json['is_standard'] as bool? ?? true,
+      userId: json['user_id'] as String?,
     );
   }
 
@@ -33,6 +38,7 @@ class Exercise {
         'description': description,
         'image_url': imageUrl,
         'is_standard': isStandard,
+        if (userId != null) 'user_id': userId,
       };
 
   static String categoryDisplayName(String category) {

@@ -115,4 +115,57 @@ void main() {
       expect(hasPlannedDot(events), isFalse);
     });
   });
+
+  group('Calendar missed workout detection', () {
+    // hasMissed = isPast && hasPlanned && !hasCompleted
+    bool hasMissed({
+      required bool isPast,
+      required bool hasPlanned,
+      required bool hasCompleted,
+    }) =>
+        isPast && hasPlanned && !hasCompleted;
+
+    test('past day with planned but no completed → missed', () {
+      expect(hasMissed(isPast: true, hasPlanned: true, hasCompleted: false),
+          isTrue);
+    });
+
+    test('past day with planned AND completed → not missed', () {
+      expect(hasMissed(isPast: true, hasPlanned: true, hasCompleted: true),
+          isFalse);
+    });
+
+    test('past day with no planned events → not missed', () {
+      expect(hasMissed(isPast: true, hasPlanned: false, hasCompleted: false),
+          isFalse);
+    });
+
+    test('today (not past) with planned but no completed → not missed', () {
+      expect(hasMissed(isPast: false, hasPlanned: true, hasCompleted: false),
+          isFalse);
+    });
+
+    test('future day → never missed regardless of events', () {
+      expect(hasMissed(isPast: false, hasPlanned: true, hasCompleted: false),
+          isFalse);
+      expect(hasMissed(isPast: false, hasPlanned: false, hasCompleted: false),
+          isFalse);
+    });
+
+    test('past day with only completed sessions → not missed', () {
+      expect(hasMissed(isPast: true, hasPlanned: false, hasCompleted: true),
+          isFalse);
+    });
+
+    // Integration with _DayEvent: derive booleans from event list
+    test('derives hasPlanned and hasCompleted correctly from event list', () {
+      final events = [
+        const _DayEvent(completed: false, planned: true), // planned, not done
+      ];
+      final hasCompletedFlag = hasCompletedDot(events);
+      final hasPlannedFlag = hasPlannedDot(events);
+      expect(hasMissed(isPast: true, hasPlanned: hasPlannedFlag, hasCompleted: hasCompletedFlag),
+          isTrue);
+    });
+  });
 }

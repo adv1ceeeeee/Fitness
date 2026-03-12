@@ -23,6 +23,7 @@ import 'package:sportwai/screens/onboarding/onboarding_check_screen.dart';
 import 'package:sportwai/screens/history/history_screen.dart';
 import 'package:sportwai/screens/profile/body_metrics_screen.dart';
 import 'package:sportwai/screens/analytics/personal_records_screen.dart';
+import 'package:sportwai/screens/tools/calculators_screen.dart';
 
 // ── Transition helpers ────────────────────────────────────────────────────────
 
@@ -236,6 +237,11 @@ class AppRouter {
             path: '/records',
             pageBuilder: (context, state) =>
                 _slideUpPage(state, const PersonalRecordsScreen()),
+          ),
+          GoRoute(
+            path: '/calculators',
+            pageBuilder: (context, state) =>
+                _slideUpPage(state, const CalculatorsScreen()),
           ),
         ],
       ),

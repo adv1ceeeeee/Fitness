@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/providers/connectivity_provider.dart';
+import 'package:sportwai/screens/workout_session/free_workout_screen.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 
@@ -265,6 +266,28 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     _ticker = null;
   }
 
+  void _openFreeWorkout() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => FreeWorkoutScreen(
+        onStart: (sessionId, workoutId, workoutName) {
+          Navigator.of(context).pop(); // close FreeWorkoutScreen
+          ref.read(activeSessionProvider.notifier).start(
+                sessionId: sessionId,
+                workoutId: workoutId,
+                workoutName: workoutName,
+              );
+          EventLogger.workoutStarted(
+            workoutId: workoutId,
+            workoutName: workoutName,
+            sessionId: sessionId,
+          );
+          _startTicker();
+          context.push('/session/$sessionId');
+        },
+      ),
+    ));
+  }
+
   Future<void> _onPlayTap() async {
     final cyclicWorkout = await TrainingService.getTodayWorkout();
     final todaySessions = await TrainingService.getTodayIncompleteSessions();
@@ -293,30 +316,31 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       ));
     }
 
+    // Always show the choice sheet so user can pick free workout
     if (choices.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Сегодня тренировок нет. Добавьте программу.'),
-        ),
-      );
+      _openFreeWorkout();
       return;
     }
 
-    _WorkoutChoice choice;
-    if (choices.length == 1) {
-      choice = choices.first;
-    } else {
-      final picked = await showModalBottomSheet<_WorkoutChoice>(
-        context: context,
-        backgroundColor: const Color(0xFF1C1C1E),
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (ctx) => _StartChoiceSheet(choices: choices),
-      );
-      if (picked == null || !mounted) return;
-      choice = picked;
+    // Show sheet with workout choices + free workout option
+    final result = await showModalBottomSheet<Object>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _StartChoiceSheet(
+        choices: choices,
+        onFreeWorkout: () => Navigator.pop(ctx, 'free'),
+      ),
+    );
+    if (!mounted) return;
+    if (result == 'free') {
+      _openFreeWorkout();
+      return;
     }
+    if (result == null) return;
+    final choice = result as _WorkoutChoice;
 
     final String finalSessionId;
     if (choice.sessionId != null) {
@@ -437,8 +461,12 @@ class _WorkoutChoice {
 
 class _StartChoiceSheet extends StatelessWidget {
   final List<_WorkoutChoice> choices;
+  final VoidCallback onFreeWorkout;
 
-  const _StartChoiceSheet({required this.choices});
+  const _StartChoiceSheet({
+    required this.choices,
+    required this.onFreeWorkout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -507,6 +535,47 @@ class _StartChoiceSheet extends StatelessWidget {
                             size: 18, color: AppColors.textSecondary),
                       ],
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Free workout option
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Material(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: onFreeWorkout,
+                borderRadius: BorderRadius.circular(14),
+                child: const Padding(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.shuffle,
+                          size: 20, color: AppColors.textSecondary),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Свободная тренировка',
+                                style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w500)),
+                            SizedBox(height: 2),
+                            Text('Выбрать упражнения вручную',
+                                style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right,
+                          size: 18, color: AppColors.textSecondary),
+                    ],
                   ),
                 ),
               ),

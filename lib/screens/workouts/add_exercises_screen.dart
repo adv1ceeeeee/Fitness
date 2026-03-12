@@ -5,6 +5,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
+import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
@@ -166,6 +167,15 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     await _load();
   }
 
+
+  Future<void> _toggleDropSet(int i) async {
+    final we = _programExercises[i];
+    await WorkoutService.updateWorkoutExercise(
+      we.id,
+      isDropSet: !we.isDropSet,
+    );
+    await _load();
+  }
 
   void _showEditWorkoutDialog() {
     if (_workout == null) return;
@@ -685,6 +695,44 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     );
   }
 
+  Future<void> _openCreateExercise() async {
+    final created = await Navigator.of(context).push<Exercise>(
+      MaterialPageRoute(builder: (_) => const CreateExerciseScreen()),
+    );
+    if (created != null && mounted) {
+      setState(() => _allExercises = [..._allExercises, created]
+        ..sort((a, b) => a.name.compareTo(b.name)));
+    }
+  }
+
+  Future<void> _deleteCustomExercise(Exercise ex) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Удалить упражнение?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(ex.name,
+            style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Удалить',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ExerciseService.deleteExercise(ex.id);
+      if (mounted) setState(() => _allExercises.removeWhere((e) => e.id == ex.id));
+    }
+  }
+
   List<Widget> _buildExerciseTiles(List<Exercise> exercises) {
     return exercises.map((ex) => Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -694,35 +742,46 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         child: ListTile(
           leading: Icon(
             ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
-            color: AppColors.accent,
+            color: ex.isCustom ? AppColors.accent.withValues(alpha: 0.75) : AppColors.accent,
           ),
           title: Text(ex.name,
               style: const TextStyle(color: AppColors.textPrimary)),
           subtitle: Text(
-            Exercise.categoryDisplayName(ex.category),
+            '${Exercise.categoryDisplayName(ex.category)}${ex.isCustom ? '  •  Моё' : ''}',
             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.add, color: AppColors.accent),
-            onPressed: () => _showExerciseSettingsSheet(
-              title: ex.name,
-              isCardio: ex.category == 'cardio',
-              initialSets: 3,
-              initialRepsRange: '8-12',
-              initialRest: 90,
-              initialTargetWeight: null,
-              initialDurationMinutes: 30,
-              saveLabel: 'Добавить в программу',
-              onSave: (s, r, rest, tw, dur) => WorkoutService.addExerciseToWorkout(
-                widget.workoutId,
-                ex.id,
-                sets: s,
-                repsRange: r,
-                restSeconds: rest,
-                targetWeight: tw,
-                durationMinutes: dur,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (ex.isCustom)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  color: AppColors.textSecondary,
+                  onPressed: () => _deleteCustomExercise(ex),
+                ),
+              IconButton(
+                icon: const Icon(Icons.add, color: AppColors.accent),
+                onPressed: () => _showExerciseSettingsSheet(
+                  title: ex.name,
+                  isCardio: ex.category == 'cardio',
+                  initialSets: 3,
+                  initialRepsRange: '8-12',
+                  initialRest: 90,
+                  initialTargetWeight: null,
+                  initialDurationMinutes: 30,
+                  saveLabel: 'Добавить в программу',
+                  onSave: (s, r, rest, tw, dur) => WorkoutService.addExerciseToWorkout(
+                    widget.workoutId,
+                    ex.id,
+                    sets: s,
+                    repsRange: r,
+                    restSeconds: rest,
+                    targetWeight: tw,
+                    durationMinutes: dur,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
@@ -916,7 +975,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         supersetLabel: _supersetLabel(i),
                         isLinkedWithNext: isLinkedWithNext,
                         canLink: !isLast,
+                        isDropSet: we.isDropSet,
                         onToggleLink: () => _toggleSuperset(i),
+                        onToggleDropSet: () => _toggleDropSet(i),
                         onEdit: () => _showExerciseSettingsSheet(
                           title: we.exercise?.name ?? '?',
                           isCardio: we.exercise?.category == 'cardio',
@@ -964,6 +1025,15 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 else
                   ...catalogWidgets,
 
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _openCreateExercise,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Создать своё упражнение'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44),
+                  ),
+                ),
                 const SizedBox(height: 16),
               ],
             ),
@@ -982,7 +1052,9 @@ class _ProgramExerciseCard extends StatelessWidget {
   final String? supersetLabel;   // e.g. "A1", "A2"
   final bool isLinkedWithNext;
   final bool canLink;
+  final bool isDropSet;
   final VoidCallback onToggleLink;
+  final VoidCallback onToggleDropSet;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -993,9 +1065,11 @@ class _ProgramExerciseCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onToggleLink,
+    required this.onToggleDropSet,
     this.supersetLabel,
     this.isLinkedWithNext = false,
     this.canLink = false,
+    this.isDropSet = false,
   });
 
   @override
@@ -1119,6 +1193,52 @@ class _ProgramExerciseCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // Drop-set toggle
+                  GestureDetector(
+                    onTap: onToggleDropSet,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 4),
+                      margin: const EdgeInsets.only(right: 4),
+                      decoration: BoxDecoration(
+                        color: isDropSet
+                            ? const Color(0xFFFF9500).withValues(alpha: 0.15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isDropSet
+                              ? const Color(0xFFFF9500).withValues(alpha: 0.5)
+                              : AppColors.textSecondary.withValues(alpha: 0.25),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.trending_down_rounded,
+                            size: 14,
+                            color: isDropSet
+                                ? const Color(0xFFFF9500)
+                                : AppColors.textSecondary
+                                    .withValues(alpha: 0.4),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Дроп',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: isDropSet
+                                  ? const Color(0xFFFF9500)
+                                  : AppColors.textSecondary
+                                      .withValues(alpha: 0.4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.tune,
                         color: AppColors.textSecondary, size: 20),
@@ -1178,7 +1298,7 @@ class _ProgramExerciseCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            isLinkedWithNext ? 'Суперсет' : 'Связать',
+                            isLinkedWithNext ? 'Суперсет' : 'Связать в супер-сет',
                             style: TextStyle(
                               fontSize: 11,
                               color: isLinkedWithNext

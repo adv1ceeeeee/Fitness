@@ -354,6 +354,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                       const SizedBox(height: 16),
                       const Text(
                         'Нет программ тренировок',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,

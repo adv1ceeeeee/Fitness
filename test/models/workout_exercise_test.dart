@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 
 void main() {
@@ -158,6 +159,88 @@ void main() {
       expect(restored.sets, original.sets);
       expect(restored.repsRange, original.repsRange);
       expect(restored.restSeconds, original.restSeconds);
+    });
+  });
+
+  group('WorkoutExercise.copyWithExercise', () {
+    final baseExercise = Exercise(
+      id: 'ex-old',
+      name: 'Жим лёжа',
+      category: 'chest',
+      isStandard: true,
+    );
+    final newExercise = Exercise(
+      id: 'ex-new',
+      name: 'Разводка гантелей',
+      category: 'chest',
+      isStandard: true,
+    );
+
+    late WorkoutExercise base;
+
+    setUp(() {
+      base = WorkoutExercise(
+        id: 'we-base',
+        workoutId: 'w-base',
+        exerciseId: baseExercise.id,
+        order: 2,
+        sets: 4,
+        repsRange: '8-12',
+        restSeconds: 90,
+        targetWeight: 80.0,
+        targetRpe: 8,
+        durationMinutes: null,
+        supersetGroup: 1,
+        exercise: baseExercise,
+      );
+    });
+
+    test('updates exerciseId to new exercise id', () {
+      final copy = base.copyWithExercise(newExercise);
+      expect(copy.exerciseId, newExercise.id);
+    });
+
+    test('updates exercise field to new exercise object', () {
+      final copy = base.copyWithExercise(newExercise);
+      expect(copy.exercise, newExercise);
+      expect(copy.exercise!.name, 'Разводка гантелей');
+    });
+
+    test('preserves all other fields unchanged', () {
+      final copy = base.copyWithExercise(newExercise);
+      expect(copy.id, base.id);
+      expect(copy.workoutId, base.workoutId);
+      expect(copy.order, base.order);
+      expect(copy.sets, base.sets);
+      expect(copy.repsRange, base.repsRange);
+      expect(copy.restSeconds, base.restSeconds);
+      expect(copy.targetWeight, base.targetWeight);
+      expect(copy.targetRpe, base.targetRpe);
+      expect(copy.durationMinutes, base.durationMinutes);
+      expect(copy.supersetGroup, base.supersetGroup);
+    });
+
+    test('original is not mutated after copy', () {
+      base.copyWithExercise(newExercise);
+      expect(base.exerciseId, baseExercise.id);
+      expect(base.exercise!.name, 'Жим лёжа');
+    });
+
+    test('works when optional fields are null', () {
+      final minimal = WorkoutExercise(
+        id: 'we-min',
+        workoutId: 'w-min',
+        exerciseId: 'ex-min',
+        order: 0,
+        sets: 3,
+        repsRange: '8-12',
+        restSeconds: 90,
+      );
+      final copy = minimal.copyWithExercise(newExercise);
+      expect(copy.targetWeight, isNull);
+      expect(copy.targetRpe, isNull);
+      expect(copy.supersetGroup, isNull);
+      expect(copy.exerciseId, newExercise.id);
     });
   });
 }
