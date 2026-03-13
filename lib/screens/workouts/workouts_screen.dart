@@ -297,7 +297,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       child: RefreshIndicator(
         onRefresh: () async => widget.onRefresh(),
         child: ReorderableListView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.of(context).padding.bottom + 100),
           buildDefaultDragHandles: false,
           onReorder: _onReorder,
           header: Column(
