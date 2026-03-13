@@ -415,6 +415,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                             durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
                             onTap: () => widget.onWorkoutTap(w),
                             onDelete: () => _confirmDelete(w),
+                            onCopy: () => _duplicateWorkout(w),
                           ),
                         ),
                     ],
@@ -715,11 +716,13 @@ class _InactiveWorkoutCard extends StatelessWidget {
   final int? durationSeconds;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onCopy;
 
   const _InactiveWorkoutCard({
     required this.workout,
     required this.onTap,
     required this.onDelete,
+    required this.onCopy,
     this.sessionDate,
     this.durationSeconds,
   });
@@ -801,6 +804,15 @@ class _InactiveWorkoutCard extends StatelessWidget {
                   ],
                 ),
               ),
+              IconButton(
+                icon: const Icon(Icons.copy_rounded,
+                    color: AppColors.textSecondary, size: 20),
+                onPressed: onCopy,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Повторить тренировку',
+              ),
+              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.delete_outline,
                     color: AppColors.error, size: 20),
