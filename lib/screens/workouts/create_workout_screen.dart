@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/workout_service.dart';
 
 // ─── Section data model ───────────────────────────────────────────────────────
@@ -153,6 +154,9 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
       );
 
       if (mounted) {
+        for (final w in workouts) {
+          EventLogger.workoutCreated(workoutName: w.name);
+        }
         final ids = workouts.map((w) => w.id).toList();
         context.pushReplacement(
           '/workouts/${ids.first}/exercises',

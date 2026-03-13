@@ -78,7 +78,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<Achievement> _achievements = [];
   List<Map<String, dynamic>> _weeklyVolume = [];
   Map<String, int> _muscleBalance = {};
+  Map<String, double> _muscleFrequency = {};
   List<Map<String, dynamic>> _caloriesPerSession = [];
+  ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek})?
+      _weekComparison;
 
   @override
   void initState() {
@@ -100,8 +103,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final achievements = await AchievementService.getAchievements();
         final weeklyVol = await AnalyticsService.getWeeklyVolumeHistory();
         final muscleBalance = await AnalyticsService.getMuscleGroupBalance();
+        final muscleFreq = await AnalyticsService.getMuscleGroupFrequency();
         final caloriesPerSession = await AnalyticsService.getCaloriesPerSession();
         final communityAvgVol = await AnalyticsService.getCommunityAvgWeeklyVolume();
+        final weekCmp = await AnalyticsService.getWeekComparison();
 
         if (mounted) {
           setState(() {
@@ -115,8 +120,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _achievements = achievements;
             _weeklyVolume = weeklyVol;
             _muscleBalance = muscleBalance;
+            _muscleFrequency = muscleFreq;
             _caloriesPerSession = caloriesPerSession;
             _communityAvgWeeklyVolume = communityAvgVol;
+            _weekComparison = weekCmp;
             _loading = false;
           });
         }
@@ -264,6 +271,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                if (_weekComparison != null)
+                  _WeekComparisonCard(cmp: _weekComparison!),
                 const SizedBox(height: 32),
                 const Text(
                   'Тренд объёма нагрузки',
@@ -474,6 +484,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
                 const SizedBox(height: 12),
                 _MuscleBalanceChart(balance: _muscleBalance),
+                if (_muscleFrequency.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Частота по группам мышц',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Среднее тренировок в неделю за 4 недели',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  _MuscleFrequencyChart(frequency: _muscleFrequency),
+                ],
                 const SizedBox(height: 32),
                 const Text(
                   'Достижения',
@@ -642,6 +670,14 @@ class _ProgressChart extends StatelessWidget {
       (i) => FlSpot(i.toDouble(), sorted[i].value),
     );
 
+    // Community average as flat second line across the x range
+    final communitySpots = communityAvg == null || sorted.length < 2
+        ? <FlSpot>[]
+        : [
+            FlSpot(0, communityAvg!),
+            FlSpot((sorted.length - 1).toDouble(), communityAvg!),
+          ];
+
     final dataMin = sorted.map((e) => e.value).reduce((a, b) => a < b ? a : b);
     final dataMax = sorted.map((e) => e.value).reduce((a, b) => a > b ? a : b);
     final allValues = [dataMin, dataMax, if (communityAvg != null) communityAvg!];
@@ -660,24 +696,6 @@ class _ProgressChart extends StatelessWidget {
         LineChartData(
           minY: minY - yPad,
           maxY: maxY + yPad,
-          extraLinesData: communityAvg == null
-              ? null
-              : ExtraLinesData(horizontalLines: [
-                  HorizontalLine(
-                    y: communityAvg!,
-                    color: Colors.grey.withValues(alpha: 0.55),
-                    strokeWidth: 1.5,
-                    dashArray: [6, 4],
-                    label: HorizontalLineLabel(
-                      show: true,
-                      alignment: Alignment.topRight,
-                      labelResolver: (_) =>
-                          'avg ${communityAvg!.toStringAsFixed(1)}',
-                      style: const TextStyle(
-                          color: Colors.grey, fontSize: 10),
-                    ),
-                  ),
-                ]),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -728,6 +746,20 @@ class _ProgressChart extends StatelessWidget {
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           lineBarsData: [
+            // Community average line (behind main line)
+            if (communitySpots.length >= 2)
+              LineChartBarData(
+                spots: communitySpots,
+                isCurved: false,
+                color: Colors.white.withValues(alpha: 0.28),
+                barWidth: 1.5,
+                dotData: const FlDotData(show: false),
+                belowBarData: BarAreaData(
+                  show: true,
+                  color: Colors.white.withValues(alpha: 0.05),
+                ),
+              ),
+            // Main user data line
             LineChartBarData(
               spots: spots,
               isCurved: true,
@@ -1143,102 +1175,140 @@ class _VolumeBarChart extends StatelessWidget {
       return _emptyCard('Завершите тренировку, чтобы увидеть тренд');
     }
 
+    final chartMaxY = communityAvg != null && communityAvg! > maxVol
+        ? communityAvg! * 1.15
+        : maxVol * 1.15;
+    final n = weeks.length;
+
+    // Community average as flat line across all weeks
+    final communitySpots = communityAvg == null || n < 2
+        ? <FlSpot>[]
+        : [FlSpot(0, communityAvg!), FlSpot((n - 1).toDouble(), communityAvg!)];
+
     return Container(
       height: 180,
-      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: BarChart(
-        BarChartData(
-          maxY: communityAvg != null && communityAvg! > maxVol
-              ? communityAvg! * 1.15
-              : maxVol * 1.15,
-          extraLinesData: communityAvg == null
-              ? null
-              : ExtraLinesData(horizontalLines: [
-                  HorizontalLine(
-                    y: communityAvg!,
-                    color: Colors.grey.withValues(alpha: 0.55),
-                    strokeWidth: 1.5,
-                    dashArray: [6, 4],
-                    label: HorizontalLineLabel(
-                      show: true,
-                      alignment: Alignment.topRight,
-                      labelResolver: (_) =>
-                          'avg ${(communityAvg! / 1000).toStringAsFixed(1)}к',
-                      style: const TextStyle(
-                          color: Colors.grey, fontSize: 10),
+      child: Stack(
+        children: [
+          // ── Bars ────────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+            child: BarChart(
+              BarChartData(
+                maxY: chartMaxY,
+                barTouchData: BarTouchData(
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => AppColors.surface,
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      final vol = rod.toY.round();
+                      return BarTooltipItem(
+                        '${weeks[groupIndex]['label']}\n$vol кг',
+                        const TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                      );
+                    },
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 24,
+                      getTitlesWidget: (value, meta) {
+                        final i = value.toInt();
+                        if (i < 0 || i >= weeks.length || i % 2 != 0) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            weeks[i]['label'] as String,
+                            style: const TextStyle(
+                                fontSize: 10, color: AppColors.textSecondary),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                ]),
-          barTouchData: BarTouchData(
-            touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (_) => AppColors.surface,
-              getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                final vol = rod.toY.round();
-                return BarTooltipItem(
-                  '${weeks[groupIndex]['label']}\n$vol кг',
-                  const TextStyle(color: AppColors.textPrimary, fontSize: 12),
-                );
-              },
-            ),
-          ),
-          titlesData: FlTitlesData(
-            show: true,
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final i = value.toInt();
-                  if (i < 0 || i >= weeks.length || i % 2 != 0) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      weeks[i]['label'] as String,
-                      style: const TextStyle(
-                          fontSize: 10, color: AppColors.textSecondary),
-                    ),
+                ),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (_) => const FlLine(
+                    color: AppColors.surface,
+                    strokeWidth: 1,
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                barGroups: weeks.asMap().entries.map((e) {
+                  final vol = (e.value['volume'] as double);
+                  final isLast = e.key == weeks.length - 1;
+                  return BarChartGroupData(
+                    x: e.key,
+                    barRods: [
+                      BarChartRodData(
+                        toY: vol,
+                        color: isLast
+                            ? AppColors.accent
+                            : AppColors.accent.withValues(alpha: 0.45),
+                        width: 14,
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4)),
+                      ),
+                    ],
                   );
-                },
-                reservedSize: 24,
+                }).toList(),
               ),
             ),
           ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) => const FlLine(
-              color: AppColors.surface,
-              strokeWidth: 1,
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          barGroups: weeks.asMap().entries.map((e) {
-            final vol = (e.value['volume'] as double);
-            final isLast = e.key == weeks.length - 1;
-            return BarChartGroupData(
-              x: e.key,
-              barRods: [
-                BarChartRodData(
-                  toY: vol,
-                  color: isLast
-                      ? AppColors.accent
-                      : AppColors.accent.withValues(alpha: 0.45),
-                  width: 14,
-                  borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(4)),
+          // ── Community average overlay line ────────────────────────────────
+          if (communitySpots.length >= 2)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+              child: IgnorePointer(
+                child: LineChart(
+                  LineChartData(
+                    minX: 0,
+                    maxX: (n - 1).toDouble(),
+                    minY: 0,
+                    maxY: chartMaxY,
+                    backgroundColor: Colors.transparent,
+                    gridData: const FlGridData(show: false),
+                    borderData: FlBorderData(show: false),
+                    titlesData: const FlTitlesData(
+                      leftTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false, reservedSize: 0)),
+                      rightTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false, reservedSize: 0)),
+                      topTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false, reservedSize: 0)),
+                      bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false, reservedSize: 24)),
+                    ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: communitySpots,
+                        isCurved: false,
+                        color: Colors.white.withValues(alpha: 0.30),
+                        barWidth: 1.5,
+                        dotData: const FlDotData(show: false),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: Colors.white.withValues(alpha: 0.05),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            );
-          }).toList(),
-        ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1267,6 +1337,7 @@ class _MuscleBalanceChart extends StatelessWidget {
     'arms': 'Руки',
     'legs': 'Ноги',
     'cardio': 'Кардио',
+    'core': 'Пресс',
   };
 
   static const _colors = [
@@ -1390,3 +1461,224 @@ class _MuscleBalanceChart extends StatelessWidget {
     );
   }
 }
+
+// ─── Сравнение недель ────────────────────────────────────────────────────────
+
+class _WeekComparisonCard extends StatelessWidget {
+  final ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek}) cmp;
+
+  const _WeekComparisonCard({required this.cmp});
+
+  @override
+  Widget build(BuildContext context) {
+    final volDiff = cmp.volumeThisWeek - cmp.volumeLastWeek;
+    final sessDiff = cmp.sessionsThisWeek - cmp.sessionsLastWeek;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Эта неделя vs прошлая',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _CmpColumn(
+                  label: 'Тренировок',
+                  thisWeek: '${cmp.sessionsThisWeek}',
+                  lastWeek: '${cmp.sessionsLastWeek}',
+                  diff: sessDiff,
+                ),
+              ),
+              Container(width: 1, height: 48, color: AppColors.surface),
+              Expanded(
+                child: _CmpColumn(
+                  label: 'Объём',
+                  thisWeek: '${cmp.volumeThisWeek.toStringAsFixed(0)} кг',
+                  lastWeek: '${cmp.volumeLastWeek.toStringAsFixed(0)} кг',
+                  diff: volDiff,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CmpColumn extends StatelessWidget {
+  final String label;
+  final String thisWeek;
+  final String lastWeek;
+  final num diff;
+
+  const _CmpColumn({
+    required this.label,
+    required this.thisWeek,
+    required this.lastWeek,
+    required this.diff,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isUp = diff > 0;
+    final isDown = diff < 0;
+    final arrowIcon = isUp
+        ? Icons.arrow_upward_rounded
+        : isDown
+            ? Icons.arrow_downward_rounded
+            : Icons.remove_rounded;
+    final arrowColor = isUp
+        ? const Color(0xFF30D158)
+        : isDown
+            ? AppColors.error
+            : AppColors.textSecondary;
+
+    return Column(
+      children: [
+        Text(label,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(
+          thisWeek,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(arrowIcon, size: 14, color: arrowColor),
+            const SizedBox(width: 2),
+            Text(
+              lastWeek,
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Частота по группам мышц ────────────────────────────────────────────────
+
+class _MuscleFrequencyChart extends StatelessWidget {
+  final Map<String, double> frequency;
+
+  const _MuscleFrequencyChart({required this.frequency});
+
+  static const _categoryOrder = [
+    'chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'cardio',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = _categoryOrder
+        .where((c) => frequency.containsKey(c))
+        .map((c) => MapEntry(c, frequency[c]!))
+        .toList();
+
+    if (entries.isEmpty) return const SizedBox();
+
+    final maxVal = entries.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      height: 200,
+      child: BarChart(
+        BarChartData(
+          maxY: (maxVal * 1.3).ceilToDouble().clamp(1, double.infinity),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 1,
+            getDrawingHorizontalLine: (_) =>
+                const FlLine(color: AppColors.surface, strokeWidth: 1),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: 1,
+                getTitlesWidget: (v, _) => Text(
+                  v.toInt().toString(),
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 10),
+                ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (v, _) {
+                  final i = v.toInt();
+                  if (i < 0 || i >= entries.length) return const SizedBox();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _short(entries[i].key),
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 10),
+                    ),
+                  );
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          barGroups: entries.asMap().entries.map((e) {
+            return BarChartGroupData(
+              x: e.key,
+              barRods: [
+                BarChartRodData(
+                  toY: e.value.value,
+                  color: AppColors.accent,
+                  width: 18,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  String _short(String cat) {
+    const map = {
+      'chest': 'Грудь',
+      'back': 'Спина',
+      'shoulders': 'Плечи',
+      'arms': 'Руки',
+      'legs': 'Ноги',
+      'core': 'Пресс',
+      'cardio': 'Кардио',
+    };
+    return map[cat] ?? cat;
+  }
+}
+

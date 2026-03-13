@@ -7,7 +7,7 @@ import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
-const _categoryOrder = ['Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио'];
+const _categoryOrder = ['Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио', 'Пресс'];
 
 class FreeWorkoutScreen extends StatefulWidget {
   /// Called with (workoutId, sessionId, workoutName) when session is started.

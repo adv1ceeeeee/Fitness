@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/pin_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -54,6 +55,9 @@ class _LoginScreenState extends State<LoginScreen> {
           email,
           _passwordController.text,
         );
+        EventLogger.resetSession();
+        EventLogger.userLoggedIn();
+        EventLogger.appOpened(source: 'login');
         if (mounted) context.go('/onboarding-check');
       } catch (e) {
         final msg = e.toString();

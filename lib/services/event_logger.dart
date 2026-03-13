@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:uuid/uuid.dart';
 
 /// Lightweight event logger with queue-based batching.
 ///
@@ -10,6 +13,7 @@ import 'package:sportwai/services/auth_service.dart';
 /// - after [_flushInterval] of inactivity.
 /// Call [flushOnExit] when the app is backgrounded/detached to drain the queue.
 ///
+/// Failed batches are persisted to SharedPreferences and retried on next flush.
 /// All methods are safe to call without await — errors are silently swallowed
 /// so logging never breaks user-facing flows.
 class EventLogger {
@@ -21,6 +25,10 @@ class EventLogger {
   static const _batchSize = 20;
   static const _maxQueueSize = 200;
   static const _flushInterval = Duration(seconds: 30);
+  static const _offlineKey = 'event_logger_offline_queue';
+
+  /// Unique ID for the current app session (regenerated on each app open).
+  static String _appSessionId = const Uuid().v4();
 
   @visibleForTesting
   static int get queueLength => _queue.length;
@@ -32,10 +40,15 @@ class EventLogger {
     if (userId == null) return;
     if (_queue.length >= _maxQueueSize) return; // drop events at cap
 
+    final mergedProps = <String, dynamic>{
+      'app_session_id': _appSessionId,
+      ...?props,
+    };
+
     _queue.add({
       'user_id': userId,
       'event': event,
-      if (props != null && props.isNotEmpty) 'props': props,
+      'props': mergedProps,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     });
 
@@ -54,10 +67,14 @@ class EventLogger {
     final batch = List<Map<String, dynamic>>.from(_queue);
     _queue.clear();
 
+    // Try to send; on failure persist to SharedPreferences for retry.
     _client.from('user_events').insert(batch).then(
-          (_) {},
-          onError: (e) => debugPrint('[EventLogger] flush failed: $e'),
-        );
+      (_) => _loadAndRetryOffline(),
+      onError: (e) {
+        debugPrint('[EventLogger] flush failed: $e');
+        _persistOffline(batch);
+      },
+    );
   }
 
   /// Flush remaining events synchronously — call on app pause/detach.
@@ -71,10 +88,58 @@ class EventLogger {
 
     try {
       await _client.from('user_events').insert(batch);
+      await _loadAndRetryOffline();
     } catch (e) {
       debugPrint('[EventLogger] flushOnExit failed: $e');
+      await _persistOffline(batch);
     }
   }
+
+  /// Regenerate session ID and emit [app_opened]. Call after auth completes
+  /// or when the app resumes from background.
+  static void resetSession() {
+    _appSessionId = const Uuid().v4();
+  }
+
+  // ─── Offline persistence ──────────────────────────────────────────────────
+
+  static Future<void> _persistOffline(List<Map<String, dynamic>> batch) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existing = prefs.getString(_offlineKey);
+      final List<dynamic> stored =
+          existing != null ? jsonDecode(existing) as List : [];
+      stored.addAll(batch);
+      // Keep at most 500 offline events to avoid unbounded growth
+      final trimmed = stored.length > 500 ? stored.sublist(stored.length - 500) : stored;
+      await prefs.setString(_offlineKey, jsonEncode(trimmed));
+    } catch (e) {
+      debugPrint('[EventLogger] persistOffline failed: $e');
+    }
+  }
+
+  static Future<void> _loadAndRetryOffline() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_offlineKey);
+      if (raw == null) return;
+
+      final List<dynamic> stored = jsonDecode(raw) as List;
+      if (stored.isEmpty) return;
+
+      final batch = stored.cast<Map<String, dynamic>>();
+      await prefs.remove(_offlineKey);
+      await _client.from('user_events').insert(batch);
+      debugPrint('[EventLogger] retried ${batch.length} offline events');
+    } catch (e) {
+      debugPrint('[EventLogger] offline retry failed: $e');
+    }
+  }
+
+  // ─── App lifecycle ────────────────────────────────────────────────────────
+
+  static void appOpened({String? source}) =>
+      log('app_opened', props: {if (source != null) 'source': source});
 
   // ─── Workout ─────────────────────────────────────────────────────────────
 
@@ -102,6 +167,12 @@ class EventLogger {
 
   static void workoutAbandoned({required String sessionId}) =>
       log('workout_abandoned', props: {'session_id': sessionId});
+
+  static void workoutCreated({required String workoutName}) =>
+      log('workout_created', props: {'workout_name': workoutName});
+
+  static void workoutDeleted({required String workoutName}) =>
+      log('workout_deleted', props: {'workout_name': workoutName});
 
   // ─── Sets ────────────────────────────────────────────────────────────────
 
@@ -156,6 +227,48 @@ class EventLogger {
 
   static void programAdded({required String programName}) =>
       log('program_added', props: {'program_name': programName});
+
+  static void standardProgramUsed({required String programName}) =>
+      log('standard_program_used', props: {'program_name': programName});
+
+  // ─── Auth ─────────────────────────────────────────────────────────────────
+
+  static void userLoggedIn() => log('user_logged_in');
+
+  static void userRegistered({String? goal, String? level}) =>
+      log('user_registered', props: {
+        if (goal != null) 'goal': goal,
+        if (level != null) 'level': level,
+      });
+
+  static void userLoggedOut() => log('user_logged_out');
+
+  // ─── Sessions / Calendar ──────────────────────────────────────────────────
+
+  static void sessionScheduled({String? workoutName}) =>
+      log('session_scheduled', props: {
+        if (workoutName != null) 'workout_name': workoutName,
+      });
+
+  static void sessionSkipped({required String reason}) =>
+      log('session_skipped', props: {'reason': reason});
+
+  // ─── Profile ──────────────────────────────────────────────────────────────
+
+  static void goalSet({required String goal}) =>
+      log('goal_set', props: {'goal': goal});
+
+  static void exportTriggered({required String format}) =>
+      log('export_triggered', props: {'format': format});
+
+  static void notificationToggled({required bool enabled}) =>
+      log('notification_toggled', props: {'enabled': enabled});
+
+  static void pinSetup({required bool enabled}) =>
+      log('pin_setup', props: {'enabled': enabled});
+
+  static void checkInSaved({required String type}) =>
+      log('check_in_saved', props: {'type': type});
 
   // ─── Navigation ──────────────────────────────────────────────────────────
 

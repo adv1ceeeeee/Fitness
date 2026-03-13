@@ -42,6 +42,13 @@ class WorkoutService {
     return Workout.fromJson(res);
   }
 
+  static Future<void> setGroupId(String workoutId, String groupId) async {
+    await _client
+        .from('workouts')
+        .update({'group_id': groupId})
+        .eq('id', workoutId);
+  }
+
   /// Creates multiple workouts that form a multi-section program.
   /// All sections share the same group_id (= first workout's id).
   static Future<List<Workout>> createWorkoutGroup(

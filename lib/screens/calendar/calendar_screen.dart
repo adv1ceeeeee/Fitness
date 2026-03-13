@@ -5,6 +5,8 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/exercise_service.dart';
+import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
@@ -48,8 +50,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
       for (final s in sessions) {
         final d = _dayOnly(s.date);
+        final isSkipped = s.notes?.startsWith('skipped:') == true;
         events.putIfAbsent(d, () => []).add(
-              _DayEvent(workoutId: s.workoutId, completed: s.completed),
+              _DayEvent(
+                workoutId: s.workoutId,
+                completed: s.completed,
+                sessionId: s.id,
+                plannedTime: s.plannedTime,
+                skipped: isSkipped,
+              ),
             );
       }
 
@@ -208,14 +217,46 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _scheduleAndRefresh(String workoutId, DateTime day) async {
+    // Ask user for a planned start time (optional)
+    TimeOfDay? plannedTime;
+    if (mounted) {
+      final picked = await showTimePicker(
+        context: context,
+        initialTime: const TimeOfDay(hour: 8, minute: 0),
+        helpText: 'Время начала тренировки',
+        cancelText: 'Без времени',
+        confirmText: 'Выбрать',
+      );
+      plannedTime = picked; // null = user pressed "Без времени"
+    }
     try {
-      await TrainingService.scheduleSession(workoutId, day);
+      final session = await TrainingService.scheduleSession(
+        workoutId,
+        day,
+        plannedTime: plannedTime,
+      );
+      if (plannedTime != null) {
+        final workoutName =
+            _workouts.where((w) => w.id == workoutId).firstOrNull?.name ??
+                'Тренировка';
+        await NotificationService.scheduleSessionNotification(
+          sessionId: session.id,
+          date: day,
+          plannedTime: plannedTime,
+          workoutName: workoutName,
+        );
+      }
+      EventLogger.sessionScheduled(
+        workoutName: _workouts.where((w) => w.id == workoutId).firstOrNull?.name,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Тренировка запланирована'),
-          backgroundColor: Color(0xFF30D158),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(plannedTime != null
+              ? 'Тренировка запланирована на ${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}'
+              : 'Тренировка запланирована'),
+          backgroundColor: const Color(0xFF30D158),
+          duration: const Duration(seconds: 2),
         ),
       );
       await _load(silent: true);
@@ -287,6 +328,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _buildActionButtons(DateTime day) {
     final events = _eventsFor(day);
+    final isPast = day.isBefore(_dayOnly(DateTime.now()));
 
     // разовая = actual DB session not yet completed
     final hasSession = events.any((e) => !e.planned && !e.completed);
@@ -298,6 +340,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
         : null;
     final programWorkoutId = hasProgram
         ? events.firstWhere((e) => e.planned).workoutId
+        : null;
+
+    // Uncompleted non-skipped session that can be marked as skipped
+    final skippableEvent = isPast
+        ? events
+            .where((e) => !e.planned && !e.completed && !e.skipped && e.sessionId != null)
+            .firstOrNull
         : null;
 
     return Column(
@@ -344,8 +393,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 context.push('/workouts/$programWorkoutId/exercises'),
           ),
         ],
+        if (skippableEvent != null) ...[
+          const SizedBox(height: 8),
+          _ActionBtn(
+            icon: Icons.cancel_outlined,
+            label: 'Отметить как пропущенную',
+            onTap: () => _skipSessionSheet(skippableEvent.sessionId!),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _skipSessionSheet(String sessionId) async {
+    const reasons = ['Болезнь', 'Отдых', 'Форс-мажор', 'Другое'];
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Причина пропуска',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...reasons.map((r) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ActionBtn(
+                    icon: Icons.radio_button_unchecked,
+                    label: r,
+                    onTap: () => Navigator.pop(ctx, r),
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+    try {
+      await TrainingService.skipSession(sessionId, reason);
+      EventLogger.sessionSkipped(reason: reason);
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
   }
 
   @override
@@ -507,6 +613,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                                   ev.workoutId),
                                               completed: ev.completed,
                                               planned: ev.planned,
+                                              skipped: ev.skipped,
+                                              plannedTime: ev.plannedTime,
                                               onTap: () => context.push(
                                                   '/workouts/${ev.workoutId}/exercises'),
                                             ),
@@ -529,11 +637,17 @@ class _DayEvent {
   final String workoutId;
   final bool completed;
   final bool planned;
+  final String? sessionId;
+  final TimeOfDay? plannedTime;
+  final bool skipped;
 
   const _DayEvent({
     required this.workoutId,
     required this.completed,
     this.planned = false,
+    this.sessionId,
+    this.plannedTime,
+    this.skipped = false,
   });
 }
 
@@ -1630,6 +1744,8 @@ class _EventCard extends StatelessWidget {
   final String name;
   final bool completed;
   final bool planned;
+  final bool skipped;
+  final TimeOfDay? plannedTime;
   final VoidCallback onTap;
 
   const _EventCard({
@@ -1637,10 +1753,38 @@ class _EventCard extends StatelessWidget {
     required this.completed,
     required this.planned,
     required this.onTap,
+    this.skipped = false,
+    this.plannedTime,
   });
 
   @override
   Widget build(BuildContext context) {
+    final dotColor = completed
+        ? AppColors.accent
+        : skipped
+            ? AppColors.error
+            : AppColors.accent.withValues(alpha: 0.4);
+
+    String statusText;
+    Color statusColor;
+    if (completed) {
+      statusText = 'Выполнено';
+      statusColor = AppColors.accent;
+    } else if (skipped) {
+      statusText = 'Пропущено';
+      statusColor = AppColors.error;
+    } else if (planned) {
+      statusText = plannedTime != null
+          ? '${plannedTime!.hour.toString().padLeft(2, '0')}:${plannedTime!.minute.toString().padLeft(2, '0')}'
+          : 'Запланировано';
+      statusColor = AppColors.textSecondary;
+    } else {
+      statusText = plannedTime != null
+          ? '${plannedTime!.hour.toString().padLeft(2, '0')}:${plannedTime!.minute.toString().padLeft(2, '0')}'
+          : 'Не завершено';
+      statusColor = AppColors.textSecondary;
+    }
+
     return Material(
       color: AppColors.card,
       borderRadius: BorderRadius.circular(12),
@@ -1657,9 +1801,7 @@ class _EventCard extends StatelessWidget {
                 height: 10,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: completed
-                      ? AppColors.accent
-                      : AppColors.accent.withValues(alpha: 0.4),
+                  color: dotColor,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1675,18 +1817,21 @@ class _EventCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      completed
-                          ? 'Выполнено'
-                          : planned
-                              ? 'Запланировано'
-                              : 'Не завершено',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: completed
-                            ? AppColors.accent
-                            : AppColors.textSecondary,
-                      ),
+                    Row(
+                      children: [
+                        if (plannedTime != null && !completed && !skipped) ...[
+                          const Icon(Icons.access_time,
+                              size: 11, color: AppColors.textSecondary),
+                          const SizedBox(width: 3),
+                        ],
+                        Text(
+                          statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: statusColor,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

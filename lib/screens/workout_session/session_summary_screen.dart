@@ -25,6 +25,7 @@ class SessionSummaryScreen extends ConsumerStatefulWidget {
 class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
   bool _loading = true;
   bool _saving = false;
+  double _totalVolume = 0;
 
   // Grouped exercise data: exerciseName → list of _SetRow
   final List<_ExerciseGroup> _groups = [];
@@ -67,17 +68,28 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         weight: (row['weight'] as num?)?.toDouble(),
         reps: row['reps'] as int?,
         rpe: row['rpe'] as int?,
+        isWarmup: row['is_warmup'] as bool? ?? false,
       ));
     }
 
     final sorted = map.values.toList()
       ..sort((a, b) => a.order.compareTo(b.order));
 
+    double vol = 0;
+    for (final g in sorted) {
+      for (final s in g.sets) {
+        if (!s.isWarmup && s.weight != null && s.reps != null) {
+          vol += s.weight! * s.reps!;
+        }
+      }
+    }
+
     if (mounted) {
       setState(() {
         _groups
           ..clear()
           ..addAll(sorted);
+        _totalVolume = vol;
         _loading = false;
       });
     }
@@ -162,6 +174,9 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         durationSeconds: widget.durationSeconds,
         notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       );
+      // Aggregate kcal and volume from individual sets and persist
+      await TrainingService.saveSessionKcal(widget.sessionId);
+      await TrainingService.saveSessionVolume(widget.sessionId);
       // Clear global session state
       ref.read(activeSessionProvider.notifier).stop();
       if (mounted) context.go('/home');
@@ -237,6 +252,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                     durationLabel: _formatDuration(widget.durationSeconds),
                     setsCount: _groups.fold(0, (s, g) => s + g.sets.length),
                     exercisesCount: _groups.length,
+                    totalVolume: _totalVolume,
                   ),
                   const SizedBox(height: 20),
                   // ── Exercise groups ────────────────────────────────────
@@ -299,6 +315,7 @@ class _SetRow {
   double? weight;
   int? reps;
   int? rpe;
+  final bool isWarmup;
 
   _SetRow({
     required this.id,
@@ -306,6 +323,7 @@ class _SetRow {
     this.weight,
     this.reps,
     this.rpe,
+    this.isWarmup = false,
   });
 }
 
@@ -315,15 +333,21 @@ class _SummaryHeader extends StatelessWidget {
   final String durationLabel;
   final int setsCount;
   final int exercisesCount;
+  final double totalVolume;
 
   const _SummaryHeader({
     required this.durationLabel,
     required this.setsCount,
     required this.exercisesCount,
+    required this.totalVolume,
   });
 
   @override
   Widget build(BuildContext context) {
+    final volLabel = totalVolume >= 1000
+        ? '${(totalVolume / 1000).toStringAsFixed(1)} т'
+        : '${totalVolume.toStringAsFixed(0)} кг';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -359,6 +383,11 @@ class _SummaryHeader extends StatelessWidget {
                   icon: Icons.repeat_rounded,
                   label: '$setsCount',
                   title: 'Подходов'),
+              if (totalVolume > 0)
+                _StatChip(
+                    icon: Icons.bar_chart_rounded,
+                    label: volLabel,
+                    title: 'Объём'),
             ],
           ),
         ],
@@ -471,18 +500,23 @@ class _SetRowWidget extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.15),
+                color: set.isWarmup
+                    ? const Color(0xFFB8690A).withValues(alpha: 0.15)
+                    : AppColors.accent.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Center(
-                child: Text(
-                  '${set.setNumber}',
-                  style: const TextStyle(
-                    color: AppColors.accent,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
+                child: set.isWarmup
+                    ? const Icon(Icons.local_fire_department,
+                        size: 15, color: Color(0xFFB8690A))
+                    : Text(
+                        '${set.setNumber}',
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
               ),
             ),
             const SizedBox(width: 12),

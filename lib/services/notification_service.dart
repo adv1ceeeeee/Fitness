@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -81,6 +82,57 @@ class NotificationService {
             UILocalNotificationDateInterpretation.absoluteTime,
       );
     }
+  }
+
+  /// Schedule a one-time notification for a specific session.
+  /// [sessionId] is used as notification id hash (must fit in int range).
+  /// [date] + [plannedTime] determine when the notification fires.
+  /// The notification fires exactly at [plannedTime] on [date].
+  static Future<void> scheduleSessionNotification({
+    required String sessionId,
+    required DateTime date,
+    required TimeOfDay plannedTime,
+    String workoutName = 'Тренировка',
+  }) async {
+    const channel = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    const iosDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(android: channel, iOS: iosDetails);
+
+    final scheduled = tz.TZDateTime(
+      tz.local,
+      date.year,
+      date.month,
+      date.day,
+      plannedTime.hour,
+      plannedTime.minute,
+    );
+    if (scheduled.isBefore(tz.TZDateTime.now(tz.local))) return;
+
+    // Use bottom 30 bits of sessionId hashCode as notification id
+    final notifId = sessionId.hashCode & 0x3FFFFFFF;
+    await _plugin.zonedSchedule(
+      notifId,
+      'Время тренироваться! 💪',
+      workoutName,
+      scheduled,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  /// Cancel the one-time notification for a session.
+  static Future<void> cancelSessionNotification(String sessionId) async {
+    final notifId = sessionId.hashCode & 0x3FFFFFFF;
+    await _plugin.cancel(notifId);
   }
 
   static Future<void> cancelAll() async {

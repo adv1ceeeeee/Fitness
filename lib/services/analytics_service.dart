@@ -277,6 +277,76 @@ class AnalyticsService {
     return result;
   }
 
+  /// For each exerciseId, checks whether the last [n] completed sessions all
+  /// had every set's reps >= [topReps]. Returns set of exerciseIds that qualify.
+  /// Used to show "try +2.5 kg" auto-progress suggestion.
+  static Future<Set<String>> getConsecutiveFullRepsExercises(
+    List<String> exerciseIds,
+    Map<String, int> topRepsPerExercise, {
+    int n = 3,
+  }) async {
+    if (exerciseIds.isEmpty) return {};
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    // Workout exercises mapping
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercise_id')
+        .inFilter('exercise_id', exerciseIds);
+    final weToExercise = <String, String>{};
+    for (final row in weRes as List) {
+      weToExercise[row['id'] as String] = row['exercise_id'] as String;
+    }
+    if (weToExercise.isEmpty) return {};
+
+    // Last n*3 sessions to have enough data
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(n * 3);
+    final sessionIds =
+        (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return {};
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id, reps, training_session_id')
+        .inFilter('workout_exercise_id', weToExercise.keys.toList())
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true);
+
+    // Group by exerciseId → sessionId → list of reps
+    final byExercise = <String, Map<String, List<int>>>{};
+    for (final s in setsRes as List) {
+      final weId = s['workout_exercise_id'] as String;
+      final exId = weToExercise[weId];
+      if (exId == null) continue;
+      final sessId = s['training_session_id'] as String;
+      final reps = (s['reps'] as int?) ?? 0;
+      byExercise.putIfAbsent(exId, () => {})[sessId] =
+          (byExercise[exId]![sessId] ?? [])..add(reps);
+    }
+
+    final result = <String>{};
+    for (final exId in exerciseIds) {
+      final topReps = topRepsPerExercise[exId];
+      if (topReps == null) continue;
+      final sessMap = byExercise[exId] ?? {};
+      // Sessions ordered: sessionIds is already DESC by date
+      final orderedSessIds =
+          sessionIds.where((id) => sessMap.containsKey(id)).take(n).toList();
+      if (orderedSessIds.length < n) continue;
+      final allFull = orderedSessIds.every((sid) =>
+          (sessMap[sid] ?? []).every((r) => r >= topReps));
+      if (allFull) result.add(exId);
+    }
+    return result;
+  }
+
   /// Compares the last two completed sessions of the same workout and returns
   /// the most notable improvement (weight PR or reps increase), or null if
   /// there is nothing to highlight.
@@ -419,7 +489,8 @@ class AnalyticsService {
         .from('sets')
         .select('weight, reps')
         .inFilter('training_session_id', sessionIds)
-        .eq('completed', true);
+        .eq('completed', true)
+        .eq('is_warmup', false);
 
     double volume = 0;
     for (final s in setsRes as List) {
@@ -428,6 +499,153 @@ class AnalyticsService {
       volume += w * r;
     }
     return volume;
+  }
+
+  /// Returns {volumeThisWeek, volumeLastWeek, sessionsThisWeek, sessionsLastWeek}.
+  static Future<({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek})>
+      getWeekComparison() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) {
+      return (volumeThisWeek: 0.0, volumeLastWeek: 0.0, sessionsThisWeek: 0, sessionsLastWeek: 0);
+    }
+
+    final now = DateTime.now();
+    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+    final lastMonday = thisMonday.subtract(const Duration(days: 7));
+    final thisMondayStr = thisMonday.toIso8601String().split('T')[0];
+    final lastMondayStr = lastMonday.toIso8601String().split('T')[0];
+
+    // Fetch both weeks' sessions in one query
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', lastMondayStr);
+
+    final sessions = (sessionsRes as List).cast<Map<String, dynamic>>();
+    final thisWeekIds = <String>[];
+    final lastWeekIds = <String>[];
+    for (final s in sessions) {
+      final date = s['date'] as String;
+      if (date.compareTo(thisMondayStr) >= 0) {
+        thisWeekIds.add(s['id'] as String);
+      } else {
+        lastWeekIds.add(s['id'] as String);
+      }
+    }
+
+    final allIds = [...thisWeekIds, ...lastWeekIds];
+    double volumeThis = 0;
+    double volumeLast = 0;
+
+    if (allIds.isNotEmpty) {
+      final setsRes = await _client
+          .from('sets')
+          .select('training_session_id, weight, reps')
+          .inFilter('training_session_id', allIds)
+          .eq('completed', true)
+          .eq('is_warmup', false);
+
+      for (final s in setsRes as List) {
+        final sid = s['training_session_id'] as String;
+        final w = (s['weight'] as num?)?.toDouble() ?? 0;
+        final r = (s['reps'] as num?)?.toInt() ?? 0;
+        if (thisWeekIds.contains(sid)) {
+          volumeThis += w * r;
+        } else {
+          volumeLast += w * r;
+        }
+      }
+    }
+
+    return (
+      volumeThisWeek: volumeThis,
+      volumeLastWeek: volumeLast,
+      sessionsThisWeek: thisWeekIds.length,
+      sessionsLastWeek: lastWeekIds.length,
+    );
+  }
+
+  /// Returns average sessions per week per muscle group over the past [weeks] weeks.
+  /// Result: Map<category, avgSessionsPerWeek>
+  static Future<Map<String, double>> getMuscleGroupFrequency(
+      {int weeks = 4}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final now = DateTime.now();
+    final startDate = now.subtract(Duration(days: 7 * weeks));
+    final startStr = startDate.toIso8601String().split('T')[0];
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', startStr);
+
+    if ((sessionsRes as List).isEmpty) return {};
+
+    final sessionMap = <String, String>{
+      for (final s in sessionsRes as List) s['id'] as String: s['date'] as String,
+    };
+    final sessionIds = sessionMap.keys.toList();
+
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, workout_exercise_id')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true);
+
+    final weIds = (setsRes as List)
+        .map((e) => e['workout_exercise_id'] as String)
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return {};
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(category)')
+        .inFilter('id', weIds);
+
+    final weCategory = <String, String>{};
+    for (final we in weRes as List) {
+      final ex = we['exercises'] as Map<String, dynamic>?;
+      if (ex != null) {
+        weCategory[we['id'] as String] = ex['category'] as String? ?? 'other';
+      }
+    }
+
+    // For each week, collect distinct sessions per category
+    // weekKey (Monday date) -> category -> Set<sessionId>
+    final weekCatSessions = <String, Map<String, Set<String>>>{};
+    for (final set in setsRes as List) {
+      final sid = set['training_session_id'] as String?;
+      final weId = set['workout_exercise_id'] as String?;
+      if (sid == null || weId == null) continue;
+      final cat = weCategory[weId];
+      if (cat == null) continue;
+      final date = sessionMap[sid];
+      if (date == null) continue;
+      final d = DateTime.parse(date);
+      final monday = d.subtract(Duration(days: d.weekday - 1));
+      final weekKey = monday.toIso8601String().split('T')[0];
+      weekCatSessions
+          .putIfAbsent(weekKey, () => {})
+          .putIfAbsent(cat, () => {})
+          .add(sid);
+    }
+
+    // Average sessions per category across weeks
+    final catTotal = <String, int>{};
+    for (final weekData in weekCatSessions.values) {
+      for (final entry in weekData.entries) {
+        catTotal[entry.key] = (catTotal[entry.key] ?? 0) + entry.value.length;
+      }
+    }
+
+    return catTotal.map((cat, total) => MapEntry(cat, total / weeks));
   }
 
   /// Returns weekly training volume (kg×reps) for the past [weeks] weeks.
@@ -462,7 +680,8 @@ class AnalyticsService {
         .from('sets')
         .select('training_session_id, weight, reps')
         .inFilter('training_session_id', sessionIds)
-        .eq('completed', true);
+        .eq('completed', true)
+        .eq('is_warmup', false);
 
     // Build date -> volume map
     final dateVolume = <String, double>{};
@@ -655,7 +874,7 @@ class AnalyticsService {
         .toList();
   }
 
-  /// Community average of all-time max weight for an exercise (across all users).
+  /// Community average max weight for an exercise over the last 7 days (across all users).
   /// Returns null if no data or RPC unavailable.
   static Future<double?> getCommunityAvgExerciseWeight(
       String exerciseId) async {

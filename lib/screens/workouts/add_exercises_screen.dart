@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
@@ -6,6 +7,7 @@ import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
+import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
@@ -32,7 +34,7 @@ class AddExercisesScreen extends StatefulWidget {
 
 // Desired category display order
 const _categoryOrder = [
-  'Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио',
+  'Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио', 'Пресс',
 ];
 
 
@@ -41,6 +43,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   List<WorkoutExercise> _programExercises = [];
   List<Exercise> _allExercises = [];
   String _searchQuery = '';
+  bool _favoritesOnly = false;
   Timer? _searchDebounce;
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -65,16 +68,35 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   List<Exercise> get _filteredFlat {
-    if (_searchQuery.isEmpty) return _allExercises;
-    return _allExercises
-        .where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
+    var list = _favoritesOnly ? _allExercises.where((e) => e.isFavorite).toList() : _allExercises;
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    }
+    return list;
+  }
+
+  Future<void> _toggleFavorite(Exercise ex) async {
+    final newVal = !ex.isFavorite;
+    // Optimistic update
+    setState(() {
+      final idx = _allExercises.indexWhere((e) => e.id == ex.id);
+      if (idx != -1) {
+        final old = _allExercises[idx];
+        _allExercises[idx] = Exercise(
+          id: old.id, name: old.name, category: old.category,
+          description: old.description, imageUrl: old.imageUrl,
+          isStandard: old.isStandard, userId: old.userId, isFavorite: newVal,
+        );
+      }
+    });
+    await ExerciseService.toggleFavorite(ex.id, add: newVal);
   }
 
   /// Grouped by category when no search active.
   List<MapEntry<String, List<Exercise>>> get _groupedExercises {
+    final source = _favoritesOnly ? _allExercises.where((e) => e.isFavorite).toList() : _allExercises;
     final groups = <String, List<Exercise>>{};
-    for (final ex in _allExercises) {
+    for (final ex in source) {
       final cat = Exercise.categoryDisplayName(ex.category);
       groups.putIfAbsent(cat, () => []).add(ex);
     }
@@ -733,6 +755,19 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     }
   }
 
+  void _showExerciseHistory(Exercise ex) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.card,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ExerciseHistorySheet(exercise: ex),
+    );
+  }
+
   List<Widget> _buildExerciseTiles(List<Exercise> exercises) {
     return exercises.map((ex) => Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -740,6 +775,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(12),
         child: ListTile(
+          onLongPress: () => _showExerciseHistory(ex),
           leading: Icon(
             ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
             color: ex.isCustom ? AppColors.accent.withValues(alpha: 0.75) : AppColors.accent,
@@ -753,6 +789,14 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IconButton(
+                icon: Icon(
+                  ex.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                  size: 20,
+                  color: ex.isFavorite ? const Color(0xFFFFB800) : AppColors.textSecondary,
+                ),
+                onPressed: () => _toggleFavorite(ex),
+              ),
               if (ex.isCustom)
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20),
@@ -911,7 +955,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
 
-          // Поиск
+          // Поиск + фильтр избранных
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextField(
@@ -925,6 +969,31 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('Избранное'),
+                  avatar: Icon(
+                    _favoritesOnly ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 16,
+                    color: _favoritesOnly ? Colors.black : AppColors.textSecondary,
+                  ),
+                  selected: _favoritesOnly,
+                  onSelected: (v) => setState(() => _favoritesOnly = v),
+                  selectedColor: const Color(0xFFFFB800),
+                  checkmarkColor: Colors.black,
+                  labelStyle: TextStyle(
+                    color: _favoritesOnly ? Colors.black : AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                  backgroundColor: AppColors.card,
+                  showCheckmark: false,
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -1472,6 +1541,185 @@ class _GroupSeparator extends StatelessWidget {
           const Expanded(child: Divider()),
         ],
       ),
+    );
+  }
+}
+
+// ─── История упражнения ──────────────────────────────────────────────────────
+
+class _ExerciseHistorySheet extends StatefulWidget {
+  final Exercise exercise;
+  const _ExerciseHistorySheet({required this.exercise});
+
+  @override
+  State<_ExerciseHistorySheet> createState() => _ExerciseHistorySheetState();
+}
+
+class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
+  Map<String, double>? _data;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final d = await AnalyticsService.getExerciseMaxWeight(widget.exercise.id);
+    if (mounted) setState(() => _data = d);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    final sorted = data == null
+        ? <MapEntry<String, double>>[]
+        : (data.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+
+    double? pb;
+    String? pbDate;
+    for (final e in sorted) {
+      if (pb == null || e.value > pb) {
+        pb = e.value;
+        pbDate = e.key;
+      }
+    }
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.4,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (_, ctrl) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.exercise.name,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Прогресс максимального веса',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            if (pb != null && pbDate != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.emoji_events_rounded,
+                      color: Color(0xFFFFB800), size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Личный рекорд: ${pb % 1 == 0 ? pb.toInt() : pb.toStringAsFixed(1)} кг'
+                    '  (${_fmtDate(pbDate)})',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            Expanded(
+              child: data == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : sorted.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Нет данных для отображения',
+                            style: TextStyle(color: AppColors.textSecondary),
+                          ),
+                        )
+                      : LineChart(_buildChart(sorted)),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmtDate(String iso) {
+    final d = DateTime.parse(iso);
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  }
+
+  LineChartData _buildChart(List<MapEntry<String, double>> points) {
+    final spots = points.asMap().entries.map((e) {
+      return FlSpot(e.key.toDouble(), e.value.value);
+    }).toList();
+
+    final maxY = points.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final minY = points.map((e) => e.value).reduce((a, b) => a < b ? a : b);
+    final pad = (maxY - minY) * 0.2;
+
+    return LineChartData(
+      minY: (minY - pad).clamp(0, double.infinity),
+      maxY: maxY + pad,
+      gridData: const FlGridData(show: false),
+      borderData: FlBorderData(show: false),
+      titlesData: FlTitlesData(
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 40,
+            getTitlesWidget: (v, _) => Text(
+              '${v.toInt()} кг',
+              style: const TextStyle(
+                  color: AppColors.textSecondary, fontSize: 10),
+            ),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: (points.length / 4).ceilToDouble().clamp(1, double.infinity),
+            getTitlesWidget: (v, _) {
+              final i = v.toInt();
+              if (i < 0 || i >= points.length) return const SizedBox();
+              final d = DateTime.parse(points[i].key);
+              return Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${d.day}.${d.month.toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 10),
+                ),
+              );
+            },
+          ),
+        ),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+      ),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          color: AppColors.accent,
+          barWidth: 2.5,
+          dotData: FlDotData(
+            show: true,
+            getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+              radius: 4,
+              color: AppColors.accent,
+              strokeWidth: 0,
+            ),
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            color: AppColors.accent.withValues(alpha: 0.1),
+          ),
+        ),
+      ],
     );
   }
 }

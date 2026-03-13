@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
@@ -103,6 +104,14 @@ class TrainingService {
     }).eq('id', sessionId);
   }
 
+  /// Mark a planned session as skipped with a reason.
+  /// Sets notes to 'skipped:<reason>' and keeps completed=false.
+  static Future<void> skipSession(String sessionId, String reason) async {
+    await _client.from('training_sessions').update({
+      'notes': 'skipped:$reason',
+    }).eq('id', sessionId);
+  }
+
   /// Получить все сессии пользователя в диапазоне дат
   static Future<List<TrainingSession>> getSessionsByDateRange(
     DateTime from,
@@ -116,7 +125,7 @@ class TrainingService {
 
     final res = await _client
         .from('training_sessions')
-        .select('id, user_id, workout_id, date, completed')
+        .select('id, user_id, workout_id, date, completed, notes, planned_time')
         .eq('user_id', userId)
         .gte('date', fromStr)
         .lte('date', toStr)
@@ -136,6 +145,7 @@ class TrainingService {
     int? rpe,
     int? restSeconds,
     double? kcalEstimated,
+    bool isWarmup = false,
   }) async {
     try {
       await retryWithBackoff(() => _client.from('sets').insert({
@@ -146,6 +156,7 @@ class TrainingService {
             'reps': reps,
             'rpe': rpe,
             'completed': true,
+            'is_warmup': isWarmup,
             if (restSeconds != null) 'rest_seconds': restSeconds,
             if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
           }));
@@ -208,37 +219,90 @@ class TrainingService {
     double? weight,
     int? reps,
     int? rpe,
+    bool? isWarmup,
   }) async {
     await _client.from('sets').update({
       'weight': weight,
       'reps': reps,
       'rpe': rpe,
+      if (isWarmup != null) 'is_warmup': isWarmup,
     }).eq('id', setId);
   }
 
+  /// Sum volume (weight × reps) for all non-warmup completed sets and persist it.
+  static Future<void> saveSessionVolume(String sessionId) async {
+    try {
+      final rows = await _client
+          .from('sets')
+          .select('weight, reps')
+          .eq('training_session_id', sessionId)
+          .eq('completed', true)
+          .eq('is_warmup', false);
+
+      double total = 0;
+      for (final r in rows as List) {
+        final w = (r['weight'] as num?)?.toDouble() ?? 0;
+        final rep = (r['reps'] as num?)?.toInt() ?? 0;
+        total += w * rep;
+      }
+      if (total <= 0) return;
+
+      await _client
+          .from('training_sessions')
+          .update({'volume_kg': double.parse(total.toStringAsFixed(2))})
+          .eq('id', sessionId);
+    } catch (e) {
+      debugPrint('[TrainingService.saveSessionVolume] error: $e');
+    }
+  }
+
   /// Schedule (or return existing) a session for a specific date.
+  /// If [plannedTime] is given, it is stored as HH:MM in the DB and used
+  /// to fire a one-time local notification at that moment.
   static Future<TrainingSession> scheduleSession(
-      String workoutId, DateTime date) async {
+      String workoutId, DateTime date,
+      {TimeOfDay? plannedTime}) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) throw Exception('Not authenticated');
     final dateStr = date.toIso8601String().split('T')[0];
 
     final existing = await _client
         .from('training_sessions')
-        .select('id, user_id, workout_id, date, completed')
+        .select('id, user_id, workout_id, date, completed, planned_time')
         .eq('user_id', userId)
         .eq('workout_id', workoutId)
         .eq('date', dateStr)
         .maybeSingle();
 
-    if (existing != null) return TrainingSession.fromJson(existing);
+    if (existing != null) {
+      // Update planned_time if provided
+      if (plannedTime != null) {
+        final ptStr =
+            '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}';
+        await _client
+            .from('training_sessions')
+            .update({'planned_time': ptStr})
+            .eq('id', existing['id'] as String);
+      }
+      return TrainingSession.fromJson({...existing, if (plannedTime != null) 'planned_time': '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}'});
+    }
 
-    final res = await _client.from('training_sessions').insert({
+    final insertData = <String, dynamic>{
       'user_id': userId,
       'workout_id': workoutId,
       'date': dateStr,
       'completed': false,
-    }).select().single();
+    };
+    if (plannedTime != null) {
+      insertData['planned_time'] =
+          '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}';
+    }
+
+    final res = await _client
+        .from('training_sessions')
+        .insert(insertData)
+        .select()
+        .single();
 
     return TrainingSession.fromJson(res);
   }
@@ -370,7 +434,7 @@ class TrainingService {
 
     final res = await _client
         .from('training_sessions')
-        .select('id, workout_id, date, duration_seconds, notes, kcal_total, workouts(name)')
+        .select('id, workout_id, date, duration_seconds, notes, kcal_total, volume_kg, workouts(name)')
         .eq('user_id', userId)
         .eq('completed', true)
         .order('date', ascending: false)

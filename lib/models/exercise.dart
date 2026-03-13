@@ -6,6 +6,7 @@ class Exercise {
   final String? imageUrl;
   final bool isStandard;
   final String? userId;
+  final bool isFavorite;
 
   Exercise({
     required this.id,
@@ -15,6 +16,7 @@ class Exercise {
     this.imageUrl,
     this.isStandard = true,
     this.userId,
+    this.isFavorite = false,
   });
 
   bool get isCustom => !isStandard && userId != null;
@@ -28,6 +30,7 @@ class Exercise {
       imageUrl: json['image_url'] as String?,
       isStandard: json['is_standard'] as bool? ?? true,
       userId: json['user_id'] as String?,
+      isFavorite: json['is_favorite'] as bool? ?? false,
     );
   }
 
@@ -49,6 +52,7 @@ class Exercise {
       'shoulders': 'Плечи',
       'arms': 'Руки',
       'cardio': 'Кардио',
+      'core': 'Пресс',
     };
     return map[category] ?? category;
   }

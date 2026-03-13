@@ -25,13 +25,15 @@ class _SetData {
   int reps;
   int? rpe;
   bool completed;
+  bool isWarmup;
 
-  _SetData({required this.reps, this.rpe, this.completed = false});
+  _SetData({required this.reps, this.rpe, this.completed = false, this.isWarmup = false});
 
-  _SetData copyWith({int? reps, int? rpe, bool? completed}) => _SetData(
+  _SetData copyWith({int? reps, int? rpe, bool? completed, bool? isWarmup}) => _SetData(
         reps: reps ?? this.reps,
         rpe: rpe ?? this.rpe,
         completed: completed ?? this.completed,
+        isWarmup: isWarmup ?? this.isWarmup,
       );
 }
 
@@ -76,6 +78,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   List<TextEditingController> _weightControllers = [];
   // Comparison result per set index: 1 = better, 0 = same, -1 = worse, null = no data
   final Map<int, int?> _setComparisons = {};
+  // exerciseIds where last 3 sessions all hit max reps → suggest weight increase
+  Set<String> _autoProgressSuggestions = {};
 
   double get _progressValue {
     if (_totalExpectedSets == 0) return 0.0;
@@ -147,6 +151,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final lastSets = await lastSetsFuture;
     final userMetrics = await userMetricsFuture;
 
+    // Build topReps map for auto-progress check
+    final topRepsMap = <String, int>{};
+    for (final e in ex) {
+      final top = _parseTopReps(e.repsRange);
+      if (top != null) topRepsMap[e.exerciseId] = top;
+    }
+    final autoProgress = await AnalyticsService.getConsecutiveFullRepsExercises(
+      exerciseIds, topRepsMap);
+
     final pbs = <String, double>{};
     for (var i = 0; i < ex.length; i++) {
       if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
@@ -160,18 +173,19 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _exercises = ex;
         _personalBests = pbs;
         _lastSets = lastSets;
+        _autoProgressSuggestions = autoProgress;
         _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
         _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
         _warmupMinutes = warmupMins;
         _cooldownMinutes = cooldownMins;
         _loading = false;
         if (ex.isNotEmpty) _initExercise(ex[0]);
-        if (warmupMins > 0) {
+        if (_warmupMinutes > 0) {
           _phase = _SessionPhase.warmup;
-          _phaseSecondsLeft = warmupMins * 60;
+          _phaseSecondsLeft = _warmupMinutes * 60;
         }
       });
-      if (warmupMins > 0) _startPhaseTimer();
+      if (_warmupMinutes > 0) _startPhaseTimer();
     }
     } catch (e, st) {
       debugPrint('_loadSession error: $e\n$st');
@@ -237,6 +251,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   int _parseDefaultReps(String range) {
     final first = range.split('-')[0].trim();
     return int.tryParse(first) ?? 8;
+  }
+
+  /// Returns the top (max) reps from a range like "8-12" → 12, "5" → 5.
+  /// Returns null for cardio/time-based ranges (e.g. "15 мин").
+  int? _parseTopReps(String range) {
+    final parts = range.split('-');
+    final last = parts.last.trim().split(' ')[0];
+    return int.tryParse(last);
   }
 
   WorkoutExercise? get _currentExercise {
@@ -326,6 +348,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       rpe: setData.rpe,
       restSeconds: restSecondsToSave,
       kcalEstimated: kcalEstimated,
+      isWarmup: setData.isWarmup,
     );
 
     if (!saved && mounted) {
@@ -336,6 +359,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       final r = setData.reps;
       final rpe = setData.rpe;
       final rest = restSecondsToSave;
+      final warmup = setData.isWarmup;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Не удалось сохранить подход'),
@@ -343,7 +367,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             label: 'Повторить',
             onPressed: () => TrainingService.saveSet(
               sessionId, weId, setNum,
-              weight: w, reps: r, rpe: rpe, restSeconds: rest,
+              weight: w, reps: r, rpe: rpe, restSeconds: rest, isWarmup: warmup,
             ),
           ),
         ),
@@ -690,11 +714,57 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                         final dateShort = d.length >= 10
                             ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
                             : d;
-                        return Text(
-                          'Прошлый: ${displayW.toStringAsFixed(1)} $unit × $r ($dateShort)',
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.accent),
+                        // Suggestion: if last reps >= top of range, suggest +2.5 kg
+                        final topReps = _parseTopReps(we.repsRange);
+                        final suggestIncrease = topReps != null && r >= topReps && w > 0;
+                        final strongSuggest = _autoProgressSuggestions.contains(we.exerciseId);
+                        final suggestWeight = useKg ? w + 2.5 : (w + 2.5) * 2.20462;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Прошлый: ${displayW.toStringAsFixed(1)} $unit × $r ($dateShort)',
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppColors.accent),
+                            ),
+                            if (strongSuggest) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.trending_up,
+                                      size: 13,
+                                      color: Color(0xFF30D158)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Пора увеличить вес! 3 подряд → ${suggestWeight.toStringAsFixed(1)} $unit',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF30D158),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ] else if (suggestIncrease) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.trending_up,
+                                      size: 13,
+                                      color: Color(0xFF30D158)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Попробуй +2.5 $unit → ${suggestWeight.toStringAsFixed(1)} $unit',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF30D158),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         );
                       }),
                     ],
@@ -760,6 +830,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                               onComplete: (!_sets[i].completed && i == activeIndex)
                                   ? () => _completeSet(i)
                                   : null,
+                              onWarmupToggle: !_sets[i].completed
+                                  ? () => setState(() => _sets[i] =
+                                      _sets[i].copyWith(isWarmup: !_sets[i].isWarmup))
+                                  : null,
                             ),
                           ),
                         ],
@@ -804,6 +878,7 @@ class _SetBlock extends StatelessWidget {
   final ValueChanged<int> onRepsChanged;
   final ValueChanged<int?> onRpeChanged;
   final VoidCallback? onComplete;
+  final VoidCallback? onWarmupToggle;
 
   const _SetBlock({
     required this.index,
@@ -814,31 +889,37 @@ class _SetBlock extends StatelessWidget {
     required this.onRepsChanged,
     required this.onRpeChanged,
     this.onComplete,
+    this.onWarmupToggle,
   });
 
   @override
   Widget build(BuildContext context) {
     final done = data.completed;
 
+    final warmup = data.isWarmup;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: warmup
+            ? const Color(0xFFB8690A).withValues(alpha: 0.08)
+            : AppColors.card,
         borderRadius: BorderRadius.circular(14),
-        border: isActive
-            ? Border.all(color: AppColors.accent, width: 1.5)
-            : done
-                ? Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.25),
-                    width: 1)
-                : null,
+        border: warmup
+            ? Border.all(color: const Color(0xFFB8690A).withValues(alpha: 0.35), width: 1)
+            : isActive
+                ? Border.all(color: AppColors.accent, width: 1.5)
+                : done
+                    ? Border.all(
+                        color: AppColors.accent.withValues(alpha: 0.25),
+                        width: 1)
+                    : null,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Opacity(
         opacity: done ? 0.55 : 1.0,
         child: Row(
           children: [
-            _SetBadge(number: index + 1, done: done, active: isActive),
+            _SetBadge(number: index + 1, done: done, active: isActive && !warmup, isWarmup: warmup),
             const SizedBox(width: 8),
             // Поле ввода веса
             SizedBox(
@@ -907,7 +988,24 @@ class _SetBlock extends StatelessWidget {
                 onChanged: (v) => onRpeChanged(v == 0 ? null : v),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 4),
+            if (!done)
+              GestureDetector(
+                onTap: onWarmupToggle,
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(
+                    warmup
+                        ? Icons.local_fire_department
+                        : Icons.local_fire_department_outlined,
+                    size: 20,
+                    color: warmup
+                        ? const Color(0xFFB8690A)
+                        : AppColors.textSecondary.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 2),
             if (!done)
               GestureDetector(
                 onTap: onComplete,
@@ -965,34 +1063,44 @@ class _SetBadge extends StatelessWidget {
   final int number;
   final bool done;
   final bool active;
+  final bool isWarmup;
 
-  const _SetBadge(
-      {required this.number, required this.done, required this.active});
+  const _SetBadge({
+    required this.number,
+    required this.done,
+    required this.active,
+    this.isWarmup = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    const warmupColor = Color(0xFFB8690A);
     return Container(
       width: 30,
       height: 30,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: done
-            ? AppColors.accent
+            ? (isWarmup ? warmupColor : AppColors.accent)
             : active
-                ? AppColors.accent.withValues(alpha: 0.15)
+                ? (isWarmup
+                    ? warmupColor.withValues(alpha: 0.18)
+                    : AppColors.accent.withValues(alpha: 0.15))
                 : AppColors.surface,
       ),
       alignment: Alignment.center,
       child: done
-          ? const Icon(Icons.check, size: 15, color: Colors.black)
-          : Text(
-              '$number',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: active ? AppColors.accent : AppColors.textSecondary,
-              ),
-            ),
+          ? Icon(Icons.check, size: 15, color: isWarmup ? Colors.white : Colors.black)
+          : isWarmup
+              ? const Icon(Icons.local_fire_department, size: 15, color: warmupColor)
+              : Text(
+                  '$number',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: active ? AppColors.accent : AppColors.textSecondary,
+                  ),
+                ),
     );
   }
 }

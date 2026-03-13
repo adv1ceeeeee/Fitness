@@ -95,6 +95,10 @@ class _SportifyAppState extends ConsumerState<SportifyApp> {
   void initState() {
     super.initState();
     _lifecycleListener = AppLifecycleListener(
+      onResume: () {
+        EventLogger.resetSession();
+        EventLogger.appOpened(source: 'resume');
+      },
       onPause: EventLogger.flushOnExit,
       onDetach: EventLogger.flushOnExit,
     );

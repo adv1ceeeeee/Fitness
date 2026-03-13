@@ -30,7 +30,6 @@ class BodyMetricsService {
       {
         'user_id': userId,
         'date': dateStr,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
         if (weightKg != null) 'weight_kg': weightKg,
         if (bodyFatPct != null) 'body_fat_pct': bodyFatPct,
         if (neckCm != null) 'neck_cm': neckCm,

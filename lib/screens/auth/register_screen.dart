@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -45,6 +46,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() => _errorMessage = 'Не удалось создать аккаунт. Попробуйте снова.');
         return;
       }
+      EventLogger.resetSession();
+      EventLogger.userRegistered();
+      EventLogger.appOpened(source: 'register');
       if (mounted) {
         if (_rememberDevice) {
           context.go('/pin-setup');

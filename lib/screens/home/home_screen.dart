@@ -10,6 +10,7 @@ import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/screens/onboarding/onboarding_overlay.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
@@ -84,10 +85,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _wellnessLogged = true;
 
   WorkoutInsight? _insight;
-  Map<String, dynamic>? _latestBodyMetrics;
+  List<Map<String, dynamic>> _bodyMetricsHistory = [];
   String _goalMetric = 'weight_kg';
   double? _goalTarget;
   DateTime? _goalStartDate;
+  // Per-metric goal cache: metric → {target, start}
+  Map<String, ({double? target, DateTime? start})> _goalCache = {};
+  bool _showMeasurementReminder = false;
 
   @override
   void initState() {
@@ -187,28 +191,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _load() async {
+    // Load local prefs first — independent of network, must never be lost.
+    await _loadGoalPrefs();
+    if (!mounted) return;
+
     try {
       final results = await Future.wait([
         ProfileService.getProfile(),
         TrainingService.getTodayWorkout(),
         WellnessService.getTodayLog(),
         AnalyticsService.getLastWorkoutInsight(),
-        BodyMetricsService.getLatest(),
-        _loadGoalPrefs(),
+        BodyMetricsService.getHistory(),
       ]).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
+      final metricsHistory = (results[4] as List).cast<Map<String, dynamic>>();
+      bool showReminder = false;
+      if (metricsHistory.isEmpty) {
+        showReminder = true;
+      } else {
+        final lastDateStr = metricsHistory.last['date'] as String?;
+        if (lastDateStr != null) {
+          final lastDate = DateTime.tryParse(lastDateStr);
+          if (lastDate != null &&
+              DateTime.now().difference(lastDate).inDays > 28) {
+            showReminder = true;
+          }
+        }
+      }
       setState(() {
         _profile = results[0] as Profile?;
         _todayWorkout = results[1] as Workout?;
         _loadingWorkout = false;
         _wellnessLogged = results[2] != null;
         _insight = results[3] as WorkoutInsight?;
-        _latestBodyMetrics = results[4] as Map<String, dynamic>?;
-        final goalPrefs = results[5] as (String, double?, DateTime?);
-        _goalMetric = goalPrefs.$1;
-        _goalTarget = goalPrefs.$2;
-        _goalStartDate = goalPrefs.$3;
+        _bodyMetricsHistory = metricsHistory;
+        _showMeasurementReminder = showReminder;
       });
     } catch (e) {
       if (mounted) {
@@ -223,48 +241,86 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<(String, double?, DateTime?)> _loadGoalPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final metric = prefs.getString('home_goal_metric') ?? 'weight_kg';
-    final targetStr = prefs.getString('home_goal_target_$metric');
-    final startStr = prefs.getString('home_goal_start_$metric');
-    return (
-      metric,
-      targetStr != null ? double.tryParse(targetStr) : null,
-      startStr != null ? DateTime.tryParse(startStr) : null,
-    );
+  static SupabaseClient get _db => Supabase.instance.client;
+
+  Future<void> _loadGoalPrefs() async {
+    try {
+      final userId = _db.auth.currentUser?.id;
+      if (userId == null) return;
+      final row = await _db
+          .from('profiles')
+          .select('goal_metric, goal_targets_json')
+          .eq('id', userId)
+          .maybeSingle();
+      if (row == null) return;
+      final metric = (row['goal_metric'] as String?) ?? 'weight_kg';
+      final rawJson = (row['goal_targets_json'] as Map<String, dynamic>?) ?? {};
+      final cache = <String, ({double? target, DateTime? start})>{};
+      for (final entry in rawJson.entries) {
+        final v = entry.value as Map<String, dynamic>;
+        cache[entry.key] = (
+          target: v['target'] != null ? (v['target'] as num).toDouble() : null,
+          start: v['start'] != null ? DateTime.tryParse(v['start'] as String) : null,
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        _goalCache = cache;
+        _goalMetric = metric;
+        final g = cache[metric];
+        _goalTarget = g?.target;
+        _goalStartDate = g?.start;
+      });
+    } catch (_) {}
   }
 
   Future<void> _saveGoalMetric(String metric) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('home_goal_metric', metric);
-    final targetStr = prefs.getString('home_goal_target_$metric');
-    final startStr = prefs.getString('home_goal_start_$metric');
+    final entry = _goalCache[metric];
     setState(() {
       _goalMetric = metric;
-      _goalTarget = targetStr != null ? double.tryParse(targetStr) : null;
-      _goalStartDate = startStr != null ? DateTime.tryParse(startStr) : null;
+      _goalTarget = entry?.target;
+      _goalStartDate = entry?.start;
     });
+    try {
+      final userId = _db.auth.currentUser?.id;
+      if (userId == null) return;
+      await _db.from('profiles').update({'goal_metric': metric}).eq('id', userId);
+      EventLogger.goalSet(goal: metric);
+    } catch (_) {}
   }
 
   Future<void> _saveGoalTarget(double? value) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (value == null) {
-      await prefs.remove('home_goal_target_$_goalMetric');
-      await prefs.remove('home_goal_start_$_goalMetric');
-      setState(() {
-        _goalTarget = null;
-        _goalStartDate = null;
-      });
+    final now = DateTime.now();
+    final newEntry = value != null
+        ? (target: value, start: now)
+        : (target: null as double?, start: null as DateTime?);
+    final newCache = Map<String, ({double? target, DateTime? start})>.from(_goalCache);
+    if (value != null) {
+      newCache[_goalMetric] = newEntry;
     } else {
-      await prefs.setString('home_goal_target_$_goalMetric', value.toString());
-      final today = DateTime.now().toIso8601String().split('T')[0];
-      await prefs.setString('home_goal_start_$_goalMetric', today);
-      setState(() {
-        _goalTarget = value;
-        _goalStartDate = DateTime.parse(today);
-      });
+      newCache.remove(_goalMetric);
     }
+    setState(() {
+      _goalTarget = value;
+      _goalStartDate = value != null ? now : null;
+      _goalCache = newCache;
+    });
+    try {
+      final userId = _db.auth.currentUser?.id;
+      if (userId == null) return;
+      final jsonData = {
+        for (final e in newCache.entries)
+          if (e.value.target != null)
+            e.key: {
+              'target': e.value.target,
+              'start': e.value.start?.toUtc().toIso8601String(),
+            }
+      };
+      await _db.from('profiles').update({
+        'goal_metric': _goalMetric,
+        'goal_targets_json': jsonData,
+      }).eq('id', userId);
+    } catch (_) {}
   }
 
   @override
@@ -309,10 +365,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _AchievementCard(insight: _insight!),
                 ],
 
+                // ── Measurement reminder ──────────────────────────────────
+                if (_showMeasurementReminder) ...[
+                  const SizedBox(height: 16),
+                  _MeasurementReminderBanner(
+                    onDismiss: () =>
+                        setState(() => _showMeasurementReminder = false),
+                    onTap: () => context.push('/body-metrics'),
+                  ),
+                ],
+
                 // ── Body progress card ────────────────────────────────────
                 const SizedBox(height: 16),
                 _BodyProgressCard(
-                  latestMetrics: _latestBodyMetrics,
+                  metricsHistory: _bodyMetricsHistory,
                   metric: _goalMetric,
                   target: _goalTarget,
                   goalStartDate: _goalStartDate,
@@ -323,7 +389,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 const SizedBox(height: 12),
                 _QuickWeightCard(
-                  currentWeight: (_latestBodyMetrics?['weight_kg'] as num?)?.toDouble(),
+                  currentWeight: () {
+                    for (final m in _bodyMetricsHistory.reversed) {
+                      if (m['weight_kg'] != null) return (m['weight_kg'] as num).toDouble();
+                    }
+                    return null;
+                  }(),
                   onSaved: () async {
                     if (mounted) _load();
                   },
@@ -478,10 +549,60 @@ class _AchievementCard extends StatelessWidget {
   }
 }
 
+// ─── Measurement Reminder Banner ──────────────────────────────────────────────
+
+class _MeasurementReminderBanner extends StatelessWidget {
+  final VoidCallback onDismiss;
+  final VoidCallback onTap;
+
+  const _MeasurementReminderBanner({
+    required this.onDismiss,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.accent.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+          child: Row(
+            children: [
+              const Icon(Icons.straighten_outlined,
+                  color: AppColors.accent, size: 22),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Пора сделать замеры тела — прошло больше месяца',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close,
+                    size: 18, color: AppColors.textSecondary),
+                onPressed: onDismiss,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Body Progress Card ───────────────────────────────────────────────────────
 
 class _BodyProgressCard extends StatelessWidget {
-  final Map<String, dynamic>? latestMetrics;
+  final List<Map<String, dynamic>> metricsHistory;
   final String metric;
   final double? target;
   final DateTime? goalStartDate;
@@ -490,7 +611,7 @@ class _BodyProgressCard extends StatelessWidget {
   final VoidCallback onAddMetrics;
 
   const _BodyProgressCard({
-    required this.latestMetrics,
+    required this.metricsHistory,
     required this.metric,
     required this.target,
     this.goalStartDate,
@@ -499,25 +620,39 @@ class _BodyProgressCard extends StatelessWidget {
     required this.onAddMetrics,
   });
 
+  /// Latest entry where the selected metric is not null.
+  Map<String, dynamic>? get _latestEntry {
+    for (final m in metricsHistory.reversed) {
+      if (m[metric] != null) return m;
+    }
+    return null;
+  }
+
   double? get _currentValue {
-    final v = latestMetrics?[metric];
+    final v = _latestEntry?[metric];
     return (v as num?)?.toDouble();
   }
 
   String? get _measurementDate {
-    final ts = latestMetrics?['updated_at'] as String?;
+    final entry = _latestEntry;
+    if (entry == null) return null;
+    final ts = entry['updated_at'] as String?;
     if (ts != null) {
       final dt = DateTime.tryParse(ts)?.toLocal();
-      if (dt != null) {
-        final d = '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year.toString().substring(2)}';
-        final t = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-        return '$d $t';
-      }
+      if (dt != null) return _fmtDT(dt);
     }
-    final d = latestMetrics?['date'] as String?;
+    final d = entry['date'] as String?;
     if (d == null || d.length < 10) return null;
     return '${d.substring(8, 10)}.${d.substring(5, 7)}.${d.substring(2, 4)}';
   }
+
+  static String _fmtDT(DateTime dt) {
+    final d = '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year.toString().substring(2)}';
+    final t = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    return '$d $t';
+  }
+
+  String? get _goalStartLabel => goalStartDate != null ? _fmtDT(goalStartDate!) : null;
 
   String get _unit => _metricOptions[metric]?.$2 ?? '';
   String get _label => _metricOptions[metric]?.$1 ?? metric;
@@ -739,6 +874,7 @@ class _BodyProgressCard extends StatelessWidget {
                         ? '${fmtMetricValue(target!)} $_unit'
                         : '—',
                     hint: target == null ? 'Установить' : null,
+                    subtitle: _goalStartLabel,
                     onTap: () => _showTargetDialog(context),
                   )),
                 ],
@@ -990,6 +1126,7 @@ class _WellnessCardState extends State<_WellnessCard> {
         stress: _stress,
         energy: _energy,
       );
+      EventLogger.checkInSaved(type: 'wellness');
       if (mounted) widget.onSaved();
     } catch (e) {
       if (mounted) setState(() => _saving = false);
@@ -1325,27 +1462,23 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
               ),
               if (hasTodayLogs) ...[
                 const Spacer(),
-                // Today's log chips
-                Wrap(
-                  spacing: 6,
-                  children: _todayLogs.map((log) {
-                    final w = (log['weight_kg'] as num).toDouble();
-                    final t = _formatTime(log['measured_at'] as String);
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '$t · ${w % 1 == 0 ? w.toInt() : w.toStringAsFixed(1)} кг',
-                        style: const TextStyle(
-                            color: AppColors.textSecondary, fontSize: 11),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                Builder(builder: (_) {
+                  final log = _todayLogs.last;
+                  final w = (log['weight_kg'] as num).toDouble();
+                  final t = _formatTime(log['measured_at'] as String);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$t · ${w % 1 == 0 ? w.toInt() : w.toStringAsFixed(1)} кг',
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 11),
+                    ),
+                  );
+                }),
               ],
             ],
           ),

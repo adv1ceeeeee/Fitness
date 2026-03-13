@@ -155,8 +155,10 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
         .map((f) => (name: f.name, source: f.source, value: f.fn(w, _reps)))
         .toList();
     final avg = results.fold(0.0, (s, r) => s + r.value) / results.length;
+    // Round to nearest 2.5 kg plate increment
+    final rounded = (avg / 2.5).round() * 2.5;
     setState(() {
-      _result = avg;
+      _result = rounded;
       _breakdown = results;
     });
   }
@@ -308,7 +310,7 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
                         TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                 const SizedBox(height: 4),
                 Text(
-                  '${_result!.toStringAsFixed(1)} кг',
+                  '${_result! % 1 == 0 ? _result!.toInt() : _result!.toStringAsFixed(1)} кг',
                   style: const TextStyle(
                     color: AppColors.accent,
                     fontSize: 36,
@@ -851,159 +853,150 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 12),
-            ..._buildWarmup(target).asMap().entries.map((e) {
-              final i = e.key;
-              final s = e.value;
-              const jointColor = Color(0xFF30D158);
-              final (color, label) = switch (s.type) {
-                WarmupSetType.joint    => (jointColor, 'Суставная разминка'),
-                WarmupSetType.general  => (const Color(0xFF636366), 'Общая разминка'),
-                WarmupSetType.specific => (const Color(0xFF007AFF), 'Специфическая'),
-                WarmupSetType.leadIn   => (const Color(0xFFFF9500), 'Подводящий'),
-              };
-              // Joint warmup row — no weight/reps, just description
-              if (s.type == WarmupSetType.joint) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 26,
-                        height: 26,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text('${i + 1}',
-                            style: const TextStyle(
-                                color: jointColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700)),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Резинки / гантели / гриф без блинов',
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 13),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(label,
-                            style: const TextStyle(
-                                color: jointColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600)),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              final wStr = s.weight.toStringAsFixed(
-                  s.weight == s.weight.truncate() ? 0 : 1);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Column(
                   children: [
-                    // Step number
-                    Container(
-                      width: 26,
-                      height: 26,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
+                    ..._buildWarmup(target).asMap().entries.map((e) {
+                      final i = e.key;
+                      final s = e.value;
+                      const jointColor = Color(0xFF30D158);
+                      final (color, label) = switch (s.type) {
+                        WarmupSetType.joint    => (jointColor, 'Суставная разминка'),
+                        WarmupSetType.general  => (const Color(0xFF636366), 'Общая разминка'),
+                        WarmupSetType.specific => (const Color(0xFF007AFF), 'Специфическая'),
+                        WarmupSetType.leadIn   => (const Color(0xFFFF9500), 'Подводящий'),
+                      };
+                      if (s.type == WarmupSetType.joint) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 26, height: 26,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Text('${i + 1}',
+                                    style: const TextStyle(
+                                        color: jointColor, fontSize: 12,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text('Резинки / гантели / гриф без блинов',
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary, fontSize: 13)),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(label,
+                                    style: const TextStyle(
+                                        color: jointColor, fontSize: 11,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      final wStr = s.weight.toStringAsFixed(
+                          s.weight == s.weight.truncate() ? 0 : 1);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 26, height: 26,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text('${i + 1}',
+                                  style: TextStyle(
+                                      color: color, fontSize: 12,
+                                      fontWeight: FontWeight.w700)),
+                            ),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              width: 80,
+                              child: Text('$wStr $_unit',
+                                  style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14)),
+                            ),
+                            Expanded(
+                              child: Text('× ${s.reps} повт.',
+                                  style: const TextStyle(
+                                      color: AppColors.textSecondary, fontSize: 13)),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(label,
+                                  style: TextStyle(
+                                      color: color, fontSize: 11,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    // Working set indicator
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 2),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 26, height: 26,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.fitness_center,
+                                size: 14, color: AppColors.accent),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 80,
+                            child: Text(
+                              '${target.toStringAsFixed(target == target.truncate() ? 0 : 1)} $_unit',
+                              style: const TextStyle(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14),
+                            ),
+                          ),
+                          const Expanded(child: SizedBox()),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text('Рабочий подход',
+                                style: TextStyle(
+                                    color: AppColors.accent,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ],
                       ),
-                      child: Text('${i + 1}',
-                          style: TextStyle(
-                              color: color,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                    const SizedBox(width: 10),
-                    // Weight
-                    SizedBox(
-                      width: 80,
-                      child: Text('$wStr $_unit',
-                          style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14)),
-                    ),
-                    // Reps
-                    SizedBox(
-                      width: 60,
-                      child: Text('× ${s.reps} повт.',
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 13)),
-                    ),
-                    // Label badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(label,
-                          style: TextStyle(
-                              color: color,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
-              );
-            }),
-            // Working set indicator
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 2),
-              child: Row(
-                children: [
-                  Container(
-                    width: 26,
-                    height: 26,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.fitness_center,
-                        size: 14, color: AppColors.accent),
-                  ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 80,
-                    child: Text(
-                      '${target.toStringAsFixed(target == target.truncate() ? 0 : 1)} $_unit',
-                      style: const TextStyle(
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14),
-                    ),
-                  ),
-                  const SizedBox(width: 60),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text('Рабочий подход',
-                        style: TextStyle(
-                            color: AppColors.accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ],
               ),
             ),
           ],

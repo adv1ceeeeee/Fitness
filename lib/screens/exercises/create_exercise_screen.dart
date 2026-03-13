@@ -22,6 +22,7 @@ class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
     ('arms', 'Руки'),
     ('legs', 'Ноги'),
     ('cardio', 'Кардио'),
+    ('core', 'Пресс'),
   ];
 
   @override

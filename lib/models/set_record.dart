@@ -7,6 +7,7 @@ class SetRecord {
   final int? reps;
   final int? rpe;
   final bool completed;
+  final bool isWarmup;
 
   SetRecord({
     required this.id,
@@ -17,6 +18,7 @@ class SetRecord {
     this.reps,
     this.rpe,
     this.completed = false,
+    this.isWarmup = false,
   });
 
   factory SetRecord.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,7 @@ class SetRecord {
       reps: json['reps'] as int?,
       rpe: json['rpe'] as int?,
       completed: json['completed'] as bool? ?? false,
+      isWarmup: json['is_warmup'] as bool? ?? false,
     );
   }
 
@@ -41,5 +44,6 @@ class SetRecord {
         'reps': reps,
         'rpe': rpe,
         'completed': completed,
+        'is_warmup': isWarmup,
       };
 }

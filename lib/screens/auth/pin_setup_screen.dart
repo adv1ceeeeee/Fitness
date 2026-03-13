@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/pin_service.dart';
 import 'package:sportwai/widgets/pin_pad.dart';
 
@@ -46,6 +47,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       return;
     }
     await PinService.setupPin(pin, userId);
+    EventLogger.pinSetup(enabled: true);
     if (mounted) context.go('/onboarding-check');
   }
 

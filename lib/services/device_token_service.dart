@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_service.dart';
@@ -28,12 +29,14 @@ class DeviceTokenService {
     if (userId == null) return;
 
     try {
+      final info = await PackageInfo.fromPlatform();
+      final appVersion = '${info.version}+${info.buildNumber}';
       await _client.from('device_tokens').upsert(
         {
           'user_id': userId,
           'token': token,
           'platform': _platform,
-          'app_version': '1.0.0', // TODO: inject from package_info_plus
+          'app_version': appVersion,
           'updated_at': DateTime.now().toIso8601String(),
         },
         onConflict: 'user_id, token',

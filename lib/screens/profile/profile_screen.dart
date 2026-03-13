@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/providers/settings_provider.dart';
@@ -9,6 +10,7 @@ import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/biometric_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/export_service.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/profile_service.dart';
@@ -32,6 +34,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Map<String, dynamic>? _latestMetrics;
   bool _biometricAvailable = false;
   bool _biometricEnabled = false;
+  int _notifHour = 8;
+  int _notifMinute = 0;
 
   @override
   void initState() {
@@ -40,6 +44,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _loadStats();
     _loadMetrics();
     _loadBiometric();
+    _loadNotifTime();
+  }
+
+  Future<void> _loadNotifTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notifHour = prefs.getInt('notif_hour') ?? 8;
+        _notifMinute = prefs.getInt('notif_minute') ?? 0;
+      });
+    }
+  }
+
+  Future<void> _pickNotifTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _notifHour, minute: _notifMinute),
+    );
+    if (picked == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('notif_hour', picked.hour);
+    await prefs.setInt('notif_minute', picked.minute);
+    if (mounted) setState(() { _notifHour = picked.hour; _notifMinute = picked.minute; });
+    // Re-schedule with new time if notifications are enabled
+    final enabled = ref.read(notificationsEnabledProvider);
+    if (enabled) {
+      final workouts = await WorkoutService.getMyWorkouts();
+      final days = workouts.expand((w) => w.days).toList();
+      await NotificationService.scheduleWorkoutReminders(
+        days, hour: picked.hour, minute: picked.minute,
+      );
+    }
   }
 
   Future<void> _loadBiometric() async {
@@ -116,6 +152,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } else {
       await NotificationService.cancelAll();
     }
+    EventLogger.notificationToggled(enabled: enabled);
     await ref.read(notificationsEnabledProvider.notifier).setEnabled(enabled);
   }
 
@@ -197,6 +234,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               onTap: () async {
                 Navigator.pop(ctx);
                 try {
+                  EventLogger.exportTriggered(format: 'json');
                   await ExportService.exportData();
                 } catch (_) {
                   messenger.showSnackBar(const SnackBar(
@@ -212,6 +250,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               onTap: () async {
                 Navigator.pop(ctx);
                 try {
+                  EventLogger.exportTriggered(format: 'csv');
                   await ExportService.exportCsv();
                 } catch (_) {
                   messenger.showSnackBar(const SnackBar(
@@ -415,6 +454,33 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   );
                 }),
               ),
+              Builder(builder: (context) {
+                final enabled = ref.watch(notificationsEnabledProvider);
+                if (!enabled) return const SizedBox();
+                final h = _notifHour.toString().padLeft(2, '0');
+                final m = _notifMinute.toString().padLeft(2, '0');
+                return _SettingsRow(
+                  label: 'Время напоминания',
+                  trailing: GestureDetector(
+                    onTap: _pickNotifTime,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$h:$m',
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
               if (_biometricAvailable)
                 _SettingsRow(
                   label: 'Вход по биометрии',
@@ -499,6 +565,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 child: TextButton.icon(
                   onPressed: () async {
                     final router = GoRouter.of(context);
+                    EventLogger.userLoggedOut();
                     await AuthService.signOut();
                     if (mounted) router.go('/');
                   },

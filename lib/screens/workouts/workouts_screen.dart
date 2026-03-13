@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/cache_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
@@ -257,6 +258,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       ),
     );
     if (confirmed == true) {
+      EventLogger.workoutDeleted(workoutName: w.name);
       await widget.onDelete(w.id);
       if (mounted) {
         setState(() {
@@ -270,8 +272,106 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
 
   Future<void> _duplicateWorkout(Workout w) async {
     setState(() => _openSwipeId = null);
+    if (w.days.isEmpty) {
+      await _scheduleOneTime(w);
+    } else {
+      await _copyActiveProgram(w);
+    }
+  }
+
+  /// One-time workout → show date picker → schedule a new session.
+  Future<void> _scheduleOneTime(Workout w) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      helpText: 'Выберите дату тренировки',
+      confirmText: 'Запланировать',
+      cancelText: 'Отмена',
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.accent,
+            surface: AppColors.card,
+            onSurface: AppColors.textPrimary,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
     try {
-      await WorkoutService.duplicateWorkout(w.id);
+      await TrainingService.scheduleSession(w.id, picked);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Запланировано на ${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось запланировать тренировку')),
+        );
+      }
+    }
+  }
+
+  /// Active program → duplicate → check day conflicts → offer to replace.
+  Future<void> _copyActiveProgram(Workout w) async {
+    try {
+      final copy = await WorkoutService.duplicateWorkout(w.id);
+
+      // Find other active programs that share any days with the copy.
+      final conflicting = widget.workouts
+          .where((other) =>
+              other.id != w.id &&
+              other.days.isNotEmpty &&
+              other.days.any((d) => copy.days.contains(d)))
+          .toList();
+
+      if (conflicting.isEmpty || !mounted) {
+        widget.onRefresh();
+        return;
+      }
+
+      final names = conflicting.map((c) => '"${c.name}"').join(', ');
+      final replace = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text('Конфликт расписания',
+              style: TextStyle(color: AppColors.textPrimary)),
+          content: Text(
+            'Новая программа пересекается по дням с: $names.\nЗаменить их на копию "${copy.name}"?',
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Оставить обе',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Заменить',
+                  style: TextStyle(color: AppColors.accent)),
+            ),
+          ],
+        ),
+      );
+
+      if (replace == true) {
+        for (final c in conflicting) {
+          await WorkoutService.updateWorkout(c.id, days: []);
+        }
+      }
       widget.onRefresh();
     } catch (_) {
       if (mounted) {
@@ -423,20 +523,18 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                 ),
           children: [
             for (int i = 0; i < sorted.length; i++)
-              ReorderableDelayedDragStartListener(
+              _SwipeableCard(
                 key: ValueKey(sorted[i].id),
+                workout: sorted[i],
                 index: i,
-                child: _SwipeableCard(
-                  workout: sorted[i],
-                  isHidden: _hiddenIds.contains(sorted[i].id),
-                  isOpen: _openSwipeId == sorted[i].id,
-                  onOpen: () => _setOpen(sorted[i].id),
-                  onClose: () => _setOpen(null),
-                  onTap: () => widget.onWorkoutTap(sorted[i]),
-                  onToggleHide: () => _toggleHidden(sorted[i].id),
-                  onDelete: () => _confirmDelete(sorted[i]),
-                  onCopy: () => _duplicateWorkout(sorted[i]),
-                ),
+                isHidden: _hiddenIds.contains(sorted[i].id),
+                isOpen: _openSwipeId == sorted[i].id,
+                onOpen: () => _setOpen(sorted[i].id),
+                onClose: () => _setOpen(null),
+                onTap: () => widget.onWorkoutTap(sorted[i]),
+                onToggleHide: () => _toggleHidden(sorted[i].id),
+                onDelete: () => _confirmDelete(sorted[i]),
+                onCopy: () => _duplicateWorkout(sorted[i]),
               ),
           ],
         ),
@@ -449,6 +547,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
 
 class _SwipeableCard extends StatefulWidget {
   final Workout workout;
+  final int index;
   final bool isHidden;
   final bool isOpen;
   final VoidCallback onOpen;
@@ -459,7 +558,9 @@ class _SwipeableCard extends StatefulWidget {
   final VoidCallback onCopy;
 
   const _SwipeableCard({
+    super.key,
     required this.workout,
+    required this.index,
     required this.isHidden,
     required this.isOpen,
     required this.onOpen,
@@ -566,7 +667,10 @@ class _SwipeableCardState extends State<_SwipeableCard>
                       onHorizontalDragEnd: _onDragEnd,
                       child: Opacity(
                         opacity: widget.isHidden ? 0.5 : 1.0,
-                        child: _WorkoutCardContent(workout: widget.workout),
+                        child: _WorkoutCardContent(
+                          workout: widget.workout,
+                          index: widget.index,
+                        ),
                       ),
                     ),
                   ),
@@ -644,8 +748,9 @@ class _ActionPanel extends StatelessWidget {
 
 class _WorkoutCardContent extends StatelessWidget {
   final Workout workout;
+  final int index;
 
-  const _WorkoutCardContent({required this.workout});
+  const _WorkoutCardContent({required this.workout, required this.index});
 
   @override
   Widget build(BuildContext context) {
@@ -697,10 +802,13 @@ class _WorkoutCardContent extends StatelessWidget {
           ),
           const Icon(Icons.chevron_right, color: AppColors.textSecondary),
           const SizedBox(width: 4),
-          Icon(
-            Icons.drag_handle,
-            color: AppColors.textSecondary.withValues(alpha: 0.5),
-            size: 20,
+          ReorderableDragStartListener(
+            index: index,
+            child: Icon(
+              Icons.drag_handle,
+              color: AppColors.textSecondary.withValues(alpha: 0.7),
+              size: 22,
+            ),
           ),
         ],
       ),
