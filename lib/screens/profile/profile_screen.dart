@@ -230,7 +230,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -484,13 +484,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 width: double.infinity,
                 height: 56,
                 child: OutlinedButton.icon(
-                  onPressed: () async {
-                    final router = GoRouter.of(context);
-                    await AuthService.signOut();
-                    if (mounted) router.go('/');
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Выйти'),
+                  onPressed: () => _confirmDeleteAccount(context),
+                  icon: const Icon(Icons.delete_forever_outlined),
+                  label: const Text('Удалить аккаунт'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.error,
                     side: const BorderSide(color: AppColors.error),
@@ -500,14 +496,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: TextButton(
-                  onPressed: () => _confirmDeleteAccount(context),
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final router = GoRouter.of(context);
+                    await AuthService.signOut();
+                    if (mounted) router.go('/');
+                  },
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Выйти', style: TextStyle(fontSize: 13)),
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.textSecondary,
-                  ),
-                  child: const Text(
-                    'Удалить аккаунт',
-                    style: TextStyle(fontSize: 13),
                   ),
                 ),
               ),
