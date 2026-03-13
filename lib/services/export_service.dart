@@ -50,7 +50,7 @@ class ExportService {
 
     await Share.shareXFiles(
       [XFile.fromData(bytes, name: fileName, mimeType: 'text/csv')],
-      subject: 'Экспорт данных SportWAI',
+      subject: 'Экспорт данных Sportify',
     );
 
     debugPrint('[ExportService] exported $fileName (${bytes.length} bytes)');
@@ -96,7 +96,7 @@ class ExportService {
 
     final payload = {
       'exported_at': DateTime.now().toIso8601String(),
-      'app': 'SportWAI',
+      'app': 'Sportify',
       'version': 1,
       'workouts': results[0],
       'training_sessions': results[1],
@@ -120,7 +120,7 @@ class ExportService {
 
     await Share.shareXFiles(
       [xfile],
-      subject: 'Экспорт данных SportWAI',
+      subject: 'Экспорт данных Sportify',
     );
 
     debugPrint('[ExportService] exported $fileName (${bytes.length} bytes)');

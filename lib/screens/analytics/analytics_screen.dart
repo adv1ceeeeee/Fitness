@@ -161,11 +161,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       if (byteData == null) return;
       final bytes = byteData.buffer.asUint8List();
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/sportwai_progress.png');
+      final file = File('${dir.path}/sportify_progress.png');
       await file.writeAsBytes(bytes);
       await Share.shareXFiles(
         [XFile(file.path)],
-        subject: 'Мой прогресс в SportWAI',
+        subject: 'Мой прогресс в Sportify',
       );
     } finally {
       if (mounted) setState(() => _sharing = false);
@@ -978,7 +978,7 @@ class _ShareCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'SportWAI',
+                    'Sportify',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
