@@ -984,12 +984,16 @@ class _WellnessCardState extends State<_WellnessCard> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await WellnessService.upsert(
-      sleepHours: _sleep,
-      stress: _stress,
-      energy: _energy,
-    );
-    if (mounted) widget.onSaved();
+    try {
+      await WellnessService.upsert(
+        sleepHours: _sleep,
+        stress: _stress,
+        energy: _energy,
+      );
+      if (mounted) widget.onSaved();
+    } catch (e) {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -1246,12 +1250,21 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
     final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
     if (v == null || v <= 0 || v > 500) return;
     setState(() => _saving = true);
-    await BodyMetricsService.logWeight(v, updateDaily: updateDaily);
-    await _loadLogs();
-    await widget.onSaved();
-    if (mounted) setState(() { _saving = false; _saved = true; });
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _saved = false);
+    try {
+      await BodyMetricsService.logWeight(v, updateDaily: updateDaily);
+      await _loadLogs();
+      await widget.onSaved();
+      if (mounted) setState(() { _saving = false; _saved = true; });
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) setState(() => _saved = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось сохранить вес')),
+        );
+      }
+    }
   }
 
   String _formatTime(String isoUtc) {
