@@ -223,15 +223,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  String get _userId =>
-      Supabase.instance.client.auth.currentUser?.id ?? 'anon';
-
   Future<(String, double?, DateTime?)> _loadGoalPrefs() async {
-    final uid = _userId;
     final prefs = await SharedPreferences.getInstance();
-    final metric = prefs.getString('home_goal_metric_$uid') ?? 'weight_kg';
-    final targetStr = prefs.getString('home_goal_target_${uid}_$metric');
-    final startStr = prefs.getString('home_goal_start_${uid}_$metric');
+    final metric = prefs.getString('home_goal_metric') ?? 'weight_kg';
+    final targetStr = prefs.getString('home_goal_target_$metric');
+    final startStr = prefs.getString('home_goal_start_$metric');
     return (
       metric,
       targetStr != null ? double.tryParse(targetStr) : null,
@@ -240,11 +236,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _saveGoalMetric(String metric) async {
-    final uid = _userId;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('home_goal_metric_$uid', metric);
-    final targetStr = prefs.getString('home_goal_target_${uid}_$metric');
-    final startStr = prefs.getString('home_goal_start_${uid}_$metric');
+    await prefs.setString('home_goal_metric', metric);
+    final targetStr = prefs.getString('home_goal_target_$metric');
+    final startStr = prefs.getString('home_goal_start_$metric');
     setState(() {
       _goalMetric = metric;
       _goalTarget = targetStr != null ? double.tryParse(targetStr) : null;
@@ -253,19 +248,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _saveGoalTarget(double? value) async {
-    final uid = _userId;
     final prefs = await SharedPreferences.getInstance();
     if (value == null) {
-      await prefs.remove('home_goal_target_${uid}_$_goalMetric');
-      await prefs.remove('home_goal_start_${uid}_$_goalMetric');
+      await prefs.remove('home_goal_target_$_goalMetric');
+      await prefs.remove('home_goal_start_$_goalMetric');
       setState(() {
         _goalTarget = null;
         _goalStartDate = null;
       });
     } else {
-      await prefs.setString('home_goal_target_${uid}_$_goalMetric', value.toString());
+      await prefs.setString('home_goal_target_$_goalMetric', value.toString());
       final today = DateTime.now().toIso8601String().split('T')[0];
-      await prefs.setString('home_goal_start_${uid}_$_goalMetric', today);
+      await prefs.setString('home_goal_start_$_goalMetric', today);
       setState(() {
         _goalTarget = value;
         _goalStartDate = DateTime.parse(today);
