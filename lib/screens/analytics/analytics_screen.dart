@@ -36,7 +36,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<Map<String, dynamic>> _trackedExercises = [];
   Map<String, dynamic>? _selectedExercise;
   Map<String, double> _exerciseProgress = {};
+  double? _communityAvgExerciseWeight;
   bool _loadingChart = false;
+
+  double? _communityAvgWeeklyVolume;
 
   List<Map<String, dynamic>> _bodyHistory = [];
   String _selectedBodyMetric = 'weight_kg';
@@ -98,6 +101,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final weeklyVol = await AnalyticsService.getWeeklyVolumeHistory();
         final muscleBalance = await AnalyticsService.getMuscleGroupBalance();
         final caloriesPerSession = await AnalyticsService.getCaloriesPerSession();
+        final communityAvgVol = await AnalyticsService.getCommunityAvgWeeklyVolume();
 
         if (mounted) {
           setState(() {
@@ -112,6 +116,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _weeklyVolume = weeklyVol;
             _muscleBalance = muscleBalance;
             _caloriesPerSession = caloriesPerSession;
+            _communityAvgWeeklyVolume = communityAvgVol;
             _loading = false;
           });
         }
@@ -132,8 +137,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   Future<void> _loadExerciseProgress(String exerciseId) async {
     if (!mounted) return;
     setState(() => _loadingChart = true);
-    final data = await AnalyticsService.getExerciseMaxWeight(exerciseId);
-    if (mounted) setState(() { _exerciseProgress = data; _loadingChart = false; });
+    final results = await Future.wait([
+      AnalyticsService.getExerciseMaxWeight(exerciseId),
+      AnalyticsService.getCommunityAvgExerciseWeight(exerciseId),
+    ]);
+    if (mounted) {
+      setState(() {
+        _exerciseProgress = results[0] as Map<String, double>;
+        _communityAvgExerciseWeight = results[1] as double?;
+        _loadingChart = false;
+      });
+    }
   }
 
   Future<void> _shareAsImage() async {
@@ -265,7 +279,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 12),
-                _VolumeBarChart(weeks: _weeklyVolume),
+                _VolumeBarChart(weeks: _weeklyVolume, communityAvg: _communityAvgWeeklyVolume),
                 const SizedBox(height: 32),
                 const Text(
                   'Динамика параметров тела',
@@ -337,6 +351,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     )
                   else
                     _ProgressChart(data: _bodyMetricData),
+                  // No community avg for body metrics — it's personal data
                 ],
                 const SizedBox(height: 32),
                 const Text(
@@ -411,7 +426,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                     style: TextStyle(
                                         color: AppColors.textSecondary)),
                               )
-                            : _ProgressChart(data: _exerciseProgress),
+                            : _ProgressChart(
+                                data: _exerciseProgress,
+                                communityAvg: _communityAvgExerciseWeight,
+                              ),
                 ],
                 const SizedBox(height: 32),
                 const Text(
@@ -610,8 +628,9 @@ class _StatBox extends StatelessWidget {
 
 class _ProgressChart extends StatelessWidget {
   final Map<String, double> data;
+  final double? communityAvg;
 
-  const _ProgressChart({required this.data});
+  const _ProgressChart({required this.data, this.communityAvg});
 
   @override
   Widget build(BuildContext context) {
@@ -623,8 +642,11 @@ class _ProgressChart extends StatelessWidget {
       (i) => FlSpot(i.toDouble(), sorted[i].value),
     );
 
-    final minY = sorted.map((e) => e.value).reduce((a, b) => a < b ? a : b);
-    final maxY = sorted.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final dataMin = sorted.map((e) => e.value).reduce((a, b) => a < b ? a : b);
+    final dataMax = sorted.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final allValues = [dataMin, dataMax, if (communityAvg != null) communityAvg!];
+    final minY = allValues.reduce((a, b) => a < b ? a : b);
+    final maxY = allValues.reduce((a, b) => a > b ? a : b);
     final yPad = maxY == minY ? 5.0 : (maxY - minY) * 0.2;
 
     return Container(
@@ -638,6 +660,24 @@ class _ProgressChart extends StatelessWidget {
         LineChartData(
           minY: minY - yPad,
           maxY: maxY + yPad,
+          extraLinesData: communityAvg == null
+              ? null
+              : ExtraLinesData(horizontalLines: [
+                  HorizontalLine(
+                    y: communityAvg!,
+                    color: Colors.grey.withValues(alpha: 0.55),
+                    strokeWidth: 1.5,
+                    dashArray: [6, 4],
+                    label: HorizontalLineLabel(
+                      show: true,
+                      alignment: Alignment.topRight,
+                      labelResolver: (_) =>
+                          'avg ${communityAvg!.toStringAsFixed(1)}',
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 10),
+                    ),
+                  ),
+                ]),
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
@@ -1090,8 +1130,9 @@ class _NavCard extends StatelessWidget {
 
 class _VolumeBarChart extends StatelessWidget {
   final List<Map<String, dynamic>> weeks;
+  final double? communityAvg;
 
-  const _VolumeBarChart({required this.weeks});
+  const _VolumeBarChart({required this.weeks, this.communityAvg});
 
   @override
   Widget build(BuildContext context) {
@@ -1111,7 +1152,27 @@ class _VolumeBarChart extends StatelessWidget {
       ),
       child: BarChart(
         BarChartData(
-          maxY: maxVol * 1.15,
+          maxY: communityAvg != null && communityAvg! > maxVol
+              ? communityAvg! * 1.15
+              : maxVol * 1.15,
+          extraLinesData: communityAvg == null
+              ? null
+              : ExtraLinesData(horizontalLines: [
+                  HorizontalLine(
+                    y: communityAvg!,
+                    color: Colors.grey.withValues(alpha: 0.55),
+                    strokeWidth: 1.5,
+                    dashArray: [6, 4],
+                    label: HorizontalLineLabel(
+                      show: true,
+                      alignment: Alignment.topRight,
+                      labelResolver: (_) =>
+                          'avg ${(communityAvg! / 1000).toStringAsFixed(1)}к',
+                      style: const TextStyle(
+                          color: Colors.grey, fontSize: 10),
+                    ),
+                  ),
+                ]),
           barTouchData: BarTouchData(
             touchTooltipData: BarTouchTooltipData(
               getTooltipColor: (_) => AppColors.surface,

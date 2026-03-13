@@ -655,6 +655,36 @@ class AnalyticsService {
         .toList();
   }
 
+  /// Community average of all-time max weight for an exercise (across all users).
+  /// Returns null if no data or RPC unavailable.
+  static Future<double?> getCommunityAvgExerciseWeight(
+      String exerciseId) async {
+    if (AuthService.currentUser == null) return null;
+    try {
+      final res = await _client.rpc(
+        'get_community_avg_exercise_weight',
+        params: {'p_exercise_id': exerciseId},
+      );
+      if (res == null) return null;
+      return (res as num).toDouble();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Community average weekly volume (kg × reps) over the last 8 weeks.
+  /// Returns null if no data or RPC unavailable.
+  static Future<double?> getCommunityAvgWeeklyVolume() async {
+    if (AuthService.currentUser == null) return null;
+    try {
+      final res = await _client.rpc('get_community_avg_weekly_volume');
+      if (res == null) return null;
+      return (res as num).toDouble();
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Returns kcal burned per session for a specific exercise.
   /// Result: map of date → kcal (sum of kcal_estimated for all sets of that exercise in that session).
   static Future<Map<String, double>> getCaloriesPerExercise(
