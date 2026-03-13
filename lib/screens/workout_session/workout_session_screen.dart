@@ -10,6 +10,8 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/body_metrics_service.dart';
+import 'package:sportwai/services/calorie_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
@@ -50,6 +52,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   List<WorkoutExercise> _exercises = [];
   Map<String, double> _personalBests = {};
   Map<String, Map<String, dynamic>> _lastSets = {};
+  double? _userWeightKg;
   int _completedSetsBefore = 0;
   int _totalExpectedSets = 0;
   int _currentExerciseIndex = 0;
@@ -139,8 +142,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
     final pbFutures = ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
     final lastSetsFuture = AnalyticsService.getLastSetsForExercises(exerciseIds);
+    final userMetricsFuture = BodyMetricsService.getLatest();
     final pbValues = await Future.wait(pbFutures);
     final lastSets = await lastSetsFuture;
+    final userMetrics = await userMetricsFuture;
 
     final pbs = <String, double>{};
     for (var i = 0; i < ex.length; i++) {
@@ -155,6 +160,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _exercises = ex;
         _personalBests = pbs;
         _lastSets = lastSets;
+        _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
         _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
         _warmupMinutes = warmupMins;
         _cooldownMinutes = cooldownMins;
@@ -300,6 +306,16 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       }
     }
 
+    // Estimate kcal for this set
+    final kcalEstimated = setData.reps > 0
+        ? estimateSetKcal(
+            category: we.exercise?.category ?? 'chest',
+            reps: setData.reps,
+            rpe: setData.rpe,
+            userWeightKg: _userWeightKg,
+          )
+        : null;
+
     // Save to DB in background; show retry snackbar on failure
     final saved = await TrainingService.saveSet(
       widget.sessionId,
@@ -309,6 +325,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       reps: setData.reps,
       rpe: setData.rpe,
       restSeconds: restSecondsToSave,
+      kcalEstimated: kcalEstimated,
     );
 
     if (!saved && mounted) {
@@ -516,7 +533,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     );
   }
 
-  void _goToSummary() {
+  Future<void> _goToSummary() async {
     final sessionState = ref.read(activeSessionProvider);
     final durationSeconds = sessionState.isActive
         ? sessionState.elapsed.inSeconds
@@ -526,6 +543,9 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       durationSeconds: durationSeconds,
       setsCount: _sets.where((s) => s.completed).length,
     );
+    // Aggregate per-set kcal into session total (fire-and-forget, errors logged internally)
+    TrainingService.saveSessionKcal(widget.sessionId);
+    if (!mounted) return;
     context.pushReplacement(
       '/session-summary',
       extra: {

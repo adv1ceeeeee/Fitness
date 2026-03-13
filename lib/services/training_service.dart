@@ -135,6 +135,7 @@ class TrainingService {
     int? reps,
     int? rpe,
     int? restSeconds,
+    double? kcalEstimated,
   }) async {
     try {
       await retryWithBackoff(() => _client.from('sets').insert({
@@ -146,6 +147,7 @@ class TrainingService {
             'rpe': rpe,
             'completed': true,
             if (restSeconds != null) 'rest_seconds': restSeconds,
+            if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
           }));
       return true;
     } catch (e) {
@@ -160,6 +162,32 @@ class TrainingService {
         restSeconds: restSeconds,
       );
       return false;
+    }
+  }
+
+  /// Sum kcal_estimated from all sets of a session and persist it.
+  /// Call after completeSession to store the aggregated total.
+  static Future<void> saveSessionKcal(String sessionId) async {
+    try {
+      final rows = await _client
+          .from('sets')
+          .select('kcal_estimated')
+          .eq('training_session_id', sessionId)
+          .eq('completed', true);
+
+      double total = 0;
+      for (final r in rows as List) {
+        final k = r['kcal_estimated'];
+        if (k != null) total += (k as num).toDouble();
+      }
+      if (total <= 0) return;
+
+      await _client
+          .from('training_sessions')
+          .update({'kcal_total': double.parse(total.toStringAsFixed(1))})
+          .eq('id', sessionId);
+    } catch (e) {
+      debugPrint('[TrainingService.saveSessionKcal] error: $e');
     }
   }
 
@@ -342,7 +370,7 @@ class TrainingService {
 
     final res = await _client
         .from('training_sessions')
-        .select('id, workout_id, date, duration_seconds, notes, workouts(name)')
+        .select('id, workout_id, date, duration_seconds, notes, kcal_total, workouts(name)')
         .eq('user_id', userId)
         .eq('completed', true)
         .order('date', ascending: false)

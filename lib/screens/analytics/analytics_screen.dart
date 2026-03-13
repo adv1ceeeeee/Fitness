@@ -75,6 +75,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<Achievement> _achievements = [];
   List<Map<String, dynamic>> _weeklyVolume = [];
   Map<String, int> _muscleBalance = {};
+  List<Map<String, dynamic>> _caloriesPerSession = [];
 
   @override
   void initState() {
@@ -96,6 +97,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final achievements = await AchievementService.getAchievements();
         final weeklyVol = await AnalyticsService.getWeeklyVolumeHistory();
         final muscleBalance = await AnalyticsService.getMuscleGroupBalance();
+        final caloriesPerSession = await AnalyticsService.getCaloriesPerSession();
 
         if (mounted) {
           setState(() {
@@ -109,6 +111,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _achievements = achievements;
             _weeklyVolume = weeklyVol;
             _muscleBalance = muscleBalance;
+            _caloriesPerSession = caloriesPerSession;
             _loading = false;
           });
         }
@@ -412,6 +415,33 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ],
                 const SizedBox(height: 32),
                 const Text(
+                  'Калории',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Оценка затрат по тренировкам',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                if (_caloriesPerSession.isEmpty)
+                  Container(
+                    height: 80,
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'Завершите тренировку,\nчтобы увидеть данные о калориях',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  )
+                else
+                  _CaloriesChart(sessions: _caloriesPerSession),
+                const SizedBox(height: 32),
+                const Text(
                   'Баланс мышечных групп',
                   style: TextStyle(
                     fontSize: 18,
@@ -677,6 +707,112 @@ class _ProgressChart extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CaloriesChart extends StatelessWidget {
+  final List<Map<String, dynamic>> sessions;
+
+  const _CaloriesChart({required this.sessions});
+
+  @override
+  Widget build(BuildContext context) {
+    final spots = List.generate(sessions.length, (i) {
+      final kcal = (sessions[i]['kcal_total'] as num).toDouble();
+      return FlSpot(i.toDouble(), kcal);
+    });
+
+    final values = spots.map((s) => s.y);
+    final minY = values.reduce((a, b) => a < b ? a : b);
+    final maxY = values.reduce((a, b) => a > b ? a : b);
+    final yPad = maxY == minY ? 20.0 : (maxY - minY) * 0.2;
+
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: BarChart(
+        BarChartData(
+          minY: 0,
+          maxY: maxY + yPad,
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            getDrawingHorizontalLine: (_) => const FlLine(
+              color: Color(0xFF2C2C2E),
+              strokeWidth: 1,
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                getTitlesWidget: (value, meta) => Text(
+                  value.toStringAsFixed(0),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 28,
+                interval: sessions.length <= 6
+                    ? 1
+                    : (sessions.length / 4).ceilToDouble(),
+                getTitlesWidget: (value, meta) {
+                  final idx = value.toInt();
+                  if (idx < 0 || idx >= sessions.length) {
+                    return const SizedBox.shrink();
+                  }
+                  final date = sessions[idx]['date'] as String? ?? '';
+                  final parts = date.split('-');
+                  final label = parts.length >= 3
+                      ? '${parts[2]}.${parts[1]}'
+                      : date;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false)),
+          ),
+          barGroups: List.generate(
+            sessions.length,
+            (i) => BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: (sessions[i]['kcal_total'] as num).toDouble(),
+                  color: AppColors.accent,
+                  width: sessions.length > 10 ? 8 : 14,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

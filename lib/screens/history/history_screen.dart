@@ -216,6 +216,7 @@ class _SessionCardState extends State<_SessionCard> {
                 as String? ??
             'Тренировка';
     final durSec = widget.session['duration_seconds'] as int?;
+    final kcalTotal = (widget.session['kcal_total'] as num?)?.toDouble();
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -274,20 +275,43 @@ class _SessionCardState extends State<_SessionCard> {
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            if (durSec != null) ...[
+                            if (durSec != null || kcalTotal != null) ...[
                               const SizedBox(height: 4),
-                              Row(
+                              Wrap(
+                                spacing: 12,
                                 children: [
-                                  const Icon(Icons.timer_outlined,
-                                      size: 13,
-                                      color: AppColors.textSecondary),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    formatSessionDuration(durSec),
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        color: AppColors.textSecondary),
-                                  ),
+                                  if (durSec != null)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.timer_outlined,
+                                            size: 13,
+                                            color: AppColors.textSecondary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          formatSessionDuration(durSec),
+                                          style: const TextStyle(
+                                              fontSize: 13,
+                                              color: AppColors.textSecondary),
+                                        ),
+                                      ],
+                                    ),
+                                  if (kcalTotal != null)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.local_fire_department_outlined,
+                                            size: 13,
+                                            color: AppColors.textSecondary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '~${kcalTotal.round()} ккал',
+                                          style: const TextStyle(
+                                              fontSize: 13,
+                                              color: AppColors.textSecondary),
+                                        ),
+                                      ],
+                                    ),
                                 ],
                               ),
                             ],

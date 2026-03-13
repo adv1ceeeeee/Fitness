@@ -631,4 +631,78 @@ class AnalyticsService {
         .compareTo(b['exerciseName'] as String));
     return result;
   }
+
+  /// Returns last [limit] completed sessions with kcal_total, oldest first.
+  /// Only sessions that have kcal_total != null are included.
+  static Future<List<Map<String, dynamic>>> getCaloriesPerSession({
+    int limit = 20,
+  }) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final res = await _client
+        .from('training_sessions')
+        .select('date, kcal_total')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .not('kcal_total', 'is', null)
+        .order('date', ascending: false)
+        .limit(limit);
+
+    return (res as List)
+        .cast<Map<String, dynamic>>()
+        .reversed
+        .toList();
+  }
+
+  /// Returns kcal burned per session for a specific exercise.
+  /// Result: map of date → kcal (sum of kcal_estimated for all sets of that exercise in that session).
+  static Future<Map<String, double>> getCaloriesPerExercise(
+      String exerciseId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    // Get workout_exercise IDs for this exercise
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id')
+        .eq('exercise_id', exerciseId);
+    final weIds = (weRes as List).map((e) => e['id'] as String).toList();
+    if (weIds.isEmpty) return {};
+
+    // Get user's completed sessions with dates
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .not('date', 'is', null)
+        .order('date', ascending: false)
+        .limit(30);
+    final sessionIds = (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return {};
+    final sessionDates = <String, String>{
+      for (final s in sessRes as List) s['id'] as String: s['date'] as String,
+    };
+
+    // Get sets for those exercises in those sessions
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, kcal_estimated')
+        .inFilter('workout_exercise_id', weIds)
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .not('kcal_estimated', 'is', null);
+
+    final result = <String, double>{};
+    for (final s in setsRes as List) {
+      final sid = s['training_session_id'] as String?;
+      final kcal = (s['kcal_estimated'] as num?)?.toDouble();
+      if (sid == null || kcal == null) continue;
+      final date = sessionDates[sid];
+      if (date == null) continue;
+      result[date] = (result[date] ?? 0.0) + kcal;
+    }
+    return result;
+  }
 }
