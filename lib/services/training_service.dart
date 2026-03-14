@@ -441,6 +441,55 @@ class TrainingService {
     return result;
   }
 
+  /// Returns the next scheduled workout within 7 days (by workout.days weekday list).
+  static Future<Workout?> getNextScheduledWorkout() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+    try {
+      final rows = await _client
+          .from('workouts')
+          .select('id, name, days, cycle_weeks, is_standard')
+          .eq('user_id', userId)
+          .not('days', 'eq', '{}');
+      final workouts = (rows as List)
+          .map((r) => Workout.fromJson(r as Map<String, dynamic>))
+          .where((w) => w.days.isNotEmpty)
+          .toList();
+      if (workouts.isEmpty) return null;
+      // Find the soonest upcoming workout day (1-7 days ahead)
+      final today = DateTime.now().weekday - 1; // 0=Mon…6=Sun
+      for (int offset = 1; offset <= 7; offset++) {
+        final targetDay = (today + offset) % 7;
+        for (final w in workouts) {
+          if (w.days.contains(targetDay)) return w;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Returns days since the last completed workout (0 = trained today, -1 = never).
+  static Future<int> getDaysSinceLastWorkout() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return -1;
+    try {
+      final rows = await _client
+          .from('training_sessions')
+          .select('date')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .order('date', ascending: false)
+          .limit(1);
+      if ((rows as List).isEmpty) return -1;
+      final lastDate = DateTime.parse(rows[0]['date'] as String);
+      return DateTime.now().difference(lastDate).inDays;
+    } catch (_) {
+      return -1;
+    }
+  }
+
   /// Returns the nearest upcoming (future, incomplete, non-skipped) session per workout.
   /// Result: { workoutId → { 'date': String 'yyyy-MM-dd' } }
   static Future<Map<String, Map<String, dynamic>>> getUpcomingSessionsForWorkouts(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -74,6 +75,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   DateTime? _pausedAt;
   int _lastRestSeconds = 0;
 
+  bool _deloadActive = false;
+
   List<_SetData> _sets = [];
   List<TextEditingController> _weightControllers = [];
   // Comparison result per set index: 1 = better, 0 = same, -1 = worse, null = no data
@@ -125,6 +128,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   Future<void> _loadSession() async {
     if (mounted) setState(() => _loadError = false);
     try {
+    final prefs = await SharedPreferences.getInstance();
+    final deload = prefs.getBool('deload_active') ?? false;
+    if (mounted) setState(() => _deloadActive = deload);
+
     final sessionRes = await Supabase.instance.client
         .from('training_sessions')
         .select('workout_id')
@@ -196,8 +203,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   void _initExercise(WorkoutExercise we) {
     final defaultReps = _parseDefaultReps(we.repsRange);
     final lastWeight = _lastSets[we.exerciseId]?['weight'] as double?;
-    final lastWeightText = lastWeight != null
-        ? lastWeight.toStringAsFixed(lastWeight % 1 == 0 ? 0 : 1)
+    final prefillWeight =
+        lastWeight != null && _deloadActive ? lastWeight * 0.6 : lastWeight;
+    final lastWeightText = prefillWeight != null
+        ? prefillWeight.toStringAsFixed(prefillWeight % 1 == 0 ? 0 : 1)
         : '';
     for (final c in _weightControllers) {
       c.dispose();
@@ -674,6 +683,36 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Deload banner
+                    if (_deloadActive) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: Colors.orange.withValues(alpha: 0.5)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.battery_saver_rounded,
+                                color: Colors.orange, size: 16),
+                            SizedBox(width: 8),
+                            Text(
+                              'Деload-неделя: вес снижен на 40%',
+                              style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     // Drop-set badge
                     if (we.isDropSet) ...[
                       const _DropSetBadge(),

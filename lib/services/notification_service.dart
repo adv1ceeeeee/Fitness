@@ -136,9 +136,73 @@ class NotificationService {
     await _plugin.cancel(notifId);
   }
 
+  /// Schedule a motivational inactivity reminder N days from now.
+  /// Cancels the previous one so only one is active at a time.
+  static Future<void> scheduleInactivityReminder({int daysLater = 3}) async {
+    await _plugin.cancel(_kInactivityId);
+    final fire = tz.TZDateTime.now(tz.local).add(Duration(days: daysLater));
+    const channel = AndroidNotificationDetails(
+      _channelId, _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.high, priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    const details = NotificationDetails(
+        android: channel, iOS: DarwinNotificationDetails());
+    await _plugin.zonedSchedule(
+      _kInactivityId,
+      'Давно не тренировались! 💪',
+      'Пора вернуться — тело скучает по нагрузке.',
+      fire,
+      details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  static Future<void> cancelInactivityReminder() async =>
+      _plugin.cancel(_kInactivityId);
+
+  /// Schedule a weekly weigh-in reminder.
+  /// [weekday]: 0=Пн … 6=Вс
+  static Future<void> scheduleWeighInReminder({
+    int weekday = 0,
+    int hour = 9,
+    int minute = 0,
+  }) async {
+    await _plugin.cancel(_kWeighInId);
+    final scheduled = _nextWeekday(weekday, hour, minute);
+    const channel = AndroidNotificationDetails(
+      _channelId, _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.defaultImportance, priority: Priority.defaultPriority,
+      icon: '@mipmap/ic_launcher',
+    );
+    const details = NotificationDetails(
+        android: channel, iOS: DarwinNotificationDetails());
+    await _plugin.zonedSchedule(
+      _kWeighInId,
+      'Время взвеситься ⚖️',
+      'Зафиксируйте вес для отслеживания прогресса.',
+      scheduled,
+      details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  static Future<void> cancelWeighInReminder() async =>
+      _plugin.cancel(_kWeighInId);
+
   static Future<void> cancelAll() async {
     await _plugin.cancelAll();
   }
+
+  static const int _kInactivityId = 900;
+  static const int _kWeighInId = 901;
 
   // ─── Internals ─────────────────────────────────────────────────────────────
 

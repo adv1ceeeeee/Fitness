@@ -38,6 +38,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _notifMinute = 0;
   String _notifMode = 'fixed'; // 'fixed' | 'before'
   int _notifMinutesBefore = 30;
+  int _weeklyWorkoutGoal = 0; // 0 = not set
+  bool _deloadActive = false;
+  bool _weighInEnabled = false;
+  int _weighInWeekday = 0; // 0=Пн…6=Вс
+  int _weighInHour = 9;
+  int _weighInMinute = 0;
 
   @override
   void initState() {
@@ -47,6 +53,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _loadMetrics();
     _loadBiometric();
     _loadNotifTime();
+    _loadExtraPrefs();
   }
 
   Future<void> _loadNotifTime() async {
@@ -58,6 +65,78 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _notifMode = prefs.getString('notif_mode') ?? 'fixed';
         _notifMinutesBefore = prefs.getInt('notif_minutes_before') ?? 30;
       });
+    }
+  }
+
+  Future<void> _loadExtraPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _weeklyWorkoutGoal = prefs.getInt('weekly_workout_goal') ?? 0;
+        _deloadActive = prefs.getBool('deload_active') ?? false;
+        _weighInEnabled = prefs.getBool('weigh_in_notif_enabled') ?? false;
+        _weighInWeekday = prefs.getInt('weigh_in_weekday') ?? 0;
+        _weighInHour = prefs.getInt('weigh_in_hour') ?? 9;
+        _weighInMinute = prefs.getInt('weigh_in_minute') ?? 0;
+      });
+    }
+  }
+
+  Future<void> _setWeeklyGoal(int goal) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('weekly_workout_goal', goal);
+    if (mounted) setState(() => _weeklyWorkoutGoal = goal);
+  }
+
+  Future<void> _toggleDeload(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('deload_active', value);
+    if (mounted) setState(() => _deloadActive = value);
+  }
+
+  Future<void> _toggleWeighIn(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('weigh_in_notif_enabled', value);
+    if (mounted) setState(() => _weighInEnabled = value);
+    if (value) {
+      await NotificationService.scheduleWeighInReminder(
+        weekday: _weighInWeekday, hour: _weighInHour, minute: _weighInMinute,
+      );
+    } else {
+      await NotificationService.cancelWeighInReminder();
+    }
+  }
+
+  Future<void> _pickWeighInTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _weighInHour, minute: _weighInMinute),
+    );
+    if (picked == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('weigh_in_hour', picked.hour);
+    await prefs.setInt('weigh_in_minute', picked.minute);
+    setState(() { _weighInHour = picked.hour; _weighInMinute = picked.minute; });
+    if (_weighInEnabled) {
+      await NotificationService.scheduleWeighInReminder(
+        weekday: _weighInWeekday, hour: picked.hour, minute: picked.minute,
+      );
+    }
+  }
+
+  String _weekdayName(int day) {
+    const names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    return names[day.clamp(0, 6)];
+  }
+
+  Future<void> _changeWeighInDay(int weekday) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('weigh_in_weekday', weekday);
+    if (mounted) setState(() => _weighInWeekday = weekday);
+    if (_weighInEnabled) {
+      await NotificationService.scheduleWeighInReminder(
+        weekday: weekday, hour: _weighInHour, minute: _weighInMinute,
+      );
     }
   }
 
@@ -589,6 +668,131 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ],
                 );
               }),
+              // ── Цель по тренировкам в неделю ───────────────────────────
+              _SettingsRow(
+                label: 'Цель: тренировок в неделю',
+                trailing: PopupMenuButton<int>(
+                  onSelected: _setWeeklyGoal,
+                  color: AppColors.card,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 0, child: Text('Не задана')),
+                    ...List.generate(7, (i) => PopupMenuItem(
+                      value: i + 1,
+                      child: Text('${i + 1}'),
+                    )),
+                  ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _weeklyWorkoutGoal == 0 ? 'Не задана' : '$_weeklyWorkoutGoal',
+                          style: const TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_drop_down,
+                            color: AppColors.accent, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Деload-неделя ───────────────────────────────────────────
+              _SettingsRow(
+                label: 'Деload-неделя (−40% веса)',
+                trailing: Switch(
+                  value: _deloadActive,
+                  onChanged: _toggleDeload,
+                ),
+              ),
+
+              // ── Напоминание о взвешивании ───────────────────────────────
+              _SettingsRow(
+                label: 'Напоминание о взвешивании',
+                trailing: Switch(
+                  value: _weighInEnabled,
+                  onChanged: _toggleWeighIn,
+                ),
+              ),
+              if (_weighInEnabled) ...[
+                _SettingsRow(
+                  label: 'День взвешивания',
+                  trailing: PopupMenuButton<int>(
+                    onSelected: _changeWeighInDay,
+                    color: AppColors.card,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 0, child: Text('Понедельник')),
+                      PopupMenuItem(value: 1, child: Text('Вторник')),
+                      PopupMenuItem(value: 2, child: Text('Среда')),
+                      PopupMenuItem(value: 3, child: Text('Четверг')),
+                      PopupMenuItem(value: 4, child: Text('Пятница')),
+                      PopupMenuItem(value: 5, child: Text('Суббота')),
+                      PopupMenuItem(value: 6, child: Text('Воскресенье')),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _weekdayName(_weighInWeekday),
+                            style: const TextStyle(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_drop_down,
+                              color: AppColors.accent, size: 18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                _SettingsRow(
+                  label: 'Время взвешивания',
+                  trailing: GestureDetector(
+                    onTap: _pickWeighInTime,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${_weighInHour.toString().padLeft(2, '0')}:${_weighInMinute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
               if (_biometricAvailable)
                 _SettingsRow(
                   label: 'Вход по биометрии',

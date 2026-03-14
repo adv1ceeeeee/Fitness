@@ -93,6 +93,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Map<String, ({double? target, DateTime? start})> _goalCache = {};
   bool _showMeasurementReminder = false;
 
+  // Weekly workout goal
+  int _weeklyWorkoutGoal = 0;   // 0 = not set
+  int _workoutsThisWeek = 0;
+  int _daysSinceLastWorkout = -1;
+  Workout? _nextScheduledWorkout;
+
   @override
   void initState() {
     super.initState();
@@ -196,12 +202,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted) return;
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final weeklyGoal = prefs.getInt('weekly_workout_goal') ?? 0;
+
       final results = await Future.wait([
         ProfileService.getProfile(),
         TrainingService.getTodayWorkout(),
         WellnessService.getTodayLog(),
         AnalyticsService.getLastWorkoutInsight(),
         BodyMetricsService.getHistory(),
+        AnalyticsService.getWorkoutsThisWeek(),
+        TrainingService.getDaysSinceLastWorkout(),
       ]).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
@@ -219,6 +230,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
         }
       }
+      final daysSince = results[6] as int;
+      // Load next scheduled workout if inactive for 2+ days
+      Workout? nextWorkout;
+      if (daysSince >= 2) {
+        nextWorkout = results[1] as Workout? ?? await TrainingService.getNextScheduledWorkout();
+      }
       setState(() {
         _profile = results[0] as Profile?;
         _todayWorkout = results[1] as Workout?;
@@ -227,6 +244,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _insight = results[3] as WorkoutInsight?;
         _bodyMetricsHistory = metricsHistory;
         _showMeasurementReminder = showReminder;
+        _weeklyWorkoutGoal = weeklyGoal;
+        _workoutsThisWeek = results[5] as int;
+        _daysSinceLastWorkout = daysSince;
+        _nextScheduledWorkout = nextWorkout;
       });
     } catch (e) {
       if (mounted) {
@@ -397,6 +418,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   onTap: () => context.push('/today'),
                   onCreateProgram: () => context.go('/workouts'),
                 ),
+
+                // ── Weekly goal card ──────────────────────────────────────
+                if (_weeklyWorkoutGoal > 0) ...[
+                  const SizedBox(height: 16),
+                  _WeeklyGoalCard(
+                    goal: _weeklyWorkoutGoal,
+                    done: _workoutsThisWeek,
+                  ),
+                ],
+
+                // ── Inactivity suggestion ─────────────────────────────────
+                if (_daysSinceLastWorkout >= 2 && _todayWorkout == null) ...[
+                  const SizedBox(height: 16),
+                  _InactivityCard(
+                    days: _daysSinceLastWorkout,
+                    nextWorkout: _nextScheduledWorkout,
+                    onTap: () => context.go('/workouts'),
+                  ),
+                ],
 
                 // ── Achievement card ──────────────────────────────────────
                 if (_insight != null) ...[
@@ -1596,5 +1636,164 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
         ],
       ),
     );
+  }
+}
+
+// ─── Weekly workout goal progress card ───────────────────────────────────────
+
+class _WeeklyGoalCard extends StatelessWidget {
+  final int goal;
+  final int done;
+
+  const _WeeklyGoalCard({required this.goal, required this.done});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (done / goal).clamp(0.0, 1.0);
+    final isDone = done >= goal;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isDone ? Icons.emoji_events_rounded : Icons.flag_rounded,
+                color: AppColors.accent,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isDone
+                      ? 'Цель недели выполнена!'
+                      : 'Цель на неделю: $done / $goal тренировок',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: AppColors.surface,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isDone ? Colors.green : AppColors.accent,
+              ),
+            ),
+          ),
+          if (!isDone) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Осталось ${goal - done} ${_workoutWord(goal - done)}',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _workoutWord(int n) {
+    if (n % 10 == 1 && n % 100 != 11) return 'тренировка';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
+      return 'тренировки';
+    }
+    return 'тренировок';
+  }
+}
+
+// ─── Inactivity suggestion card ───────────────────────────────────────────────
+
+class _InactivityCard extends StatelessWidget {
+  final int days;
+  final Workout? nextWorkout;
+  final VoidCallback onTap;
+
+  const _InactivityCard({
+    required this.days,
+    required this.nextWorkout,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = nextWorkout != null
+        ? 'Следующая: ${nextWorkout!.name}'
+        : 'Откройте список тренировок';
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.directions_run_rounded,
+                  color: AppColors.accent, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Вы не тренировались $days ${_dayWord(days)}',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _dayWord(int n) {
+    if (n % 10 == 1 && n % 100 != 11) return 'день';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
+      return 'дня';
+    }
+    return 'дней';
   }
 }

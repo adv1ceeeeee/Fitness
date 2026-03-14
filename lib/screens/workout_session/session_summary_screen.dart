@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 
 class SessionSummaryScreen extends ConsumerStatefulWidget {
@@ -177,6 +178,8 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
       // Aggregate kcal and volume from individual sets and persist
       await TrainingService.saveSessionKcal(widget.sessionId);
       await TrainingService.saveSessionVolume(widget.sessionId);
+      // Schedule inactivity reminder (fires in 3 days if no workout)
+      NotificationService.scheduleInactivityReminder(daysLater: 3);
       // Clear global session state
       ref.read(activeSessionProvider.notifier).stop();
       if (mounted) context.go('/home');
