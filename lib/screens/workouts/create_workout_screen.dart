@@ -8,9 +8,13 @@ import 'package:sportwai/services/workout_service.dart';
 
 class _SectionData {
   final TextEditingController nameController;
-  final Set<int> selectedDays;
+  final Set<int> selectedDays; // workout days
+  final Set<int> restDays;     // rest days
 
-  _SectionData() : nameController = TextEditingController(), selectedDays = {};
+  _SectionData()
+      : nameController = TextEditingController(),
+        selectedDays = {},
+        restDays = {};
 
   void dispose() => nameController.dispose();
 }
@@ -56,23 +60,40 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     });
   }
 
+  /// Cycles a day through: unselected → workout → rest → unselected.
   void _toggleDay(int sectionIndex, int day) {
     setState(() {
-      final days = _sections[sectionIndex].selectedDays;
-      if (days.contains(day)) {
-        days.remove(day);
+      final s = _sections[sectionIndex];
+      if (s.restDays.contains(day)) {
+        s.restDays.remove(day);
+      } else if (s.selectedDays.contains(day)) {
+        s.selectedDays.remove(day);
+        s.restDays.add(day);
       } else {
-        days.add(day);
+        s.selectedDays.add(day);
       }
       _error = null;
     });
   }
 
-  /// Returns days already used in other sections (to disable them in this one).
+  /// Moves all currently selected workout days to rest days for a section.
+  void _markSelectedAsRest(int sectionIndex) {
+    setState(() {
+      final s = _sections[sectionIndex];
+      s.restDays.addAll(s.selectedDays);
+      s.selectedDays.clear();
+      _error = null;
+    });
+  }
+
+  /// Returns days already used in other sections (workout OR rest).
   Set<int> _usedDaysExcept(int sectionIndex) {
     final used = <int>{};
     for (int i = 0; i < _sections.length; i++) {
-      if (i != sectionIndex) used.addAll(_sections[i].selectedDays);
+      if (i != sectionIndex) {
+        used.addAll(_sections[i].selectedDays);
+        used.addAll(_sections[i].restDays);
+      }
     }
     return used;
   }
@@ -300,35 +321,55 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
         const SizedBox(height: 12),
         Row(
           children: List.generate(7, (i) {
-            final selected = section.selectedDays.contains(i);
+            final isWorkout = section.selectedDays.contains(i);
+            final isRest = section.restDays.contains(i);
             final disabled = usedDays.contains(i);
+
+            Color bgColor;
+            Color textColor;
+            if (isWorkout) {
+              bgColor = AppColors.accent;
+              textColor = Colors.white;
+            } else if (isRest) {
+              bgColor = const Color(0xFF2A1F0A);
+              textColor = const Color(0xFFD4A454);
+            } else if (disabled) {
+              bgColor = AppColors.surface.withValues(alpha: 0.5);
+              textColor = AppColors.textSecondary.withValues(alpha: 0.35);
+            } else {
+              bgColor = AppColors.card;
+              textColor = AppColors.textPrimary;
+            }
+
             return Expanded(
               child: Padding(
                 padding: EdgeInsets.only(right: i < 6 ? 8 : 0),
                 child: Material(
-                  color: selected
-                      ? AppColors.accent
-                      : disabled
-                          ? AppColors.surface.withValues(alpha: 0.5)
-                          : AppColors.card,
+                  color: bgColor,
                   borderRadius: BorderRadius.circular(12),
                   child: InkWell(
                     onTap: disabled ? null : () => _toggleDay(index, i),
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       alignment: Alignment.center,
-                      child: Text(
-                        _dayLabels[i],
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: selected
-                              ? Colors.black
-                              : disabled
-                                  ? AppColors.textSecondary
-                                      .withValues(alpha: 0.35)
-                                  : AppColors.textPrimary,
-                        ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _dayLabels[i],
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: textColor,
+                            ),
+                          ),
+                          if (isRest) ...[
+                            const SizedBox(height: 2),
+                            Icon(Icons.hotel_rounded,
+                                size: 10, color: textColor),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -336,6 +377,42 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               ),
             );
           }),
+        ),
+        const SizedBox(height: 12),
+        // "Mark as rest day" button
+        GestureDetector(
+          onTap: section.selectedDays.isEmpty
+              ? null
+              : () => _markSelectedAsRest(index),
+          child: Opacity(
+            opacity: section.selectedDays.isEmpty ? 0.4 : 1.0,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A1F0A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: const Color(0xFFD4A454).withValues(alpha: 0.4)),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.hotel_rounded,
+                      color: Color(0xFFD4A454), size: 16),
+                  SizedBox(width: 8),
+                  Text(
+                    'Отметить выбранные как день отдыха',
+                    style: TextStyle(
+                      color: Color(0xFFD4A454),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
