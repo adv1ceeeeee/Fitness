@@ -12,6 +12,7 @@ import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/widgets/skeleton.dart';
 
@@ -179,14 +180,70 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     }
   }
 
-  static String _goalDisplay(String? goal) {
-    const map = {
-      'strength': 'Сила',
-      'weight_loss': 'Похудение',
-      'mass_gain': 'Набор массы',
-      'endurance': 'Выносливость',
-    };
-    return map[goal ?? ''] ?? (goal ?? '—');
+  static const _goalOptions = <String, String>{
+    'strength': 'Сила',
+    'weight_loss': 'Похудение',
+    'mass_gain': 'Набор массы',
+    'endurance': 'Выносливость',
+  };
+
+  static String _goalDisplay(String? goal) =>
+      _goalOptions[goal ?? ''] ?? (goal ?? '—');
+
+  Future<void> _changeGoal() async {
+    final current = _profile?.goal;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, 12),
+              child: Text(
+                'Твоя цель',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            for (final entry in _goalOptions.entries)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                title: Text(
+                  entry.value,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: entry.key == current
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
+                ),
+                trailing: entry.key == current
+                    ? const Icon(Icons.check_rounded, color: AppColors.accent)
+                    : null,
+                onTap: () => Navigator.pop(context, entry.key),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == current || !mounted) return;
+    try {
+      await ProfileService.updateProfile({'goal': picked});
+      setState(() => _profile = _profile?.copyWith(goal: picked));
+      EventLogger.log('training_goal_set', props: {'goal': picked});
+    } catch (e) {
+      debugPrint('[AnalyticsScreen] _changeGoal error: $e');
+    }
   }
 
   @override
@@ -220,11 +277,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Твоя цель: ${_goalDisplay(goal)}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: AppColors.textSecondary,
+                GestureDetector(
+                  onTap: _changeGoal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Твоя цель: ${_goalDisplay(goal)}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.edit_rounded,
+                          size: 14, color: AppColors.textSecondary),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),
