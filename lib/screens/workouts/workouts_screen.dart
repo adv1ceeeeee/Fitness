@@ -23,6 +23,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   late TabController _tabController;
   List<Workout> _workouts = [];
   Map<String, Map<String, dynamic>> _sessionInfo = {};
+  Map<String, Map<String, dynamic>> _upcomingInfo = {};
   bool _loading = true;
 
   @override
@@ -45,13 +46,16 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
           .timeout(const Duration(seconds: 15));
       final inactiveIds =
           list.where((w) => w.days.isEmpty).map((w) => w.id).toList();
-      final info =
-          await TrainingService.getLastSessionInfoForWorkouts(inactiveIds);
+      final results = await Future.wait([
+        TrainingService.getLastSessionInfoForWorkouts(inactiveIds),
+        TrainingService.getUpcomingSessionsForWorkouts(inactiveIds),
+      ]);
       await CacheService.saveWorkouts(list);
       if (mounted) {
         setState(() {
           _workouts = list;
-          _sessionInfo = info;
+          _sessionInfo = results[0];
+          _upcomingInfo = results[1];
           _loading = false;
         });
       }
@@ -102,6 +106,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                   _MyProgramsTab(
                     workouts: _workouts,
                     sessionInfo: _sessionInfo,
+                    upcomingInfo: _upcomingInfo,
                     loading: _loading,
                     onRefresh: _loadWorkouts,
                     onDelete: (id) async {
@@ -131,6 +136,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
 class _MyProgramsTab extends StatefulWidget {
   final List<Workout> workouts;
   final Map<String, Map<String, dynamic>> sessionInfo;
+  final Map<String, Map<String, dynamic>> upcomingInfo;
   final bool loading;
   final VoidCallback onRefresh;
   final VoidCallback onCreateTap;
@@ -140,6 +146,7 @@ class _MyProgramsTab extends StatefulWidget {
   const _MyProgramsTab({
     required this.workouts,
     required this.sessionInfo,
+    required this.upcomingInfo,
     required this.onRefresh,
     required this.onCreateTap,
     required this.onWorkoutTap,
@@ -197,9 +204,23 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     });
   }
 
+  // Inactive workouts that have an upcoming (future, non-skipped) session
+  List<Workout> get _upcomingWorkouts {
+    return widget.workouts
+        .where((w) => w.days.isEmpty && widget.upcomingInfo.containsKey(w.id))
+        .toList()
+      ..sort((a, b) {
+        final da = widget.upcomingInfo[a.id]?['date'] as String? ?? '';
+        final db = widget.upcomingInfo[b.id]?['date'] as String? ?? '';
+        return da.compareTo(db); // soonest first
+      });
+  }
+
   // One-time / inactive workouts (no scheduled days) — sorted by last session date
   List<Workout> get _inactiveWorkouts {
-    final inactive = widget.workouts.where((w) => w.days.isEmpty).toList();
+    final inactive = widget.workouts
+        .where((w) => w.days.isEmpty && !widget.upcomingInfo.containsKey(w.id))
+        .toList();
     inactive.sort((a, b) {
       final da = widget.sessionInfo[a.id]?['date'] as String? ?? '';
       final db = widget.sessionInfo[b.id]?['date'] as String? ?? '';
@@ -370,6 +391,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         );
       }
       if (mounted) {
+        widget.onRefresh();
         final d = '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
         final t = pickedTime != null
             ? ' в ${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}'
@@ -455,6 +477,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     if (widget.loading) return const WorkoutListSkeleton();
 
     final sorted = _sortedWorkouts;
+    final upcoming = _upcomingWorkouts;
     final inactive = _inactiveWorkouts;
 
     return NotificationListener<ScrollNotification>(
@@ -555,37 +578,67 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                 ),
             ],
           ),
-          footer: inactive.isEmpty
+          footer: (upcoming.isEmpty && inactive.isEmpty)
               ? const SizedBox.shrink()
               : Padding(
                   padding: const EdgeInsets.only(top: 8, bottom: 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          'Завершённые / неактивные',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
-                            letterSpacing: 0.5,
+                      if (upcoming.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            'Предстоящие',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accent,
+                              letterSpacing: 0.5,
+                            ),
                           ),
                         ),
-                      ),
-                      for (final w in inactive)
+                        for (final w in upcoming)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _InactiveWorkoutCard(
+                              workout: w,
+                              upcomingDate: widget.upcomingInfo[w.id]?['date'] as String?,
+                              sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
+                              durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
+                              onTap: () => widget.onWorkoutTap(w),
+                              onDelete: () => _confirmDelete(w),
+                              onCopy: () => _duplicateWorkout(w),
+                            ),
+                          ),
+                      ],
+                      if (inactive.isNotEmpty) ...[
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _InactiveWorkoutCard(
-                            workout: w,
-                            sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
-                            durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
-                            onTap: () => widget.onWorkoutTap(w),
-                            onDelete: () => _confirmDelete(w),
-                            onCopy: () => _duplicateWorkout(w),
+                          padding: EdgeInsets.only(
+                              top: upcoming.isNotEmpty ? 8 : 0, bottom: 12),
+                          child: const Text(
+                            'Завершённые / неактивные',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                              letterSpacing: 0.5,
+                            ),
                           ),
                         ),
+                        for (final w in inactive)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _InactiveWorkoutCard(
+                              workout: w,
+                              sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
+                              durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
+                              onTap: () => widget.onWorkoutTap(w),
+                              onDelete: () => _confirmDelete(w),
+                              onCopy: () => _duplicateWorkout(w),
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),
@@ -900,7 +953,8 @@ class _WorkoutCardContent extends StatelessWidget {
 
 class _InactiveWorkoutCard extends StatelessWidget {
   final Workout workout;
-  final String? sessionDate;   // 'yyyy-MM-dd'
+  final String? sessionDate;    // 'yyyy-MM-dd' — last completed session
+  final String? upcomingDate;   // 'yyyy-MM-dd' — next scheduled session
   final int? durationSeconds;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -912,6 +966,7 @@ class _InactiveWorkoutCard extends StatelessWidget {
     required this.onDelete,
     required this.onCopy,
     this.sessionDate,
+    this.upcomingDate,
     this.durationSeconds,
   });
 
@@ -934,6 +989,8 @@ class _InactiveWorkoutCard extends StatelessWidget {
     final dateStr = _formatDate(sessionDate);
     final durStr = _formatDuration(durationSeconds);
     final hasInfo = dateStr.isNotEmpty || durStr.isNotEmpty;
+    final isUpcoming = upcomingDate != null;
+    final upcomingStr = _formatDate(upcomingDate);
 
     return Material(
       color: AppColors.card,
@@ -948,12 +1005,18 @@ class _InactiveWorkoutCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.textSecondary.withValues(alpha: 0.1),
+                  color: isUpcoming
+                      ? AppColors.accent.withValues(alpha: 0.15)
+                      : AppColors.textSecondary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.event_note_rounded,
-                  color: AppColors.textSecondary,
+                child: Icon(
+                  isUpcoming
+                      ? Icons.calendar_today_rounded
+                      : Icons.event_note_rounded,
+                  color: isUpcoming
+                      ? AppColors.accent
+                      : AppColors.textSecondary,
                   size: 26,
                 ),
               ),
@@ -970,8 +1033,17 @@ class _InactiveWorkoutCard extends StatelessWidget {
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    if (hasInfo) ...[
-                      const SizedBox(height: 4),
+                    const SizedBox(height: 4),
+                    if (isUpcoming)
+                      Text(
+                        'Предстоит: $upcomingStr',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      )
+                    else if (hasInfo)
                       Text(
                         [dateStr, durStr]
                             .where((s) => s.isNotEmpty)
@@ -980,15 +1052,13 @@ class _InactiveWorkoutCard extends StatelessWidget {
                           fontSize: 13,
                           color: AppColors.textSecondary,
                         ),
-                      ),
-                    ] else ...[
-                      const SizedBox(height: 4),
+                      )
+                    else
                       const Text(
                         'Не завершена',
                         style: TextStyle(
                             fontSize: 13, color: AppColors.textSecondary),
                       ),
-                    ],
                   ],
                 ),
               ),

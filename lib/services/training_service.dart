@@ -441,6 +441,40 @@ class TrainingService {
     return result;
   }
 
+  /// Returns the nearest upcoming (future, incomplete, non-skipped) session per workout.
+  /// Result: { workoutId → { 'date': String 'yyyy-MM-dd' } }
+  static Future<Map<String, Map<String, dynamic>>> getUpcomingSessionsForWorkouts(
+      List<String> workoutIds) async {
+    if (workoutIds.isEmpty) return {};
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    try {
+      final rows = await _client
+          .from('training_sessions')
+          .select('workout_id, date, notes')
+          .eq('user_id', userId)
+          .eq('completed', false)
+          .inFilter('workout_id', workoutIds)
+          .gte('date', today)
+          .order('date', ascending: true);
+
+      final result = <String, Map<String, dynamic>>{};
+      for (final row in rows as List) {
+        final notes = row['notes'] as String?;
+        if (notes?.startsWith('skipped:') == true) continue;
+        final wid = row['workout_id'] as String;
+        if (!result.containsKey(wid)) {
+          result[wid] = {'date': row['date'] as String};
+        }
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[TrainingService.getUpcomingSessionsForWorkouts] error: $e');
+      return {};
+    }
+  }
+
   /// All completed sessions, newest first, with workout name and duration.
   /// Pass [offset] for pagination (page size = [limit]).
   static Future<List<Map<String, dynamic>>> getCompletedSessions({
