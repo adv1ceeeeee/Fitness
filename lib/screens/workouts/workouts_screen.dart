@@ -381,7 +381,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           ),
         );
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[WorkoutsScreen] _scheduleOneTime error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Не удалось запланировать тренировку')),

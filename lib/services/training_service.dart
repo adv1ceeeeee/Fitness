@@ -266,25 +266,31 @@ class TrainingService {
     if (userId == null) throw Exception('Not authenticated');
     final dateStr = date.toIso8601String().split('T')[0];
 
+    // Use select() without explicit column list so it works even if
+    // planned_time column (migration 030) hasn't been applied yet.
     final existing = await _client
         .from('training_sessions')
-        .select('id, user_id, workout_id, date, completed, planned_time')
+        .select()
         .eq('user_id', userId)
         .eq('workout_id', workoutId)
         .eq('date', dateStr)
         .maybeSingle();
 
+    final ptStr = plannedTime != null
+        ? '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}'
+        : null;
+
     if (existing != null) {
-      // Update planned_time if provided
-      if (plannedTime != null) {
-        final ptStr =
-            '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}';
-        await _client
-            .from('training_sessions')
-            .update({'planned_time': ptStr})
-            .eq('id', existing['id'] as String);
+      if (ptStr != null) {
+        try {
+          await _client
+              .from('training_sessions')
+              .update({'planned_time': ptStr})
+              .eq('id', existing['id'] as String);
+        } catch (_) {} // Column may not exist yet
       }
-      return TrainingSession.fromJson({...existing, if (plannedTime != null) 'planned_time': '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}'});
+      return TrainingSession.fromJson(
+          {...existing, if (ptStr != null) 'planned_time': ptStr});
     }
 
     final insertData = <String, dynamic>{
@@ -292,17 +298,29 @@ class TrainingService {
       'workout_id': workoutId,
       'date': dateStr,
       'completed': false,
+      if (ptStr != null) 'planned_time': ptStr,
     };
-    if (plannedTime != null) {
-      insertData['planned_time'] =
-          '${plannedTime.hour.toString().padLeft(2, '0')}:${plannedTime.minute.toString().padLeft(2, '0')}';
-    }
 
-    final res = await _client
-        .from('training_sessions')
-        .insert(insertData)
-        .select()
-        .single();
+    Map<String, dynamic> res;
+    try {
+      res = await _client
+          .from('training_sessions')
+          .insert(insertData)
+          .select()
+          .single();
+    } catch (_) {
+      // If planned_time column doesn't exist, retry without it
+      if (ptStr != null) {
+        insertData.remove('planned_time');
+        res = await _client
+            .from('training_sessions')
+            .insert(insertData)
+            .select()
+            .single();
+      } else {
+        rethrow;
+      }
+    }
 
     return TrainingSession.fromJson(res);
   }
