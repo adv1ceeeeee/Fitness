@@ -36,6 +36,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _biometricEnabled = false;
   int _notifHour = 8;
   int _notifMinute = 0;
+  String _notifMode = 'fixed'; // 'fixed' | 'before'
+  int _notifMinutesBefore = 30;
 
   @override
   void initState() {
@@ -53,6 +55,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() {
         _notifHour = prefs.getInt('notif_hour') ?? 8;
         _notifMinute = prefs.getInt('notif_minute') ?? 0;
+        _notifMode = prefs.getString('notif_mode') ?? 'fixed';
+        _notifMinutesBefore = prefs.getInt('notif_minutes_before') ?? 30;
       });
     }
   }
@@ -67,7 +71,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     await prefs.setInt('notif_hour', picked.hour);
     await prefs.setInt('notif_minute', picked.minute);
     if (mounted) setState(() { _notifHour = picked.hour; _notifMinute = picked.minute; });
-    // Re-schedule with new time if notifications are enabled
     final enabled = ref.read(notificationsEnabledProvider);
     if (enabled) {
       final workouts = await WorkoutService.getMyWorkouts();
@@ -76,6 +79,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         days, hour: picked.hour, minute: picked.minute,
       );
     }
+  }
+
+  Future<void> _changeNotifMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('notif_mode', mode);
+    if (mounted) setState(() => _notifMode = mode);
+    final enabled = ref.read(notificationsEnabledProvider);
+    if (!enabled) return;
+    if (mode == 'fixed') {
+      final workouts = await WorkoutService.getMyWorkouts();
+      final days = workouts.expand((w) => w.days).toList();
+      await NotificationService.scheduleWorkoutReminders(
+        days, hour: _notifHour, minute: _notifMinute,
+      );
+    } else {
+      // 'before' mode — weekly reminders don't apply, cancel them
+      await NotificationService.cancelAll();
+    }
+  }
+
+  Future<void> _changeMinutesBefore(int minutes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('notif_minutes_before', minutes);
+    if (mounted) setState(() => _notifMinutesBefore = minutes);
   }
 
   Future<void> _loadBiometric() async {
@@ -434,17 +461,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 }),
               ),
               _SettingsRow(
-                label: 'Тёмная тема',
-                trailing: Builder(builder: (context) {
-                  final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
-                  return Switch(
-                    value: isDark,
-                    onChanged: (v) =>
-                        ref.read(themeModeProvider.notifier).setDark(v),
-                  );
-                }),
-              ),
-              _SettingsRow(
                 label: 'Уведомления',
                 trailing: Builder(builder: (context) {
                   final enabled = ref.watch(notificationsEnabledProvider);
@@ -459,26 +475,118 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 if (!enabled) return const SizedBox();
                 final h = _notifHour.toString().padLeft(2, '0');
                 final m = _notifMinute.toString().padLeft(2, '0');
-                return _SettingsRow(
-                  label: 'Время напоминания',
-                  trailing: GestureDetector(
-                    onTap: _pickNotifTime,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '$h:$m',
-                        style: const TextStyle(
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
+                final modeLabel = _notifMode == 'fixed'
+                    ? 'В заданное время'
+                    : 'До начала тренировки';
+                return Column(
+                  children: [
+                    _SettingsRow(
+                      label: 'Режим напоминания',
+                      trailing: PopupMenuButton<String>(
+                        onSelected: _changeNotifMode,
+                        color: AppColors.card,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'fixed',
+                            child: Text('В заданное время'),
+                          ),
+                          PopupMenuItem(
+                            value: 'before',
+                            child: Text('До начала тренировки'),
+                          ),
+                        ],
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                modeLabel,
+                                style: const TextStyle(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.arrow_drop_down,
+                                  color: AppColors.accent, size: 18),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    if (_notifMode == 'fixed')
+                      _SettingsRow(
+                        label: 'Время напоминания',
+                        trailing: GestureDetector(
+                          onTap: _pickNotifTime,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$h:$m',
+                              style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      _SettingsRow(
+                        label: 'За сколько минут',
+                        trailing: PopupMenuButton<int>(
+                          onSelected: _changeMinutesBefore,
+                          color: AppColors.card,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          itemBuilder: (_) => [15, 30, 45, 60, 90, 120]
+                              .map((v) => PopupMenuItem(
+                                    value: v,
+                                    child: Text('$v мин'),
+                                  ))
+                              .toList(),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '$_notifMinutesBefore мин',
+                                  style: const TextStyle(
+                                    color: AppColors.accent,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.arrow_drop_down,
+                                    color: AppColors.accent, size: 18),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               }),
               if (_biometricAvailable)

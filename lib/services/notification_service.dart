@@ -93,6 +93,7 @@ class NotificationService {
     required DateTime date,
     required TimeOfDay plannedTime,
     String workoutName = 'Тренировка',
+    int minutesBefore = 0,
   }) async {
     const channel = AndroidNotificationDetails(
       _channelId,
@@ -112,7 +113,7 @@ class NotificationService {
       date.day,
       plannedTime.hour,
       plannedTime.minute,
-    );
+    ).subtract(Duration(minutes: minutesBefore));
     if (scheduled.isBefore(tz.TZDateTime.now(tz.local))) return;
 
     // Use bottom 30 bits of sessionId hashCode as notification id

@@ -247,22 +247,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final userId = _db.auth.currentUser?.id;
       if (userId == null) return;
+
+      // Load from reliable old single-metric columns (always present since migration 023)
       final row = await _db
           .from('profiles')
-          .select('goal_metric, goal_targets_json')
+          .select('goal_metric, goal_target, goal_start')
           .eq('id', userId)
           .maybeSingle();
       if (row == null) return;
+
       final metric = (row['goal_metric'] as String?) ?? 'weight_kg';
-      final rawJson = (row['goal_targets_json'] as Map<String, dynamic>?) ?? {};
       final cache = <String, ({double? target, DateTime? start})>{};
-      for (final entry in rawJson.entries) {
-        final v = entry.value as Map<String, dynamic>;
-        cache[entry.key] = (
-          target: v['target'] != null ? (v['target'] as num).toDouble() : null,
-          start: v['start'] != null ? DateTime.tryParse(v['start'] as String) : null,
+
+      // Try to also load multi-metric JSON (migration 029, may not be applied)
+      try {
+        final jsonRow = await _db
+            .from('profiles')
+            .select('goal_targets_json')
+            .eq('id', userId)
+            .maybeSingle();
+        final rawJson =
+            (jsonRow?['goal_targets_json'] as Map<String, dynamic>?) ?? {};
+        for (final entry in rawJson.entries) {
+          final v = entry.value as Map<String, dynamic>;
+          cache[entry.key] = (
+            target:
+                v['target'] != null ? (v['target'] as num).toDouble() : null,
+            start: v['start'] != null
+                ? DateTime.tryParse(v['start'] as String)
+                : null,
+          );
+        }
+      } catch (_) {}
+
+      // Fall back to old columns if JSON cache is empty or unavailable
+      if (cache[metric] == null && row['goal_target'] != null) {
+        cache[metric] = (
+          target: (row['goal_target'] as num).toDouble(),
+          start: row['goal_start'] != null
+              ? DateTime.tryParse(row['goal_start'] as String)
+              : null,
         );
       }
+
       if (!mounted) return;
       setState(() {
         _goalCache = cache;
@@ -271,7 +298,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _goalTarget = g?.target;
         _goalStartDate = g?.start;
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[HomeScreen] _loadGoalPrefs error: $e');
+    }
   }
 
   Future<void> _saveGoalMetric(String metric) async {
@@ -308,19 +337,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final userId = _db.auth.currentUser?.id;
       if (userId == null) return;
-      final jsonData = {
-        for (final e in newCache.entries)
-          if (e.value.target != null)
-            e.key: {
-              'target': e.value.target,
-              'start': e.value.start?.toUtc().toIso8601String(),
-            }
-      };
+      // Always save to reliable old columns (migration 023, guaranteed to exist)
       await _db.from('profiles').update({
         'goal_metric': _goalMetric,
-        'goal_targets_json': jsonData,
+        'goal_target': value,
+        'goal_start': value != null ? now.toIso8601String() : null,
       }).eq('id', userId);
-    } catch (_) {}
+      // Also try multi-metric JSON (migration 029, best-effort)
+      try {
+        final jsonData = {
+          for (final e in newCache.entries)
+            if (e.value.target != null)
+              e.key: {
+                'target': e.value.target,
+                'start': e.value.start?.toUtc().toIso8601String(),
+              }
+        };
+        await _db.from('profiles').update({
+          'goal_targets_json': jsonData,
+        }).eq('id', userId);
+      } catch (_) {}
+    } catch (e) {
+      debugPrint('[HomeScreen] _saveGoalTarget error: $e');
+    }
   }
 
   @override

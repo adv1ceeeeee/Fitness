@@ -5,6 +5,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/cache_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
@@ -226,6 +227,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       } else {
         _hiddenIds.add(id);
       }
+      _openSwipeId = null;
     });
     _saveHidden();
   }
@@ -279,6 +281,44 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     }
   }
 
+  Future<void> _archiveWorkout(Workout w) async {
+    setState(() => _openSwipeId = null);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('В архив?'),
+        content: Text(
+          'Программа «${w.name}» будет перенесена в архив. '
+          'Вы сможете восстановить её, добавив дни тренировок.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('В архив',
+                style: TextStyle(color: AppColors.accent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await WorkoutService.updateWorkout(w.id, days: []);
+      widget.onRefresh();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось переместить в архив')),
+        );
+      }
+    }
+  }
+
   /// One-time workout → show date picker → schedule a new session.
   Future<void> _scheduleOneTime(Workout w) async {
     final now = DateTime.now();
@@ -302,14 +342,41 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       ),
     );
     if (picked == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 8, minute: 0),
+      helpText: 'Время начала тренировки',
+      cancelText: 'Без времени',
+      confirmText: 'Выбрать',
+    );
+    if (!mounted) return;
+
     try {
-      await TrainingService.scheduleSession(w.id, picked);
+      final session = await TrainingService.scheduleSession(
+        w.id, picked, plannedTime: pickedTime,
+      );
+      if (pickedTime != null) {
+        final prefs = await SharedPreferences.getInstance();
+        final mode = prefs.getString('notif_mode') ?? 'fixed';
+        final minutesBefore =
+            mode == 'before' ? (prefs.getInt('notif_minutes_before') ?? 30) : 0;
+        await NotificationService.scheduleSessionNotification(
+          sessionId: session.id,
+          date: picked,
+          plannedTime: pickedTime,
+          workoutName: w.name,
+          minutesBefore: minutesBefore,
+        );
+      }
       if (mounted) {
+        final d = '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
+        final t = pickedTime != null
+            ? ' в ${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Запланировано на ${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}',
-            ),
+            content: Text('Запланировано на $d$t'),
             backgroundColor: Colors.green,
           ),
         );
@@ -535,6 +602,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                 onToggleHide: () => _toggleHidden(sorted[i].id),
                 onDelete: () => _confirmDelete(sorted[i]),
                 onCopy: () => _duplicateWorkout(sorted[i]),
+                onArchive: () => _archiveWorkout(sorted[i]),
               ),
           ],
         ),
@@ -556,6 +624,7 @@ class _SwipeableCard extends StatefulWidget {
   final VoidCallback onToggleHide;
   final VoidCallback onDelete;
   final VoidCallback onCopy;
+  final VoidCallback onArchive;
 
   const _SwipeableCard({
     super.key,
@@ -569,6 +638,7 @@ class _SwipeableCard extends StatefulWidget {
     required this.onToggleHide,
     required this.onDelete,
     required this.onCopy,
+    required this.onArchive,
   });
 
   @override
@@ -580,7 +650,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
   late AnimationController _ctrl;
   late Animation<double> _anim;
 
-  static const _actionWidth = 160.0;
+  static const _actionWidth = 208.0;
 
   @override
   void initState() {
@@ -646,6 +716,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
                         onToggleHide: widget.onToggleHide,
                         onDelete: widget.onDelete,
                         onCopy: widget.onCopy,
+                        onArchive: widget.onArchive,
                       ),
                     ),
                   ),
@@ -692,6 +763,7 @@ class _ActionPanel extends StatelessWidget {
   final VoidCallback onToggleHide;
   final VoidCallback onDelete;
   final VoidCallback onCopy;
+  final VoidCallback onArchive;
 
   const _ActionPanel({
     required this.width,
@@ -699,6 +771,7 @@ class _ActionPanel extends StatelessWidget {
     required this.onToggleHide,
     required this.onDelete,
     required this.onCopy,
+    required this.onArchive,
   });
 
   Widget _btn({required VoidCallback onTap, required IconData icon, required Color bg, Color iconColor = Colors.white}) {
@@ -726,6 +799,12 @@ class _ActionPanel extends StatelessWidget {
             icon: isHidden ? Icons.visibility_off : Icons.visibility,
             bg: AppColors.textSecondary.withValues(alpha: 0.15),
             iconColor: AppColors.textSecondary,
+          ),
+          _btn(
+            onTap: onArchive,
+            icon: Icons.archive_outlined,
+            bg: const Color(0xFFFF9500).withValues(alpha: 0.15),
+            iconColor: const Color(0xFFFF9500),
           ),
           _btn(
             onTap: onCopy,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
@@ -202,18 +203,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _ExerciseBuilderSheet(date: day),
+      builder: (ctx) => const _ExerciseBuilderSheet(),
     );
     if (workoutId == null || !mounted) return;
-    // Session was already created inside the sheet; just reload
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Тренировка запланирована'),
-        backgroundColor: Color(0xFF30D158),
-        duration: Duration(seconds: 2),
-      ),
-    );
-    await _load(silent: true);
+    // Schedule session + ask for time (same flow as _pickAndSchedule)
+    await _scheduleAndRefresh(workoutId, day);
   }
 
   Future<void> _scheduleAndRefresh(String workoutId, DateTime day) async {
@@ -239,11 +233,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
         final workoutName =
             _workouts.where((w) => w.id == workoutId).firstOrNull?.name ??
                 'Тренировка';
+        final prefs = await SharedPreferences.getInstance();
+        final mode = prefs.getString('notif_mode') ?? 'fixed';
+        final minutesBefore =
+            mode == 'before' ? (prefs.getInt('notif_minutes_before') ?? 30) : 0;
         await NotificationService.scheduleSessionNotification(
           sessionId: session.id,
           date: day,
           plannedTime: plannedTime,
           workoutName: workoutName,
+          minutesBefore: minutesBefore,
         );
       }
       EventLogger.sessionScheduled(
@@ -977,9 +976,7 @@ class _AddTypeSheet extends StatelessWidget {
 // ─── Exercise builder sheet ───────────────────────────────────────────────────
 
 class _ExerciseBuilderSheet extends StatefulWidget {
-  final DateTime date;
-
-  const _ExerciseBuilderSheet({required this.date});
+  const _ExerciseBuilderSheet();
 
   @override
   State<_ExerciseBuilderSheet> createState() => _ExerciseBuilderSheetState();
@@ -1054,7 +1051,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
           durationMinutes: isCardio ? entry.value.durationMinutes : null,
         );
       }
-      await TrainingService.scheduleSession(workout.id, widget.date);
+      // Return workoutId — session creation + time picker happen in parent
       if (mounted) Navigator.pop(context, workout.id);
     } catch (_) {
       if (mounted) setState(() => _saving = false);
