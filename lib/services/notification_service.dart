@@ -197,12 +197,58 @@ class NotificationService {
   static Future<void> cancelWeighInReminder() async =>
       _plugin.cancel(_kWeighInId);
 
+  /// Schedule weekly rest-day reminders for each day in [restDays] (0=Mon…6=Sun).
+  /// Cancels all previous rest-day notifications first.
+  static Future<void> scheduleRestDayReminders(
+    List<int> restDays, {
+    int hour = 9,
+    int minute = 0,
+  }) async {
+    for (int i = 0; i < 7; i++) {
+      await _plugin.cancel(_kRestDayBase + i);
+    }
+    if (restDays.isEmpty) return;
+
+    const channel = AndroidNotificationDetails(
+      _channelId, _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      icon: '@mipmap/ic_launcher',
+    );
+    const details = NotificationDetails(
+        android: channel, iOS: DarwinNotificationDetails());
+
+    for (final day in restDays.toSet()) {
+      final scheduled = _nextWeekday(day, hour, minute);
+      await _plugin.zonedSchedule(
+        _kRestDayBase + day,
+        'Сегодня день отдыха 🛏',
+        'Отдохните и восстановитесь — завтра снова в бой!',
+        scheduled,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    }
+  }
+
+  static Future<void> cancelRestDayReminders() async {
+    for (int i = 0; i < 7; i++) {
+      await _plugin.cancel(_kRestDayBase + i);
+    }
+  }
+
   static Future<void> cancelAll() async {
     await _plugin.cancelAll();
   }
 
   static const int _kInactivityId = 900;
   static const int _kWeighInId = 901;
+  // Rest-day notifications use IDs 800–806 (one per weekday)
+  static const int _kRestDayBase = 800;
 
   // ─── Internals ─────────────────────────────────────────────────────────────
 

@@ -44,6 +44,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _weighInWeekday = 0; // 0=Пн…6=Вс
   int _weighInHour = 9;
   int _weighInMinute = 0;
+  int _restDayNotifHour = 9;
+  int _restDayNotifMinute = 0;
 
   @override
   void initState() {
@@ -78,6 +80,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _weighInWeekday = prefs.getInt('weigh_in_weekday') ?? 0;
         _weighInHour = prefs.getInt('weigh_in_hour') ?? 9;
         _weighInMinute = prefs.getInt('weigh_in_minute') ?? 0;
+        _restDayNotifHour = prefs.getInt('rest_day_notif_hour') ?? 9;
+        _restDayNotifMinute = prefs.getInt('rest_day_notif_minute') ?? 0;
       });
     }
   }
@@ -121,6 +125,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       await NotificationService.scheduleWeighInReminder(
         weekday: _weighInWeekday, hour: picked.hour, minute: picked.minute,
       );
+    }
+  }
+
+  Future<void> _pickRestDayNotifTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _restDayNotifHour, minute: _restDayNotifMinute),
+    );
+    if (picked == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('rest_day_notif_hour', picked.hour);
+    await prefs.setInt('rest_day_notif_minute', picked.minute);
+    setState(() {
+      _restDayNotifHour = picked.hour;
+      _restDayNotifMinute = picked.minute;
+    });
+    // Re-schedule rest day notifications with new time
+    final workouts = await WorkoutService.getMyWorkouts();
+    final restDays = workouts.expand((w) => w.restDays).toSet().toList();
+    if (restDays.isNotEmpty) {
+      await NotificationService.scheduleRestDayReminders(
+          restDays, hour: picked.hour, minute: picked.minute);
     }
   }
 
@@ -715,6 +741,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 trailing: Switch(
                   value: _deloadActive,
                   onChanged: _toggleDeload,
+                ),
+              ),
+
+              // ── Уведомление в дни отдыха ────────────────────────────────
+              _SettingsRow(
+                label: 'Уведомление в дни отдыха',
+                trailing: GestureDetector(
+                  onTap: _pickRestDayNotifTime,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD4A454).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.hotel_rounded,
+                            color: Color(0xFFD4A454), size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${_restDayNotifHour.toString().padLeft(2, '0')}:${_restDayNotifMinute.toString().padLeft(2, '0')}',
+                          style: const TextStyle(
+                            color: Color(0xFFD4A454),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
 

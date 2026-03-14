@@ -14,6 +14,7 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
+import 'package:sportwai/services/workout_service.dart';
 
 // ─── Metric options for body progress panel ───────────────────────────────────
 
@@ -98,6 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _workoutsThisWeek = 0;
   int _daysSinceLastWorkout = -1;
   Workout? _nextScheduledWorkout;
+  bool _isRestDay = false;
 
   @override
   void initState() {
@@ -231,9 +233,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       }
       final daysSince = results[6] as int;
+      // Check if today is a rest day in any active workout
+      final todayAppDay = DateTime.now().weekday - 1; // 0=Mon…6=Sun
+      final allWorkouts = await WorkoutService.getMyWorkouts();
+      final isRestDay = allWorkouts.any((w) => w.restDays.contains(todayAppDay));
       // Load next scheduled workout if inactive for 2+ days
       Workout? nextWorkout;
-      if (daysSince >= 2) {
+      if (daysSince >= 2 && !isRestDay) {
         nextWorkout = results[1] as Workout? ?? await TrainingService.getNextScheduledWorkout();
       }
       setState(() {
@@ -248,6 +254,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _workoutsThisWeek = results[5] as int;
         _daysSinceLastWorkout = daysSince;
         _nextScheduledWorkout = nextWorkout;
+        _isRestDay = isRestDay;
       });
     } catch (e) {
       if (mounted) {
@@ -428,8 +435,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
 
+                // ── Rest day card ─────────────────────────────────────────
+                if (_isRestDay) ...[
+                  const SizedBox(height: 16),
+                  const _RestDayCard(),
+                ],
+
                 // ── Inactivity suggestion ─────────────────────────────────
-                if (_daysSinceLastWorkout >= 2 && _todayWorkout == null) ...[
+                if (_daysSinceLastWorkout >= 2 && _todayWorkout == null && !_isRestDay) ...[
                   const SizedBox(height: 16),
                   _InactivityCard(
                     days: _daysSinceLastWorkout,
@@ -1795,5 +1808,61 @@ class _InactivityCard extends StatelessWidget {
       return 'дня';
     }
     return 'дней';
+  }
+}
+
+// ─── Rest day card ────────────────────────────────────────────────────────────
+
+class _RestDayCard extends StatelessWidget {
+  const _RestDayCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A1F0A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD4A454).withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFD4A454).withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.hotel_rounded,
+                color: Color(0xFFD4A454), size: 24),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Сегодня день отдыха 🛏',
+                  style: TextStyle(
+                    color: Color(0xFFD4A454),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Восстановитесь и наберитесь сил',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

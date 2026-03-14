@@ -5,6 +5,7 @@ class Workout {
   final String userId;
   final String name;
   final List<int> days;
+  final List<int> restDays;
   final bool isStandard;
   final int cycleWeeks;
   final int warmupMinutes;
@@ -19,6 +20,7 @@ class Workout {
     required this.userId,
     required this.name,
     required this.days,
+    this.restDays = const [],
     this.isStandard = false,
     this.cycleWeeks = 8,
     this.warmupMinutes = 0,
@@ -35,6 +37,10 @@ class Workout {
       userId: json['user_id'] as String,
       name: json['name'] as String,
       days: (json['days'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          [],
+      restDays: (json['rest_days'] as List<dynamic>?)
               ?.map((e) => (e as num).toInt())
               .toList() ??
           [],

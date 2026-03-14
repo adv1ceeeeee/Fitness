@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
 // ─── Section data model ───────────────────────────────────────────────────────
@@ -169,10 +171,24 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             .map((s) => (
                   name: s.nameController.text.trim(),
                   days: s.selectedDays.toList()..sort(),
+                  restDays: s.restDays.toList()..sort(),
                   cycleWeeks: _cycleWeeks,
                 ))
             .toList(),
       );
+
+      // Schedule rest-day notifications for all rest days across sections
+      final allRestDays = _sections
+          .expand((s) => s.restDays)
+          .toSet()
+          .toList();
+      if (allRestDays.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        final hour = prefs.getInt('rest_day_notif_hour') ?? 9;
+        final minute = prefs.getInt('rest_day_notif_minute') ?? 0;
+        NotificationService.scheduleRestDayReminders(
+            allRestDays, hour: hour, minute: minute);
+      }
 
       if (mounted) {
         for (final w in workouts) {

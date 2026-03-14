@@ -25,6 +25,7 @@ class WorkoutService {
   static Future<Workout> createWorkout(
     String name,
     List<int> days, {
+    List<int> restDays = const [],
     int cycleWeeks = 8,
     String? groupId,
   }) async {
@@ -34,6 +35,7 @@ class WorkoutService {
       'user_id': userId,
       'name': name,
       'days': days,
+      'rest_days': restDays,
       'is_standard': false,
       'cycle_weeks': cycleWeeks,
       if (groupId != null) 'group_id': groupId,
@@ -52,7 +54,7 @@ class WorkoutService {
   /// Creates multiple workouts that form a multi-section program.
   /// All sections share the same group_id (= first workout's id).
   static Future<List<Workout>> createWorkoutGroup(
-    List<({String name, List<int> days, int cycleWeeks})> sections,
+    List<({String name, List<int> days, List<int> restDays, int cycleWeeks})> sections,
   ) async {
     if (sections.isEmpty || sections.length > 7) {
       throw ArgumentError('sections must have 1–7 entries, got ${sections.length}');
@@ -62,6 +64,7 @@ class WorkoutService {
     final first = await createWorkout(
       sections.first.name,
       sections.first.days,
+      restDays: sections.first.restDays,
       cycleWeeks: sections.first.cycleWeeks,
     );
 
@@ -79,6 +82,7 @@ class WorkoutService {
             (s) => createWorkout(
               s.name,
               s.days,
+              restDays: s.restDays,
               cycleWeeks: s.cycleWeeks,
               groupId: groupId,
             ),
