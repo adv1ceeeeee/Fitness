@@ -10,6 +10,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/router.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
 
@@ -48,6 +49,7 @@ Future<void> _bootstrap() async {
     anonKey: AppConfig.supabaseAnonKey,
   );
 
+  await AppStorage.init();
   await NotificationService.initialize();
   OfflineQueueService.init();
 

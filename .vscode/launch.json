@@ -19,6 +19,27 @@
             "name": "Launch Chrome against localhost",
             "url": "http://localhost:1935",
             "webRoot": "${workspaceFolder}"
+        },
+        {
+            "name": "Dev (default Supabase)",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "args": [
+                "--dart-define=DART_DEFINE_PRODUCTION=false"
+            ]
+        },
+        {
+            "name": "Prod (env vars from shell)",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "args": [
+                "--dart-define=SUPABASE_URL=${env:SUPABASE_URL}",
+                "--dart-define=SUPABASE_ANON_KEY=${env:SUPABASE_ANON_KEY}",
+                "--dart-define=SENTRY_DSN=${env:SENTRY_DSN}",
+                "--dart-define=DART_DEFINE_PRODUCTION=true"
+            ]
         }
     ]
 }
