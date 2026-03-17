@@ -310,6 +310,39 @@ class EventLogger {
         'sets_completed': setsCompleted,
       });
 
+  // ─── Session actions ──────────────────────────────────────────────────────
+
+  static void setAdded({
+    required String sessionId,
+    required String exerciseId,
+    required int newSetCount,
+  }) =>
+      log('set_added', props: {
+        'session_id': sessionId,
+        'exercise_id': exerciseId,
+        'new_set_count': newSetCount,
+      });
+
+  static void exerciseReplaced({
+    required String sessionId,
+    required String fromExerciseId,
+    required String toExerciseId,
+  }) =>
+      log('exercise_replaced', props: {
+        'session_id': sessionId,
+        'from_exercise_id': fromExerciseId,
+        'to_exercise_id': toExerciseId,
+      });
+
+  static void autoProgressSuggestionShown({
+    required String exerciseId,
+    required bool isStrong,
+  }) =>
+      log('auto_progress_suggestion_shown', props: {
+        'exercise_id': exerciseId,
+        'is_strong': isStrong,
+      });
+
   // ─── Navigation ──────────────────────────────────────────────────────────
 
   static void screenView(String screenName) =>

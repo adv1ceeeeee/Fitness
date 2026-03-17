@@ -195,6 +195,28 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         }
       });
       if (_warmupMinutes > 0) _startPhaseTimer();
+
+      // Log auto-progress suggestions shown to user
+      for (final exerciseId in autoProgress) {
+        EventLogger.autoProgressSuggestionShown(
+          exerciseId: exerciseId,
+          isStrong: true,
+        );
+      }
+      // Log single-session suggestions (suggestIncrease but not strongSuggest)
+      for (final we in ex) {
+        if (!autoProgress.contains(we.exerciseId)) {
+          final top = _parseTopReps(we.repsRange);
+          final lastReps = lastSets[we.exerciseId]?['reps'] as int?;
+          final lastWeight = lastSets[we.exerciseId]?['weight'] as double?;
+          if (top != null && lastReps != null && lastReps >= top && lastWeight != null && lastWeight > 0) {
+            EventLogger.autoProgressSuggestionShown(
+              exerciseId: we.exerciseId,
+              isStrong: false,
+            );
+          }
+        }
+      }
     }
     } catch (e, st) {
       debugPrint('_loadSession error: $e\n$st');
@@ -464,6 +486,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       _sets.add(_SetData(reps: defaultReps, repsTarget: defaultReps));
       _weightControllers.add(TextEditingController());
     });
+    EventLogger.setAdded(
+      sessionId: widget.sessionId,
+      exerciseId: _currentExercise!.exerciseId,
+      newSetCount: _sets.length,
+    );
   }
 
   Future<void> _showReplaceExercise() async {
@@ -518,6 +545,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     );
     if (picked == null || !mounted) return;
     final we = _currentExercise!;
+    EventLogger.exerciseReplaced(
+      sessionId: widget.sessionId,
+      fromExerciseId: we.exerciseId,
+      toExerciseId: picked.id,
+    );
     // Persist the replacement to the workout_exercise record
     await WorkoutService.updateExerciseInWorkout(we.id, picked.id);
     // Update local state
