@@ -26,7 +26,7 @@ class AppConfig {
   /// DSN для Sentry. Пустая строка — crash reporting отключён.
   static const String sentryDsn = String.fromEnvironment(
     'SENTRY_DSN',
-    defaultValue: '',
+    defaultValue: 'https://802393f78a9b2147f46a20fac44d00b0@o4511061040037888.ingest.us.sentry.io/4511061041938432',
   );
 
   /// API-ключ DaData для автодополнения городов (dadata.ru).
