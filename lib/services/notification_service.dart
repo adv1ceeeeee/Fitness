@@ -1,5 +1,9 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -24,8 +28,51 @@ class NotificationService {
     );
     await _plugin.initialize(
       const InitializationSettings(android: android, iOS: iOS),
+      onDidReceiveNotificationResponse: _onTap,
     );
     _initialized = true;
+  }
+
+  /// Called when the user taps a notification (foreground or background).
+  static void _onTap(NotificationResponse response) {
+    final type = response.payload ?? 'unknown';
+    EventLogger.log('notification_tapped', props: {
+      'notif_type': type,
+      'notif_id': response.id,
+    });
+    // Mark tapped_at in push_notification_logs (fire-and-forget)
+    _markTapped(response.id, type);
+  }
+
+  static void _markTapped(int? notifId, String type) {
+    if (notifId == null) return;
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+    Supabase.instance.client
+        .from('push_notification_logs')
+        .update({'tapped_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('user_id', userId)
+        .eq('notif_id', notifId)
+        .isFilter('tapped_at', null)
+        .then((_) {}, onError: (e) => debugPrint('[NotifService] markTapped: $e'));
+  }
+
+  /// Fire-and-forget: log a scheduled notification to Supabase.
+  static void _logScheduled({
+    required String type,
+    required int notifId,
+    DateTime? scheduledFor,
+    String? sessionId,
+  }) {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+    Supabase.instance.client.from('push_notification_logs').insert({
+      'user_id': userId,
+      'notif_type': type,
+      'notif_id': notifId,
+      if (scheduledFor != null) 'scheduled_for': scheduledFor.toUtc().toIso8601String(),
+      if (sessionId != null) 'session_id': sessionId,
+    }).then((_) {}, onError: (e) => debugPrint('[NotifService] logScheduled: $e'));
   }
 
   /// Returns true if permission was granted (or already granted).
@@ -76,11 +123,13 @@ class NotificationService {
         'Сегодня запланирована тренировка. Вперёд!',
         scheduled,
         details,
+        payload: 'workout_reminder',
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
+      _logScheduled(type: 'workout_reminder', notifId: appDay);
     }
   }
 
@@ -124,9 +173,16 @@ class NotificationService {
       workoutName,
       scheduled,
       details,
+      payload: 'session',
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
+    );
+    _logScheduled(
+      type: 'session',
+      notifId: notifId,
+      scheduledFor: scheduled.toLocal(),
+      sessionId: sessionId,
     );
   }
 
@@ -155,9 +211,15 @@ class NotificationService {
       'Пора вернуться — тело скучает по нагрузке.',
       fire,
       details,
+      payload: 'inactivity',
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
+    );
+    _logScheduled(
+      type: 'inactivity',
+      notifId: _kInactivityId,
+      scheduledFor: fire.toLocal(),
     );
   }
 
@@ -187,11 +249,13 @@ class NotificationService {
       'Зафиксируйте вес для отслеживания прогресса.',
       scheduled,
       details,
+      payload: 'weigh_in',
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );
+    _logScheduled(type: 'weigh_in', notifId: _kWeighInId);
   }
 
   static Future<void> cancelWeighInReminder() async =>
@@ -221,17 +285,20 @@ class NotificationService {
 
     for (final day in restDays.toSet()) {
       final scheduled = _nextWeekday(day, hour, minute);
+      final notifId = _kRestDayBase + day;
       await _plugin.zonedSchedule(
-        _kRestDayBase + day,
+        notifId,
         'Сегодня день отдыха 🛏',
         'Отдохните и восстановитесь — завтра снова в бой!',
         scheduled,
         details,
+        payload: 'rest_day',
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
+      _logScheduled(type: 'rest_day', notifId: notifId);
     }
   }
 

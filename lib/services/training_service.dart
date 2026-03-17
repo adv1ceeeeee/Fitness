@@ -382,46 +382,22 @@ class TrainingService {
     await _client.from('training_sessions').delete().eq('id', sessionId);
   }
 
-  /// Returns the personal best weight (kg) ever logged for a given exercise,
-  /// or null if the exercise has never been tracked with weight.
+  /// Returns the personal best weight (kg) for an exercise.
+  /// Reads from personal_records (populated by Postgres trigger on sets INSERT).
   static Future<double?> getPersonalBest(String exerciseId) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
-    // Find all workout_exercise IDs for this exercise
-    final weRes = await _client
-        .from('workout_exercises')
-        .select('id')
-        .eq('exercise_id', exerciseId);
-
-    final weIds =
-        (weRes as List).map((e) => e['id'] as String).toList();
-    if (weIds.isEmpty) return null;
-
-    // Find user's session IDs
-    final sessRes = await _client
-        .from('training_sessions')
-        .select('id')
-        .eq('user_id', userId);
-
-    final sessIds =
-        (sessRes as List).map((e) => e['id'] as String).toList();
-    if (sessIds.isEmpty) return null;
-
-    // Get max weight across all sets
-    final setsRes = await _client
-        .from('sets')
-        .select('weight')
-        .inFilter('workout_exercise_id', weIds)
-        .inFilter('training_session_id', sessIds)
-        .eq('completed', true)
-        .not('weight', 'is', null)
-        .order('weight', ascending: false)
+    final res = await _client
+        .from('personal_records')
+        .select('weight_kg')
+        .eq('user_id', userId)
+        .eq('exercise_id', exerciseId)
+        .order('weight_kg', ascending: false)
         .limit(1)
         .maybeSingle();
 
-    if (setsRes == null) return null;
-    return (setsRes['weight'] as num?)?.toDouble();
+    return (res?['weight_kg'] as num?)?.toDouble();
   }
 
   /// Returns the most recent completed session info per workout_id.
