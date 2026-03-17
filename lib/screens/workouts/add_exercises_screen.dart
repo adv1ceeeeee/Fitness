@@ -8,6 +8,7 @@ import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
@@ -63,7 +64,14 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) setState(() => _searchQuery = value);
+      if (!mounted) return;
+      setState(() => _searchQuery = value);
+      if (value.isNotEmpty) {
+        final count = _allExercises
+            .where((e) => e.name.toLowerCase().contains(value.toLowerCase()))
+            .length;
+        EventLogger.exerciseSearched(query: value, resultsCount: count);
+      }
     });
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 
@@ -27,6 +28,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
   bool _loading = true;
   bool _saving = false;
   double _totalVolume = 0;
+  int? _sessionRpe;
 
   // Grouped exercise data: exerciseName → list of _SetRow
   final List<_ExerciseGroup> _groups = [];
@@ -174,7 +176,14 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         widget.sessionId,
         durationSeconds: widget.durationSeconds,
         notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        sessionRpe: _sessionRpe,
       );
+      if (_sessionRpe != null) {
+        EventLogger.sessionRpeLogged(
+          sessionId: widget.sessionId,
+          rpe: _sessionRpe!,
+        );
+      }
       // Aggregate kcal and volume from individual sets and persist
       await TrainingService.saveSessionKcal(widget.sessionId);
       await TrainingService.saveSessionVolume(widget.sessionId);
@@ -277,6 +286,12 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                     ),
                     style: const TextStyle(color: AppColors.textPrimary),
                   ),
+                  const SizedBox(height: 16),
+                  // ── Session RPE ────────────────────────────────────────
+                  _SessionRpeCard(
+                    selected: _sessionRpe,
+                    onChanged: (v) => setState(() => _sessionRpe = v),
+                  ),
                   const SizedBox(height: 24),
                   // ── Save button ────────────────────────────────────────
                   SizedBox(
@@ -331,6 +346,97 @@ class _SetRow {
 }
 
 // ─── Widgets ─────────────────────────────────────────────────────────────────
+
+class _SessionRpeCard extends StatelessWidget {
+  final int? selected;
+  final ValueChanged<int?> onChanged;
+
+  const _SessionRpeCard({required this.selected, required this.onChanged});
+
+  static const _labels = {
+    1: 'Очень легко', 2: 'Легко', 3: 'Умеренно', 4: 'Чуть тяжело',
+    5: 'Тяжело', 6: 'Тяжело+', 7: 'Очень тяжело', 8: 'Предел',
+    9: 'Почти максимум', 10: 'Максимум',
+  };
+
+  Color _rpeColor(int v) {
+    if (v <= 3) return Colors.green;
+    if (v <= 5) return Colors.yellow.shade700;
+    if (v <= 7) return Colors.orange;
+    return Colors.red;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Сложность тренировки',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              const Spacer(),
+              if (selected != null)
+                Text(
+                  _labels[selected] ?? '',
+                  style: TextStyle(
+                    color: _rpeColor(selected!),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: List.generate(10, (i) {
+              final v = i + 1;
+              final sel = selected == v;
+              return GestureDetector(
+                onTap: () => onChanged(sel ? null : v),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: sel
+                        ? _rpeColor(v)
+                        : _rpeColor(v).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$v',
+                      style: TextStyle(
+                        color: sel ? Colors.white : _rpeColor(v),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SummaryHeader extends StatelessWidget {
   final String durationLabel;

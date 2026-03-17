@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter test test/providers/settings_provider_test.dart)",
+      "Bash(flutter test)",
+      "Bash(for f in \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\001_initial_schema.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\003_handle_new_user.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\004_profiles_extra_fields.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\005_login_by_nickname.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\006_profile_contact_fields.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\007_sets_rpe.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\008_workout_extras.sql\" \"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\supabase\\\\migrations\\\\009_body_metrics_wellness_events.sql\")",
+      "Bash(do echo \"=== $f ===\")",
+      "Read(//c/Users/lihop/Личные данные/Работа/Fitness/**)",
+      "Bash(done)",
+      "Bash(flutter test test/services/event_logger_test.dart)",
+      "Bash(flutter test test/features/body_progress_test.dart)",
+      "Bash(flutter test:*)",
+      "Bash(flutter pub:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(grep -n \"user_favorite\\\\|favorite_exercises\\\\|is_favorite\" \"/c/Users/lihop/Личные данные/Работа/Fitness/supabase/migrations/\"*.sql)",
+      "Bash(grep -n \"scheduleWorkoutReminders\\\\|NotificationService\" /c/Users/lihop/Личные данные/Работа/Fitness/lib/*.dart /c/Users/lihop/Личные данные/Работа/Fitness/lib/screens/*.dart /c/Users/lihop/Личные данные/Работа/Fitness/lib/screens/settings/*.dart)",
+      "Bash(grep -n \"volume_total\\\\|volumeTotal\\\\|volume_kg\\\\|volume\" /c/Users/lihop/Личные данные/Работа/Fitness/lib/screens/history/*.dart)",
+      "Bash(\"c:\\\\Users\\\\lihop\\\\Личные данные\\\\Работа\\\\Fitness\\\\lib\\\\screens\\\\analytics\\\\analytics_screen.dart\")",
+      "Bash(grep -n \"^  {$\\\\|''''name'''':\" \"c:/Users/lihop/Личные данные/Работа/Fitness/lib/data/standard_programs.dart\")",
+      "Bash(head -10 grep -n \"scheduled_time\\\\|planned_time\\\\|start_time\" \"c:/Users/lihop/Личные данные/Работа/Fitness/lib/models/training_session.dart\")",
+      "Read(//c/Users/lihop/**)",
+      "Bash(python -c \":*)",
+      "Bash(find 'c:/Users/lihop/Личные данные/Работа/Fitness' -name tasks* -o -name TODO* -o -name *.tasks)"
+    ]
+  }
+}

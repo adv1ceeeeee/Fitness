@@ -96,11 +96,13 @@ class TrainingService {
     String sessionId, {
     int? durationSeconds,
     String? notes,
+    int? sessionRpe,
   }) async {
     await _client.from('training_sessions').update({
       'completed': true,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       'notes': notes,
+      if (sessionRpe != null) 'session_rpe': sessionRpe,
     }).eq('id', sessionId);
   }
 
@@ -157,6 +159,7 @@ class TrainingService {
             'rpe': rpe,
             'completed': true,
             'is_warmup': isWarmup,
+            'performed_at': DateTime.now().toUtc().toIso8601String(),
             if (restSeconds != null) 'rest_seconds': restSeconds,
             if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
           }));
@@ -491,7 +494,7 @@ class TrainingService {
   }
 
   /// Returns the nearest upcoming (future, incomplete, non-skipped) session per workout.
-  /// Result: { workoutId → { 'date': String 'yyyy-MM-dd' } }
+  /// Result: { workoutId → { 'date': String 'yyyy-MM-dd', 'session_id': String } }
   static Future<Map<String, Map<String, dynamic>>> getUpcomingSessionsForWorkouts(
       List<String> workoutIds) async {
     if (workoutIds.isEmpty) return {};
@@ -501,7 +504,7 @@ class TrainingService {
     try {
       final rows = await _client
           .from('training_sessions')
-          .select('workout_id, date, notes')
+          .select('id, workout_id, date, notes')
           .eq('user_id', userId)
           .eq('completed', false)
           .inFilter('workout_id', workoutIds)
@@ -514,7 +517,10 @@ class TrainingService {
         if (notes?.startsWith('skipped:') == true) continue;
         final wid = row['workout_id'] as String;
         if (!result.containsKey(wid)) {
-          result[wid] = {'date': row['date'] as String};
+          result[wid] = {
+            'date': row['date'] as String,
+            'session_id': row['id'] as String,
+          };
         }
       }
       return result;
@@ -523,6 +529,7 @@ class TrainingService {
       return {};
     }
   }
+
 
   /// All completed sessions, newest first, with workout name and duration.
   /// Pass [offset] for pagination (page size = [limit]).

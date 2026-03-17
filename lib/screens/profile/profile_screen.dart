@@ -96,6 +96,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('deload_active', value);
     if (mounted) setState(() => _deloadActive = value);
+    EventLogger.deloadToggled(enabled: value);
   }
 
   Future<void> _toggleWeighIn(bool value) async {

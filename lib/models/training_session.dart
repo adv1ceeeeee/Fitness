@@ -11,6 +11,8 @@ class TrainingSession {
   final double? volumeKg;
   /// Planned local start time (for "notify before" mode). Null = not set.
   final TimeOfDay? plannedTime;
+  /// Overall session difficulty rated by user (1–10). Null = not rated.
+  final int? sessionRpe;
 
   TrainingSession({
     required this.id,
@@ -22,6 +24,7 @@ class TrainingSession {
     this.createdAt,
     this.volumeKg,
     this.plannedTime,
+    this.sessionRpe,
   });
 
   factory TrainingSession.fromJson(Map<String, dynamic> json) {
@@ -46,6 +49,7 @@ class TrainingSession {
           : null,
       volumeKg: (json['volume_kg'] as num?)?.toDouble(),
       plannedTime: plannedTime,
+      sessionRpe: json['session_rpe'] as int?,
     );
   }
 

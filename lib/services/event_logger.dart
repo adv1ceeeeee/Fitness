@@ -270,6 +270,46 @@ class EventLogger {
   static void checkInSaved({required String type}) =>
       log('check_in_saved', props: {'type': type});
 
+  // ─── Session RPE ──────────────────────────────────────────────────────────
+
+  static void sessionRpeLogged({
+    required String sessionId,
+    required int rpe,
+  }) =>
+      log('session_rpe_logged', props: {
+        'session_id': sessionId,
+        'rpe': rpe,
+      });
+
+  // ─── Exercise search ──────────────────────────────────────────────────────
+
+  static void exerciseSearched({
+    required String query,
+    required int resultsCount,
+  }) =>
+      log('exercise_searched', props: {
+        'query': query,
+        'results_count': resultsCount,
+      });
+
+  // ─── Deload ───────────────────────────────────────────────────────────────
+
+  static void deloadToggled({required bool enabled}) =>
+      log('deload_toggled', props: {'enabled': enabled});
+
+  // ─── Workout abandoned at specific exercise ───────────────────────────────
+
+  static void workoutAbandonedAt({
+    required String sessionId,
+    required String exerciseName,
+    required int setsCompleted,
+  }) =>
+      log('workout_abandoned_at', props: {
+        'session_id': sessionId,
+        'exercise_name': exerciseName,
+        'sets_completed': setsCompleted,
+      });
+
   // ─── Navigation ──────────────────────────────────────────────────────────
 
   static void screenView(String screenName) =>
