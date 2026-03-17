@@ -416,12 +416,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                if (!_wellnessLogged) ...[
-                  const SizedBox(height: 24),
-                  _WellnessCard(
-                    onSaved: () => setState(() => _wellnessLogged = true),
-                  ),
-                ],
                 const SizedBox(height: 24),
                 _TodayCard(
                   workout: _todayWorkout,
@@ -452,6 +446,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     days: _daysSinceLastWorkout,
                     nextWorkout: _nextScheduledWorkout,
                     onTap: () => context.go('/workouts'),
+                  ),
+                ],
+
+                // ── Wellness check-in ─────────────────────────────────────
+                if (!_wellnessLogged) ...[
+                  const SizedBox(height: 16),
+                  _WellnessCard(
+                    onSaved: () => setState(() => _wellnessLogged = true),
                   ),
                 ],
 
@@ -1100,6 +1102,28 @@ class _MetricBox extends StatelessWidget {
   }
 }
 
+// ─── Skeleton placeholder ─────────────────────────────────────────────────────
+
+class _SkeletonBox extends StatelessWidget {
+  final double width;
+  final double height;
+  final double radius;
+  // ignore: unused_element_parameter
+  const _SkeletonBox({required this.width, required this.height, this.radius = 8});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
 // ─── Today Card ───────────────────────────────────────────────────────────────
 
 class _TodayCard extends StatelessWidget {
@@ -1117,6 +1141,25 @@ class _TodayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SkeletonBox(width: 120, height: 14),
+            SizedBox(height: 12),
+            _SkeletonBox(width: 200, height: 20),
+            SizedBox(height: 8),
+            _SkeletonBox(width: 80, height: 12),
+          ],
+        ),
+      );
+    }
     final hasWorkout = workout != null;
     return Material(
       color: hasWorkout ? AppColors.card : AppColors.surface,
@@ -1148,43 +1191,40 @@ class _TodayCard extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: loading
-                    ? const Text('Загрузка...',
-                        style: TextStyle(color: AppColors.textSecondary))
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            hasWorkout
-                                ? workout!.name
-                                : 'Сегодня тренировки нет',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: hasWorkout
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                            ),
-                          ),
-                          if (hasWorkout) ...[
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Нажми, чтобы начать',
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  color: AppColors.textSecondary),
-                            ),
-                          ] else if (onCreateProgram != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Создать программу →',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.accent.withValues(alpha: 0.8)),
-                            ),
-                          ],
-                        ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasWorkout
+                          ? workout!.name
+                          : 'Сегодня тренировки нет',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: hasWorkout
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
                       ),
+                    ),
+                    if (hasWorkout) ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Нажми, чтобы начать',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary),
+                      ),
+                    ] else if (onCreateProgram != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Создать программу →',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.accent.withValues(alpha: 0.8)),
+                      ),
+                    ],
+                  ],
+                ),
               ),
               if (hasWorkout)
                 const Icon(Icons.arrow_forward_ios,
@@ -1215,6 +1255,7 @@ class _WellnessCardState extends State<_WellnessCard> {
   int _sleepQuality = 3;
   int _soreness = 3;
   bool _saving = false;
+  bool _showExtra = false;
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -1269,17 +1310,45 @@ class _WellnessCardState extends State<_WellnessCard> {
             value: _energy,
             onChanged: (v) => setState(() => _energy = v),
           ),
-          const SizedBox(height: 12),
-          _RatingRow(
-            label: 'Сон',
-            value: _sleepQuality,
-            onChanged: (v) => setState(() => _sleepQuality = v),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => setState(() => _showExtra = !_showExtra),
+            child: Row(
+              children: [
+                Text(
+                  _showExtra ? 'Свернуть' : 'Подробнее',
+                  style: const TextStyle(color: AppColors.accent, fontSize: 13),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  _showExtra ? Icons.expand_less : Icons.expand_more,
+                  color: AppColors.accent,
+                  size: 16,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          _RatingRow(
-            label: 'Боль в мышцах',
-            value: _soreness,
-            onChanged: (v) => setState(() => _soreness = v),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: _showExtra
+                ? Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      _RatingRow(
+                        label: 'Кач. сна',
+                        value: _sleepQuality,
+                        onChanged: (v) => setState(() => _sleepQuality = v),
+                      ),
+                      const SizedBox(height: 12),
+                      _RatingRow(
+                        label: 'Боль',
+                        value: _soreness,
+                        onChanged: (v) => setState(() => _soreness = v),
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -1318,7 +1387,7 @@ class _RatingRow extends StatelessWidget {
     return Row(
       children: [
         SizedBox(
-          width: 72,
+          width: 96,
           child: Text(
             label,
             style: const TextStyle(

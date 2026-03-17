@@ -35,15 +35,28 @@ class AppColors {
   // ── Semantic ─────────────────────────────────────────────────────────────────
   static const Color error = Color(0xFFFF453A); // iOS red
   static const Color success = Color(0xFF30D158); // iOS green
+  static const Color warning = Color(0xFFFF9F0A); // iOS orange
   static const Color separator = Color(0xFF38383A); // iOS separator dark
 }
 
 class AppTheme {
   static ThemeData get lightTheme {
+    const textTheme = TextTheme(
+      displayLarge: TextStyle(fontSize: 34, fontWeight: FontWeight.w700, color: Color(0xFF000000), letterSpacing: 0.37),
+      displayMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: Color(0xFF000000), letterSpacing: 0.36),
+      displaySmall: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF000000), letterSpacing: 0.35),
+      headlineMedium: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xFF000000), letterSpacing: -0.43),
+      bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w400, color: Color(0xFF000000), letterSpacing: -0.43),
+      bodyMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Color(0xFF000000), letterSpacing: -0.32),
+      bodySmall: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: Color(0xFF6C6C70), letterSpacing: -0.24),
+      labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: Color(0xFF6C6C70), letterSpacing: 0),
+    );
+
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: const Color(0xFFF2F2F7),
+      textTheme: textTheme,
 
       colorScheme: const ColorScheme.light(
         primary: AppColors.accent,
@@ -199,6 +212,7 @@ class AppTheme {
         contentTextStyle: const TextStyle(color: Colors.white, fontSize: 15),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 72),
       ),
 
       dialogTheme: DialogThemeData(
@@ -473,6 +487,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(12),
         ),
         behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 72),
       ),
 
       // Dialog

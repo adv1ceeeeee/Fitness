@@ -426,7 +426,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Личный рекорд! 🏆'),
-            backgroundColor: Color(0xFF30D158),
+            backgroundColor: AppColors.success,
             duration: Duration(seconds: 2),
           ),
         );
@@ -650,7 +650,28 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     if (_exercises.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Тренировка')),
-        body: const Center(child: Text('Нет упражнений')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.fitness_center_rounded, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.4)),
+                const SizedBox(height: 16),
+                const Text(
+                  'Нет упражнений',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Добавьте упражнения в эту тренировку',
+                  style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
     if (_phase == _SessionPhase.warmup || _phase == _SessionPhase.cooldown) {
@@ -667,6 +688,9 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         targetSeconds: _targetRestSeconds,
         onSkip: _skipRest,
         onExit: _confirmExit,
+        nextExerciseName: _goToNextAfterRest && _currentExerciseIndex + 1 < _exercises.length
+            ? _exercises[_currentExerciseIndex + 1].exercise?.name
+            : null,
       );
     }
 
@@ -686,9 +710,20 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             icon: const Icon(Icons.close),
             onPressed: _confirmExit,
           ),
-          title: Text(
-            '${_currentExerciseIndex + 1} / ${_exercises.length}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                we.exercise?.name ?? '',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                '${_currentExerciseIndex + 1} / ${_exercises.length}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w400),
+              ),
+            ],
           ),
           centerTitle: true,
           actions: [
@@ -713,9 +748,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                child: Column(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
+                child: SingleChildScrollView(
+                  key: ValueKey(_currentExerciseIndex),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Deload banner
@@ -725,20 +764,20 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withValues(alpha: 0.15),
+                          color: AppColors.warning.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: Colors.orange.withValues(alpha: 0.5)),
+                              color: AppColors.warning.withValues(alpha: 0.5)),
                         ),
                         child: const Row(
                           children: [
                             Icon(Icons.battery_saver_rounded,
-                                color: Colors.orange, size: 16),
+                                color: AppColors.warning, size: 16),
                             SizedBox(width: 8),
                             Text(
                               'Деload-неделя: вес снижен на 40%',
                               style: TextStyle(
-                                color: Colors.orange,
+                                color: AppColors.warning,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -802,40 +841,44 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                   fontSize: 12, color: AppColors.accent),
                             ),
                             if (strongSuggest) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.trending_up,
-                                      size: 13,
-                                      color: Color(0xFF30D158)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Пора увеличить вес! 3 подряд → ${suggestWeight.toStringAsFixed(1)} $unit',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF30D158),
-                                      fontWeight: FontWeight.w600,
+                              Container(
+                                margin: const EdgeInsets.only(top: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.trending_up, size: 14, color: AppColors.success),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Пора увеличить вес! 3 подряд → ${suggestWeight.toStringAsFixed(1)} $unit',
+                                      style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w600),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ] else if (suggestIncrease) ...[
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.trending_up,
-                                      size: 13,
-                                      color: Color(0xFF30D158)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Попробуй +2.5 $unit → ${suggestWeight.toStringAsFixed(1)} $unit',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF30D158),
-                                      fontWeight: FontWeight.w500,
+                              Container(
+                                margin: const EdgeInsets.only(top: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.trending_up, size: 14, color: AppColors.success),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'Попробуй +2.5 $unit → ${suggestWeight.toStringAsFixed(1)} $unit',
+                                      style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w500),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ],
                           ],
@@ -918,6 +961,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                     _AddSetButton(onTap: _addSet),
                     const SizedBox(height: 16),
                   ],
+                ),
                 ),
               ),
             ),
@@ -1117,7 +1161,7 @@ class _SetBlock extends StatelessWidget {
                                       : Icons.remove,
                               size: 18,
                               color: comparison! > 0
-                                  ? const Color(0xFF30D158)
+                                  ? AppColors.success
                                   : comparison! < 0
                                       ? AppColors.error
                                       : AppColors.textSecondary,
@@ -1389,8 +1433,8 @@ class _SupersetBadge extends StatelessWidget {
         exercises.where((e) => e.supersetGroup == group).length;
 
     const colors = [
-      Color(0xFF30D158),
-      Color(0xFFFF9F0A),
+      AppColors.success,
+      AppColors.warning,
       Color(0xFFFF453A),
       Color(0xFFBF5AF2),
     ];
@@ -1505,12 +1549,14 @@ class _RestScreen extends StatelessWidget {
   final int targetSeconds;
   final VoidCallback onSkip;
   final VoidCallback onExit;
+  final String? nextExerciseName;
 
   const _RestScreen({
     required this.seconds,
     required this.targetSeconds,
     required this.onSkip,
     required this.onExit,
+    this.nextExerciseName,
   });
 
   @override
@@ -1586,6 +1632,19 @@ class _RestScreen extends StatelessWidget {
                 ),
               ),
             ),
+            if (nextExerciseName != null) ...[
+              const SizedBox(height: 32),
+              const Text(
+                'Следующее',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                nextExerciseName!,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),
