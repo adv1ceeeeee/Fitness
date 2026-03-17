@@ -302,6 +302,22 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     }
   }
 
+  Future<void> _cancelUpcomingSession(Workout w) async {
+    final sessionId = widget.upcomingInfo[w.id]?['session_id'] as String?;
+    if (sessionId == null) return;
+    try {
+      await TrainingService.skipSession(sessionId, 'cancelled by user');
+      widget.onRefresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Тренировка отменена')),
+        );
+      }
+    } catch (e) {
+      debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
+    }
+  }
+
   Future<void> _archiveWorkout(Workout w) async {
     setState(() => _openSwipeId = null);
     final confirmed = await showDialog<bool>(
@@ -604,11 +620,13 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                             child: _InactiveWorkoutCard(
                               workout: w,
                               upcomingDate: widget.upcomingInfo[w.id]?['date'] as String?,
+                              upcomingSessionId: widget.upcomingInfo[w.id]?['session_id'] as String?,
                               sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
                               durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
                               onTap: () => widget.onWorkoutTap(w),
                               onDelete: () => _confirmDelete(w),
                               onCopy: () => _duplicateWorkout(w),
+                              onCancelSession: () => _cancelUpcomingSession(w),
                             ),
                           ),
                       ],
@@ -953,12 +971,14 @@ class _WorkoutCardContent extends StatelessWidget {
 
 class _InactiveWorkoutCard extends StatelessWidget {
   final Workout workout;
-  final String? sessionDate;    // 'yyyy-MM-dd' — last completed session
-  final String? upcomingDate;   // 'yyyy-MM-dd' — next scheduled session
+  final String? sessionDate;      // 'yyyy-MM-dd' — last completed session
+  final String? upcomingDate;     // 'yyyy-MM-dd' — next scheduled session
+  final String? upcomingSessionId; // id of the upcoming session (to cancel)
   final int? durationSeconds;
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback onCopy;
+  final VoidCallback? onCancelSession;
 
   const _InactiveWorkoutCard({
     required this.workout,
@@ -967,7 +987,9 @@ class _InactiveWorkoutCard extends StatelessWidget {
     required this.onCopy,
     this.sessionDate,
     this.upcomingDate,
+    this.upcomingSessionId,
     this.durationSeconds,
+    this.onCancelSession,
   });
 
   String _formatDate(String? raw) {
@@ -1070,6 +1092,17 @@ class _InactiveWorkoutCard extends StatelessWidget {
                 constraints: const BoxConstraints(),
                 tooltip: 'Повторить тренировку',
               ),
+              if (onCancelSession != null) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.cancel_outlined,
+                      color: Color(0xFFFF9500), size: 20),
+                  onPressed: onCancelSession,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Отменить',
+                ),
+              ],
               const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.delete_outline,

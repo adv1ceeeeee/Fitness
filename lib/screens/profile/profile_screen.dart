@@ -481,190 +481,174 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
               // Настройки
               const _SectionTitle('Настройки'),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Material(
-                  color: AppColors.card,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => context.push('/body-metrics'),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
+
+              // ── Общие ────────────────────────────────────────────────────
+              _SettingsGroup(
+                title: 'Общие',
+                rows: [
+                  _SettingsRow(
+                    label: 'Параметры тела',
+                    trailing: GestureDetector(
+                      onTap: () => context.push('/body-metrics'),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Параметры тела',
-                              style: TextStyle(color: AppColors.textPrimary)),
-                          Row(
-                            children: [
-                              Text(
-                                _latestMetrics?['weight_kg'] != null
-                                    ? '${(_latestMetrics!['weight_kg'] as num).toStringAsFixed(1)} кг'
-                                    : 'Не указано',
-                                style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 14),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chevron_right,
-                                  color: AppColors.textSecondary, size: 18),
-                            ],
+                          Text(
+                            _latestMetrics?['weight_kg'] != null
+                                ? '${(_latestMetrics!['weight_kg'] as num).toStringAsFixed(1)} кг'
+                                : 'Не указано',
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 14),
                           ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.chevron_right,
+                              color: AppColors.textSecondary, size: 18),
                         ],
                       ),
                     ),
                   ),
-                ),
+                  _SettingsRow(
+                    label: 'Единицы веса',
+                    trailing: Builder(builder: (context) {
+                      final useKg = ref.watch(useKgProvider);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('кг'),
+                            selected: useKg,
+                            onSelected: (_) =>
+                                ref.read(useKgProvider.notifier).setUseKg(true),
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('фунты'),
+                            selected: !useKg,
+                            onSelected: (_) =>
+                                ref.read(useKgProvider.notifier).setUseKg(false),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                  _SettingsRow(
+                    label: 'Единицы длины',
+                    last: true,
+                    trailing: Builder(builder: (context) {
+                      final useCm = ref.watch(useCmProvider);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('см'),
+                            selected: useCm,
+                            onSelected: (_) =>
+                                ref.read(useCmProvider.notifier).setUseCm(true),
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('дюймы'),
+                            selected: !useCm,
+                            onSelected: (_) =>
+                                ref.read(useCmProvider.notifier).setUseCm(false),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                ],
               ),
-              _SettingsRow(
-                label: 'Единицы веса',
-                trailing: Builder(builder: (context) {
-                  final useKg = ref.watch(useKgProvider);
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('кг'),
-                        selected: useKg,
-                        onSelected: (_) =>
-                            ref.read(useKgProvider.notifier).setUseKg(true),
+
+              // ── Тренировки ───────────────────────────────────────────────
+              _SettingsGroup(
+                title: 'Тренировки',
+                rows: [
+                  _SettingsRow(
+                    label: 'Цель: тренировок в неделю',
+                    trailing: PopupMenuButton<int>(
+                      onSelected: _setWeeklyGoal,
+                      color: AppColors.card,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(value: 0, child: Text('Не задана')),
+                        ...List.generate(7, (i) => PopupMenuItem(
+                          value: i + 1,
+                          child: Text('${i + 1}'),
+                        )),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _weeklyWorkoutGoal == 0 ? 'Не задана' : '$_weeklyWorkoutGoal',
+                              style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.arrow_drop_down,
+                                color: AppColors.accent, size: 18),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('фунты'),
-                        selected: !useKg,
-                        onSelected: (_) =>
-                            ref.read(useKgProvider.notifier).setUseKg(false),
-                      ),
-                    ],
-                  );
-                }),
+                    ),
+                  ),
+                  _SettingsRow(
+                    label: 'Деload-неделя (−40% веса)',
+                    last: true,
+                    trailing: Switch(
+                      value: _deloadActive,
+                      onChanged: _toggleDeload,
+                    ),
+                  ),
+                ],
               ),
-              _SettingsRow(
-                label: 'Единицы длины',
-                trailing: Builder(builder: (context) {
-                  final useCm = ref.watch(useCmProvider);
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('см'),
-                        selected: useCm,
-                        onSelected: (_) =>
-                            ref.read(useCmProvider.notifier).setUseCm(true),
-                      ),
-                      const SizedBox(width: 8),
-                      ChoiceChip(
-                        label: const Text('дюймы'),
-                        selected: !useCm,
-                        onSelected: (_) =>
-                            ref.read(useCmProvider.notifier).setUseCm(false),
-                      ),
-                    ],
-                  );
-                }),
-              ),
-              _SettingsRow(
-                label: 'Уведомления',
-                trailing: Builder(builder: (context) {
-                  final enabled = ref.watch(notificationsEnabledProvider);
-                  return Switch(
-                    value: enabled,
-                    onChanged: _toggleNotifications,
-                  );
-                }),
-              ),
+
+              // ── Уведомления ──────────────────────────────────────────────
               Builder(builder: (context) {
-                final enabled = ref.watch(notificationsEnabledProvider);
-                if (!enabled) return const SizedBox();
+                final notifEnabled = ref.watch(notificationsEnabledProvider);
                 final h = _notifHour.toString().padLeft(2, '0');
                 final m = _notifMinute.toString().padLeft(2, '0');
                 final modeLabel = _notifMode == 'fixed'
                     ? 'В заданное время'
-                    : 'До начала тренировки';
-                return Column(
-                  children: [
+                    : 'До начала';
+                return _SettingsGroup(
+                  title: 'Уведомления',
+                  rows: [
                     _SettingsRow(
-                      label: 'Режим напоминания',
-                      trailing: PopupMenuButton<String>(
-                        onSelected: _changeNotifMode,
-                        color: AppColors.card,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: 'fixed',
-                            child: Text('В заданное время'),
-                          ),
-                          PopupMenuItem(
-                            value: 'before',
-                            child: Text('До начала тренировки'),
-                          ),
-                        ],
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.accent.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                modeLabel,
-                                style: const TextStyle(
-                                  color: AppColors.accent,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.arrow_drop_down,
-                                  color: AppColors.accent, size: 18),
-                            ],
-                          ),
-                        ),
+                      label: 'Уведомления о тренировках',
+                      trailing: Switch(
+                        value: notifEnabled,
+                        onChanged: _toggleNotifications,
                       ),
                     ),
-                    if (_notifMode == 'fixed')
+                    if (notifEnabled) ...[
                       _SettingsRow(
-                        label: 'Время напоминания',
-                        trailing: GestureDetector(
-                          onTap: _pickNotifTime,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppColors.accent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '$h:$m',
-                              style: const TextStyle(
-                                color: AppColors.accent,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      _SettingsRow(
-                        label: 'За сколько минут',
-                        trailing: PopupMenuButton<int>(
-                          onSelected: _changeMinutesBefore,
+                        label: 'Режим напоминания',
+                        trailing: PopupMenuButton<String>(
+                          onSelected: _changeNotifMode,
                           color: AppColors.card,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
-                          itemBuilder: (_) => [15, 30, 45, 60, 90, 120]
-                              .map((v) => PopupMenuItem(
-                                    value: v,
-                                    child: Text('$v мин'),
-                                  ))
-                              .toList(),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'fixed',
+                              child: Text('В заданное время'),
+                            ),
+                            PopupMenuItem(
+                              value: 'before',
+                              child: Text('До начала тренировки'),
+                            ),
+                          ],
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 6),
@@ -676,11 +660,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '$_notifMinutesBefore мин',
+                                  modeLabel,
                                   style: const TextStyle(
                                     color: AppColors.accent,
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 15,
+                                    fontSize: 13,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
@@ -691,229 +675,222 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ),
                       ),
+                      if (_notifMode == 'fixed')
+                        _SettingsRow(
+                          label: 'Время напоминания',
+                          trailing: GestureDetector(
+                            onTap: _pickNotifTime,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '$h:$m',
+                                style: const TextStyle(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        _SettingsRow(
+                          label: 'За сколько минут',
+                          trailing: PopupMenuButton<int>(
+                            onSelected: _changeMinutesBefore,
+                            color: AppColors.card,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            itemBuilder: (_) => [15, 30, 45, 60, 90, 120]
+                                .map((v) => PopupMenuItem(
+                                      value: v,
+                                      child: Text('$v мин'),
+                                    ))
+                                .toList(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '$_notifMinutesBefore мин',
+                                    style: const TextStyle(
+                                      color: AppColors.accent,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.arrow_drop_down,
+                                      color: AppColors.accent, size: 18),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                    _SettingsRow(
+                      label: 'Уведомление в дни отдыха',
+                      trailing: GestureDetector(
+                        onTap: _pickRestDayNotifTime,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD4A454).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.hotel_rounded,
+                                  color: Color(0xFFD4A454), size: 14),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${_restDayNotifHour.toString().padLeft(2, '0')}:${_restDayNotifMinute.toString().padLeft(2, '0')}',
+                                style: const TextStyle(
+                                  color: Color(0xFFD4A454),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      label: 'Напоминание о взвешивании',
+                      last: !_weighInEnabled,
+                      trailing: Switch(
+                        value: _weighInEnabled,
+                        onChanged: _toggleWeighIn,
+                      ),
+                    ),
+                    if (_weighInEnabled) ...[
+                      _SettingsRow(
+                        label: 'День взвешивания',
+                        trailing: PopupMenuButton<int>(
+                          onSelected: _changeWeighInDay,
+                          color: AppColors.card,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 0, child: Text('Понедельник')),
+                            PopupMenuItem(value: 1, child: Text('Вторник')),
+                            PopupMenuItem(value: 2, child: Text('Среда')),
+                            PopupMenuItem(value: 3, child: Text('Четверг')),
+                            PopupMenuItem(value: 4, child: Text('Пятница')),
+                            PopupMenuItem(value: 5, child: Text('Суббота')),
+                            PopupMenuItem(value: 6, child: Text('Воскресенье')),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _weekdayName(_weighInWeekday),
+                                  style: const TextStyle(
+                                    color: AppColors.accent,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.arrow_drop_down,
+                                    color: AppColors.accent, size: 18),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      _SettingsRow(
+                        label: 'Время взвешивания',
+                        last: true,
+                        trailing: GestureDetector(
+                          onTap: _pickWeighInTime,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '${_weighInHour.toString().padLeft(2, '0')}:${_weighInMinute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 );
               }),
-              // ── Цель по тренировкам в неделю ───────────────────────────
-              _SettingsRow(
-                label: 'Цель: тренировок в неделю',
-                trailing: PopupMenuButton<int>(
-                  onSelected: _setWeeklyGoal,
-                  color: AppColors.card,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 0, child: Text('Не задана')),
-                    ...List.generate(7, (i) => PopupMenuItem(
-                      value: i + 1,
-                      child: Text('${i + 1}'),
-                    )),
-                  ],
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _weeklyWorkoutGoal == 0 ? 'Не задана' : '$_weeklyWorkoutGoal',
-                          style: const TextStyle(
-                            color: AppColors.accent,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_drop_down,
-                            color: AppColors.accent, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
 
-              // ── Деload-неделя ───────────────────────────────────────────
-              _SettingsRow(
-                label: 'Деload-неделя (−40% веса)',
-                trailing: Switch(
-                  value: _deloadActive,
-                  onChanged: _toggleDeload,
-                ),
-              ),
-
-              // ── Уведомление в дни отдыха ────────────────────────────────
-              _SettingsRow(
-                label: 'Уведомление в дни отдыха',
-                trailing: GestureDetector(
-                  onTap: _pickRestDayNotifTime,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD4A454).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.hotel_rounded,
-                            color: Color(0xFFD4A454), size: 14),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${_restDayNotifHour.toString().padLeft(2, '0')}:${_restDayNotifMinute.toString().padLeft(2, '0')}',
-                          style: const TextStyle(
-                            color: Color(0xFFD4A454),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // ── Напоминание о взвешивании ───────────────────────────────
-              _SettingsRow(
-                label: 'Напоминание о взвешивании',
-                trailing: Switch(
-                  value: _weighInEnabled,
-                  onChanged: _toggleWeighIn,
-                ),
-              ),
-              if (_weighInEnabled) ...[
-                _SettingsRow(
-                  label: 'День взвешивания',
-                  trailing: PopupMenuButton<int>(
-                    onSelected: _changeWeighInDay,
-                    color: AppColors.card,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 0, child: Text('Понедельник')),
-                      PopupMenuItem(value: 1, child: Text('Вторник')),
-                      PopupMenuItem(value: 2, child: Text('Среда')),
-                      PopupMenuItem(value: 3, child: Text('Четверг')),
-                      PopupMenuItem(value: 4, child: Text('Пятница')),
-                      PopupMenuItem(value: 5, child: Text('Суббота')),
-                      PopupMenuItem(value: 6, child: Text('Воскресенье')),
-                    ],
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _weekdayName(_weighInWeekday),
-                            style: const TextStyle(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.arrow_drop_down,
-                              color: AppColors.accent, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                _SettingsRow(
-                  label: 'Время взвешивания',
-                  trailing: GestureDetector(
-                    onTap: _pickWeighInTime,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${_weighInHour.toString().padLeft(2, '0')}:${_weighInMinute.toString().padLeft(2, '0')}',
-                        style: const TextStyle(
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-
+              // ── Безопасность ─────────────────────────────────────────────
               if (_biometricAvailable)
-                _SettingsRow(
-                  label: 'Вход по биометрии',
-                  trailing: Switch(
-                    value: _biometricEnabled,
-                    onChanged: _toggleBiometric,
-                  ),
-                ),
-              const SizedBox(height: 16),
-              Material(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(12),
-                child: const ListTile(
-                  leading: Icon(Icons.person_add, color: AppColors.accent),
-                  title: Text(
-                    'Пригласить тренера',
-                    style: TextStyle(color: AppColors.textPrimary),
-                  ),
-                  subtitle: Text(
-                    'Скоро тренеры смогут подключаться к твоим тренировкам!',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Material(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => context.push('/calculators'),
-                  child: const ListTile(
-                    leading: Icon(Icons.calculate_outlined, color: AppColors.accent),
-                    title: Text(
-                      'Калькуляторы',
-                      style: TextStyle(color: AppColors.textPrimary),
+                _SettingsGroup(
+                  title: 'Безопасность',
+                  rows: [
+                    _SettingsRow(
+                      label: 'Вход по биометрии',
+                      last: true,
+                      trailing: Switch(
+                        value: _biometricEnabled,
+                        onChanged: _toggleBiometric,
+                      ),
                     ),
-                    subtitle: Text(
-                      '1ПМ и блины',
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ],
+                ),
+
+              // ── Инструменты ──────────────────────────────────────────────
+              _SettingsGroup(
+                title: 'Инструменты',
+                rows: [
+                  const _SettingsRow(
+                    label: 'Пригласить тренера',
+                    trailing: Icon(Icons.chevron_right,
+                        color: AppColors.textSecondary, size: 18),
+                  ),
+                  _SettingsRow(
+                    label: 'Калькуляторы',
+                    trailing: GestureDetector(
+                      onTap: () => context.push('/calculators'),
+                      child: const Icon(Icons.chevron_right,
+                          color: AppColors.textSecondary, size: 18),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Material(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _showExportSheet(context),
-                  child: const ListTile(
-                    leading: Icon(Icons.download, color: AppColors.accent),
-                    title: Text(
-                      'Экспорт данных',
-                      style: TextStyle(color: AppColors.textPrimary),
-                    ),
-                    subtitle: Text(
-                      'Сохранить все тренировки и метрики',
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  _SettingsRow(
+                    label: 'Экспорт данных',
+                    last: true,
+                    trailing: GestureDetector(
+                      onTap: () => _showExportSheet(context),
+                      child: const Icon(Icons.chevron_right,
+                          color: AppColors.textSecondary, size: 18),
                     ),
                   ),
-                ),
+                ],
               ),
               const SizedBox(height: 32),
               SizedBox(
@@ -1116,28 +1093,72 @@ class _StatCard extends StatelessWidget {
 class _SettingsRow extends StatelessWidget {
   final String label;
   final Widget trailing;
+  final bool last;
 
-  const _SettingsRow({required this.label, required this.trailing});
+  const _SettingsRow({
+    required this.label,
+    required this.trailing,
+    this.last = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label,
-                  style: const TextStyle(color: AppColors.textPrimary)),
-              trailing,
-            ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SizedBox(
+            height: 56,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(label,
+                      style: const TextStyle(color: AppColors.textPrimary)),
+                ),
+                const SizedBox(width: 8),
+                trailing,
+              ],
+            ),
           ),
         ),
-      ),
+        if (!last)
+          const Divider(height: 1, indent: 16, endIndent: 16),
+      ],
+    );
+  }
+}
+
+class _SettingsGroup extends StatelessWidget {
+  final String title;
+  final List<Widget> rows;
+
+  const _SettingsGroup({required this.title, required this.rows});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+        Material(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          child: Column(children: rows),
+        ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }
