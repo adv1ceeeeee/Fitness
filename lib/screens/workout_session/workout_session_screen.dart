@@ -24,14 +24,16 @@ enum _SessionPhase { warmup, exercise, cooldown }
 
 class _SetData {
   int reps;
+  int repsTarget;
   int? rpe;
   bool completed;
   bool isWarmup;
 
-  _SetData({required this.reps, this.rpe, this.completed = false, this.isWarmup = false});
+  _SetData({required this.reps, required this.repsTarget, this.rpe, this.completed = false, this.isWarmup = false});
 
-  _SetData copyWith({int? reps, int? rpe, bool? completed, bool? isWarmup}) => _SetData(
+  _SetData copyWith({int? reps, int? repsTarget, int? rpe, bool? completed, bool? isWarmup}) => _SetData(
         reps: reps ?? this.reps,
+        repsTarget: repsTarget ?? this.repsTarget,
         rpe: rpe ?? this.rpe,
         completed: completed ?? this.completed,
         isWarmup: isWarmup ?? this.isWarmup,
@@ -213,7 +215,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
     _weightControllers = List.generate(
         we.sets, (_) => TextEditingController(text: lastWeightText));
-    _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps));
+    _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps, repsTarget: defaultReps));
     _setComparisons.clear();
   }
 
@@ -354,6 +356,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       index + 1,
       weight: weightKg > 0 ? weightKg : null,
       reps: setData.reps,
+      repsTarget: setData.repsTarget,
       rpe: setData.rpe,
       restSeconds: restSecondsToSave,
       kcalEstimated: kcalEstimated,
@@ -458,7 +461,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   void _addSet() {
     final defaultReps = _parseDefaultReps(_currentExercise!.repsRange);
     setState(() {
-      _sets.add(_SetData(reps: defaultReps));
+      _sets.add(_SetData(reps: defaultReps, repsTarget: defaultReps));
       _weightControllers.add(TextEditingController());
     });
   }

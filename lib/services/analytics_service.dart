@@ -27,6 +27,44 @@ class AnalyticsService {
     return (res as List).length;
   }
 
+  /// Current consecutive workout streak ending today or yesterday.
+  static Future<int> getCurrentStreak() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+
+    final res = await _client
+        .from('training_sessions')
+        .select('date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false);
+
+    final dates = (res as List)
+        .map((e) => DateTime.parse(e['date'] as String))
+        .toList();
+
+    if (dates.isEmpty) return 0;
+
+    final today = DateTime.now();
+    final todayNorm = DateTime(today.year, today.month, today.day);
+
+    // Streak must touch today or yesterday to be "current"
+    final latestNorm = DateTime(dates[0].year, dates[0].month, dates[0].day);
+    if (todayNorm.difference(latestNorm).inDays > 1) return 0;
+
+    int streak = 1;
+    for (var i = 1; i < dates.length; i++) {
+      final prev = DateTime(dates[i].year, dates[i].month, dates[i].day);
+      final curr = DateTime(dates[i - 1].year, dates[i - 1].month, dates[i - 1].day);
+      if (curr.difference(prev).inDays == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
   static Future<int> getBestStreak() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;

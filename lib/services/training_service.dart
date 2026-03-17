@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
+import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
 import 'package:sportwai/utils/retry.dart';
@@ -55,11 +56,17 @@ class TrainingService {
     final userId = AuthService.currentUser!.id;
     final today = DateTime.now().toIso8601String().split('T')[0];
 
+    int? streakAtStart;
+    try {
+      streakAtStart = await AnalyticsService.getCurrentStreak();
+    } catch (_) {}
+
     final res = await _client.from('training_sessions').insert({
       'user_id': userId,
       'workout_id': workoutId,
       'date': today,
       'completed': false,
+      if (streakAtStart != null) 'streak_at_start': streakAtStart,
     }).select().single();
 
     return TrainingSession.fromJson(res);
@@ -144,6 +151,7 @@ class TrainingService {
     int setNumber, {
     double? weight,
     int? reps,
+    int? repsTarget,
     int? rpe,
     int? restSeconds,
     double? kcalEstimated,
@@ -160,6 +168,7 @@ class TrainingService {
             'completed': true,
             'is_warmup': isWarmup,
             'performed_at': DateTime.now().toUtc().toIso8601String(),
+            if (repsTarget != null) 'reps_target': repsTarget,
             if (restSeconds != null) 'rest_seconds': restSeconds,
             if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
           }));

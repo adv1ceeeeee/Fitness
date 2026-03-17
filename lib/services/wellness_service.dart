@@ -8,6 +8,8 @@ class WellnessService {
     double? sleepHours,
     int? stress,
     int? energy,
+    int? sleepQuality,
+    int? soreness,
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
@@ -20,6 +22,8 @@ class WellnessService {
         if (sleepHours != null) 'sleep_hours': sleepHours,
         if (stress != null) 'stress': stress,
         if (energy != null) 'energy': energy,
+        if (sleepQuality != null) 'sleep_quality': sleepQuality,
+        if (soreness != null) 'soreness': soreness,
       },
       onConflict: 'user_id,date',
     );

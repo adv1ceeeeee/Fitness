@@ -9,6 +9,7 @@ class SetRecord {
   final bool completed;
   final bool isWarmup;
   final DateTime? performedAt;
+  final int? repsTarget;
 
   SetRecord({
     required this.id,
@@ -21,6 +22,7 @@ class SetRecord {
     this.completed = false,
     this.isWarmup = false,
     this.performedAt,
+    this.repsTarget,
   });
 
   factory SetRecord.fromJson(Map<String, dynamic> json) {
@@ -37,6 +39,7 @@ class SetRecord {
       performedAt: json['performed_at'] != null
           ? DateTime.tryParse(json['performed_at'] as String)
           : null,
+      repsTarget: json['reps_target'] as int?,
     );
   }
 

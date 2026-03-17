@@ -1212,6 +1212,8 @@ class _WellnessCardState extends State<_WellnessCard> {
   double _sleep = 7;
   int _stress = 3;
   int _energy = 3;
+  int _sleepQuality = 3;
+  int _soreness = 3;
   bool _saving = false;
 
   Future<void> _save() async {
@@ -1221,6 +1223,8 @@ class _WellnessCardState extends State<_WellnessCard> {
         sleepHours: _sleep,
         stress: _stress,
         energy: _energy,
+        sleepQuality: _sleepQuality,
+        soreness: _soreness,
       );
       EventLogger.checkInSaved(type: 'wellness');
       if (mounted) widget.onSaved();
@@ -1264,6 +1268,18 @@ class _WellnessCardState extends State<_WellnessCard> {
             label: 'Энергия',
             value: _energy,
             onChanged: (v) => setState(() => _energy = v),
+          ),
+          const SizedBox(height: 12),
+          _RatingRow(
+            label: 'Сон',
+            value: _sleepQuality,
+            onChanged: (v) => setState(() => _sleepQuality = v),
+          ),
+          const SizedBox(height: 12),
+          _RatingRow(
+            label: 'Боль в мышцах',
+            value: _soreness,
+            onChanged: (v) => setState(() => _soreness = v),
           ),
           const SizedBox(height: 16),
           SizedBox(
