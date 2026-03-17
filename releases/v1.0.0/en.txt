@@ -1,0 +1,31 @@
+SportWAI 1.0 — First Release
+
+We're launching SportWAI — a smart workout journal that grows with you.
+
+WHAT THE APP CAN DO
+
+Workouts
+• Build programs for any day of the week
+• Log sets with weight, reps and RPE during your session
+• Rest timer counts automatically
+• The app remembers your previous weights and tells you when it's time to progress
+• Personal records are captured automatically
+
+Progress
+• Workout streak and weekly statistics
+• Body weight chart and per-exercise progress graphs
+• Body metrics tracking: weight, body fat %, circumferences
+
+Planning
+• Calendar with recurring and one-time sessions
+• Notifications for workouts, rest days and weigh-ins
+
+Wellness
+• Daily check-in: sleep, stress, energy, muscle soreness
+• Calorie estimates based on exercise type
+
+Extra
+• Deload mode (60% weight with one tap)
+• Export workouts to PDF and CSV
+• Dark theme, kg/lbs and cm/inches toggle
+• PIN lock
