@@ -764,16 +764,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   void _showExerciseHistory(Exercise ex) {
-    showModalBottomSheet(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: AppColors.card,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => _ExerciseHistorySheet(exercise: ex),
-    );
+    context.push('/exercise/${ex.id}/history', extra: ex);
   }
 
   List<Widget> _buildExerciseTiles(List<Exercise> exercises) {

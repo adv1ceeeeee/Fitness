@@ -24,6 +24,8 @@ import 'package:sportwai/screens/history/history_screen.dart';
 import 'package:sportwai/screens/profile/body_metrics_screen.dart';
 import 'package:sportwai/screens/analytics/personal_records_screen.dart';
 import 'package:sportwai/screens/tools/calculators_screen.dart';
+import 'package:sportwai/screens/analytics/exercise_history_screen.dart';
+import 'package:sportwai/models/exercise.dart';
 
 // ── Transition helpers ────────────────────────────────────────────────────────
 
@@ -242,6 +244,13 @@ class AppRouter {
             path: '/calculators',
             pageBuilder: (context, state) =>
                 _slideUpPage(state, const CalculatorsScreen()),
+          ),
+          GoRoute(
+            path: '/exercise/:id/history',
+            pageBuilder: (context, state) {
+              final exercise = state.extra as Exercise;
+              return _slideUpPage(state, ExerciseHistoryScreen(exercise: exercise));
+            },
           ),
         ],
       ),

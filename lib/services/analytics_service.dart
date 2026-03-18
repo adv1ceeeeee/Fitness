@@ -186,6 +186,130 @@ class AnalyticsService {
     return result;
   }
 
+  /// Returns per-session history for one exercise: max weight, total volume,
+  /// total reps, and best set. Sorted ascending by date.
+  /// Each entry: { 'date': String, 'maxWeight': double, 'volume': double, 'reps': int }
+  static Future<List<Map<String, dynamic>>> getExerciseHistory(
+      String exerciseId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id')
+        .eq('exercise_id', exerciseId);
+
+    final weIds = (weRes as List).map((e) => e['id'] as String).toList();
+    if (weIds.isEmpty) return [];
+
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: true);
+
+    final sessionIds = (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return [];
+    final dateMap = {for (final s in sessRes as List) s['id'] as String: s['date'] as String};
+
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, weight, reps')
+        .inFilter('workout_exercise_id', weIds)
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false);
+
+    // Aggregate per session
+    final bySession = <String, Map<String, dynamic>>{};
+    for (final set in setsRes as List) {
+      final sid = set['training_session_id'] as String?;
+      if (sid == null) continue;
+      final w = (set['weight'] as num?)?.toDouble() ?? 0.0;
+      final r = (set['reps'] as num?)?.toInt() ?? 0;
+      final entry = bySession.putIfAbsent(sid, () => {'maxWeight': 0.0, 'volume': 0.0, 'reps': 0});
+      if (w > (entry['maxWeight'] as double)) entry['maxWeight'] = w;
+      entry['volume'] = (entry['volume'] as double) + w * r;
+      entry['reps'] = (entry['reps'] as int) + r;
+    }
+
+    final result = <Map<String, dynamic>>[];
+    for (final sid in sessionIds) {
+      if (!bySession.containsKey(sid)) continue;
+      final agg = bySession[sid]!;
+      result.add({
+        'date': dateMap[sid]!,
+        'maxWeight': agg['maxWeight'] as double,
+        'volume': agg['volume'] as double,
+        'reps': agg['reps'] as int,
+      });
+    }
+    return result;
+  }
+
+  /// Returns categories of exercises trained in the last [hours] hours.
+  /// Used to warn about muscle fatigue before starting a new session.
+  static Future<Set<String>> getRecentlyTrainedCategories({int hours = 48}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final cutoff = DateTime.now().subtract(Duration(hours: hours)).toUtc().toIso8601String();
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id')
+        .eq('completed', true)
+        .not('workout_exercise_id', 'is', null)
+        .gte('performed_at', cutoff);
+
+    final weIds = (setsRes as List)
+        .map((e) => e['workout_exercise_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return {};
+
+    // Filter by user's sessions
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .gte('created_at', cutoff);
+    final userSessIds = (sessRes as List).map((e) => e['id'] as String).toSet();
+
+    final setsWithSession = await _client
+        .from('sets')
+        .select('workout_exercise_id, training_session_id')
+        .inFilter('workout_exercise_id', weIds)
+        .eq('completed', true)
+        .gte('performed_at', cutoff);
+
+    final userWeIds = (setsWithSession as List)
+        .where((e) => userSessIds.contains(e['training_session_id'] as String))
+        .map((e) => e['workout_exercise_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (userWeIds.isEmpty) return {};
+
+    final exRes = await _client
+        .from('workout_exercises')
+        .select('exercise_id')
+        .inFilter('id', userWeIds);
+    final exIds = (exRes as List).map((e) => e['exercise_id'] as String).toSet().toList();
+
+    final exercisesRes = await _client
+        .from('exercises')
+        .select('category')
+        .inFilter('id', exIds);
+
+    return (exercisesRes as List)
+        .map((e) => e['category'] as String?)
+        .whereType<String>()
+        .toSet();
+  }
+
   static Future<int> getWorkoutsThisWeek() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;

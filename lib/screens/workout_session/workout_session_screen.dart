@@ -79,6 +79,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   int _lastRestSeconds = 0;
 
   bool _deloadActive = false;
+  Set<String> _fatiguedCategories = {}; // categories trained < 48h ago
+  bool _fatigueBannerDismissed = false;
 
   List<_SetData> _sets = [];
   List<TextEditingController> _weightControllers = [];
@@ -170,6 +172,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final autoProgress = await AnalyticsService.getConsecutiveFullRepsExercises(
       exerciseIds, topRepsMap);
 
+    // Fatigue check: categories of today's workout vs recently trained (<48h)
+    final recentCats = await AnalyticsService.getRecentlyTrainedCategories();
+    final workoutCats = ex
+        .map((e) => e.exercise?.category)
+        .whereType<String>()
+        .toSet();
+    final fatigued = recentCats.intersection(workoutCats)
+      ..remove('cardio'); // cardio doesn't count as fatigue
+
     final pbs = <String, double>{};
     for (var i = 0; i < ex.length; i++) {
       if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
@@ -184,6 +195,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _personalBests = pbs;
         _lastSets = lastSets;
         _autoProgressSuggestions = autoProgress;
+        _fatiguedCategories = fatigued;
         _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
         _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
         _warmupMinutes = warmupMins;
@@ -428,6 +440,17 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _showPrBanner(we.exercise?.name ?? '', weightKg);
       }
     }
+  }
+
+  void _showPlateCalc(double weightKg, {required bool useKg}) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _PlateCalcSheet(weightKg: weightKg, useKg: useKg),
+    );
   }
 
   void _showPrBanner(String exerciseName, double weightKg) {
@@ -789,6 +812,38 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                   child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Fatigue warning banner
+                    if (_fatiguedCategories.isNotEmpty && !_fatigueBannerDismissed) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Эти мышцы тренировались < 48 ч назад: '
+                                '${_fatiguedCategories.map((c) => Exercise.categoryDisplayName(c)).join(', ')}. '
+                                'Риск перетренированности.',
+                                style: const TextStyle(color: AppColors.error, fontSize: 12),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _fatigueBannerDismissed = true),
+                              child: const Icon(Icons.close, size: 16, color: AppColors.error),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     // Deload banner
                     if (_deloadActive) ...[
                       Container(
@@ -832,12 +887,20 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                       ),
                       const SizedBox(height: 8),
                     ],
-                    Text(
-                      we.exercise?.name ?? '?',
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                    GestureDetector(
+                      onLongPress: we.exercise != null
+                          ? () => context.push(
+                                '/exercise/${we.exerciseId}/history',
+                                extra: we.exercise,
+                              )
+                          : null,
+                      child: Text(
+                        we.exercise?.name ?? '?',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -987,6 +1050,44 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                       ),
                     ),
                     const SizedBox(height: 8),
+
+                    // Plate calculator chip
+                    Builder(builder: (_) {
+                      final activeCtrl = activeIndex >= 0 && activeIndex < _weightControllers.length
+                          ? _weightControllers[activeIndex]
+                          : null;
+                      final weightVal = double.tryParse(
+                          activeCtrl?.text.replaceAll(',', '.') ?? '');
+                      final useKg = ref.read(useKgProvider);
+                      if (weightVal == null || weightVal <= 0 || we.exercise?.category == 'cardio') {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: GestureDetector(
+                          onTap: () => _showPlateCalc(weightVal, useKg: useKg),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.fitness_center, size: 14, color: AppColors.accent),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Блины для ${useKg ? weightVal.toStringAsFixed(1) : (weightVal * 2.20462).toStringAsFixed(1)} ${useKg ? "кг" : "лб"}',
+                                  style: const TextStyle(color: AppColors.accent, fontSize: 12, fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
 
                     // Блоки подходов
                     ...List.generate(_sets.length, (i) {
@@ -1861,6 +1962,105 @@ class _RestScreen extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Plate calculator sheet ───────────────────────────────────────────────────
+
+class _PlateCalcSheet extends StatelessWidget {
+  final double weightKg;
+  final bool useKg;
+
+  const _PlateCalcSheet({required this.weightKg, required this.useKg});
+
+  static const _platesKg = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25];
+  static const _platesLb = [45.0, 35.0, 25.0, 10.0, 5.0, 2.5];
+  static const _barKg = 20.0;
+  static const _barLb = 45.0;
+
+  List<double> _calcPlates(double totalWeight, double bar, List<double> plates) {
+    final perSide = (totalWeight - bar) / 2;
+    if (perSide <= 0) return [];
+    double rem = perSide;
+    final result = <double>[];
+    for (final p in plates) {
+      while (rem >= p - 0.001) {
+        result.add(p);
+        rem -= p;
+      }
+    }
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bar = useKg ? _barKg : _barLb;
+    final plates = useKg ? _platesKg : _platesLb;
+    final unit = useKg ? 'кг' : 'лб';
+    final display = useKg ? weightKg : weightKg * 2.20462;
+    final perSide = _calcPlates(display, bar, plates);
+    final displayStr = display % 1 == 0 ? display.toInt().toString() : display.toStringAsFixed(1);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.fitness_center, color: AppColors.accent, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Блины для $displayStr $unit',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Гриф: $bar $unit · по одной стороне',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          if (perSide.isEmpty)
+            Text(
+              display <= bar
+                  ? 'Только гриф ($bar $unit)'
+                  : 'Не удалось подобрать блины',
+              style: const TextStyle(color: AppColors.textSecondary),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: perSide.map((p) {
+                final label = p % 1 == 0 ? p.toInt().toString() : p.toStringAsFixed(2);
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    '$label $unit',
+                    style: const TextStyle(
+                      color: AppColors.accent,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
       ),
     );
   }
