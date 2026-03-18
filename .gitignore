@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Downloaded exercise images (uploaded to Supabase Storage, not needed in repo)
+scripts/exercise_images/
+scripts/exercisedb_mapping.csv
+
+# Sentry native crash data
+.sentry-native/
