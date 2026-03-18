@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -428,6 +429,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             int sets, String repsRange, int rest, double? tw, int? durationMinutes)
         onSave,
     required String saveLabel,
+    String? gifUrl,
+    String? description,
   }) {
     int sets = initialSets;
     int restSeconds = initialRest;
@@ -495,6 +498,31 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       color: AppColors.textPrimary,
                     ),
                   ),
+                  if (gifUrl != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: CachedNetworkImage(
+                        imageUrl: gifUrl,
+                        height: 160,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const SizedBox(height: 160),
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
+                  if (description != null && description.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   if (isCardio) ...[
@@ -742,7 +770,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         backgroundColor: AppColors.card,
         title: const Text('Удалить упражнение?',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: Text(ex.name,
+        content: Text(ex.displayName,
             style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
@@ -779,7 +807,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
             color: ex.isCustom ? AppColors.accent.withValues(alpha: 0.75) : AppColors.accent,
           ),
-          title: Text(ex.name,
+          title: Text(ex.displayName,
               style: const TextStyle(color: AppColors.textPrimary)),
           subtitle: Text(
             '${Exercise.categoryDisplayName(ex.category)}${ex.isCustom ? '  •  Моё' : ''}',
@@ -805,7 +833,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               IconButton(
                 icon: const Icon(Icons.add, color: AppColors.accent),
                 onPressed: () => _showExerciseSettingsSheet(
-                  title: ex.name,
+                  title: ex.displayName,
+                  gifUrl: ex.gifUrl,
+                  description: ex.description,
                   isCardio: ex.category == 'cardio',
                   initialSets: 3,
                   initialRepsRange: '8-12',
@@ -1068,7 +1098,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         onToggleLink: () => _toggleSuperset(i),
                         onToggleDropSet: () => _toggleDropSet(i),
                         onEdit: () => _showExerciseSettingsSheet(
-                          title: we.exercise?.name ?? '?',
+                          title: we.exercise?.displayName ?? '?',
+                          gifUrl: we.exercise?.gifUrl,
+                          description: we.exercise?.description,
                           isCardio: we.exercise?.category == 'cardio',
                           initialSets: we.sets,
                           initialRepsRange: we.repsRange,
@@ -1266,7 +1298,7 @@ class _ProgramExerciseCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          we.exercise?.name ?? '?',
+                          we.exercise?.displayName ?? '?',
                           style: const TextStyle(
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.w500,
@@ -1616,7 +1648,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.exercise.name,
+              widget.exercise.displayName,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 18,

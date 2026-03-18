@@ -438,7 +438,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _personalBests[exerciseId] = weightKg;
         HapticFeedback.heavyImpact();
         EventLogger.personalRecord(exerciseId: exerciseId, weightKg: weightKg);
-        _showPrBanner(we.exercise?.name ?? '', weightKg);
+        _showPrBanner(we.exercise?.displayName ?? '', weightKg);
       }
     }
   }
@@ -564,7 +564,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                 itemBuilder: (_, i) {
                   final ex = exercises[i];
                   return ListTile(
-                    title: Text(ex.name,
+                    title: Text(ex.displayName,
                         style: const TextStyle(color: AppColors.textPrimary)),
                     subtitle: Text(
                       Exercise.categoryDisplayName(ex.category),
@@ -629,7 +629,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
               if (currentEx != null) {
                 EventLogger.workoutAbandonedAt(
                   sessionId: widget.sessionId,
-                  exerciseName: currentEx.exercise?.name ?? '?',
+                  exerciseName: currentEx.exercise?.displayName ?? '?',
                   setsCompleted: _sets.where((s) => s.completed).length,
                 );
               }
@@ -745,7 +745,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         onSkip: _skipRest,
         onExit: _confirmExit,
         nextExerciseName: _goToNextAfterRest && _currentExerciseIndex + 1 < _exercises.length
-            ? _exercises[_currentExerciseIndex + 1].exercise?.name
+            ? _exercises[_currentExerciseIndex + 1].exercise?.displayName
             : null,
       );
     }
@@ -770,7 +770,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                we.exercise?.name ?? '',
+                we.exercise?.displayName ?? '',
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -896,7 +896,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                               )
                           : null,
                       child: Text(
-                        we.exercise?.name ?? '?',
+                        we.exercise?.displayName ?? '?',
                         style: const TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.bold,

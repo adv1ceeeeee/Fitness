@@ -55,7 +55,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(ex.name, overflow: TextOverflow.ellipsis),
+        title: Text(ex.displayName, overflow: TextOverflow.ellipsis),
         bottom: TabBar(
           controller: _tabCtrl,
           tabs: const [

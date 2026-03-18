@@ -1401,7 +1401,7 @@ class _ExerciseItemState extends State<_ExerciseItem> {
                     children: [
                       Expanded(
                         child: Text(
-                          widget.exercise.name,
+                          widget.exercise.displayName,
                           style: TextStyle(
                             color: widget.isSelected
                                 ? AppColors.accent

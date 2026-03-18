@@ -209,7 +209,7 @@ class _FreeWorkoutScreenState extends State<FreeWorkoutScreen> {
                     children: _selected
                         .map(
                           (ex) => Chip(
-                            label: Text(ex.name,
+                            label: Text(ex.displayName,
                                 style: const TextStyle(fontSize: 12)),
                             backgroundColor:
                                 AppColors.accent.withValues(alpha: 0.15),
@@ -338,7 +338,7 @@ class _ExerciseTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        exercise.name,
+                        exercise.displayName,
                         style: TextStyle(
                           color: selected
                               ? AppColors.accent

@@ -432,6 +432,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             );
           }),
         ),
+        const SizedBox(height: 12),
         // Time wheel — appears with animation when first day is selected.
         _buildTimeWheel(index),
         // "Mark as rest day" button
@@ -497,31 +498,34 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  SizedBox(
-                    height: 140,
-                    child: CupertinoTheme(
-                      data: const CupertinoThemeData(
-                        brightness: Brightness.dark,
-                        textTheme: CupertinoTextThemeData(
-                          dateTimePickerTextStyle: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w500,
+                  NotificationListener<ScrollNotification>(
+                    onNotification: (_) => true,
+                    child: SizedBox(
+                      height: 140,
+                      child: CupertinoTheme(
+                        data: const CupertinoThemeData(
+                          brightness: Brightness.dark,
+                          textTheme: CupertinoTextThemeData(
+                            dateTimePickerTextStyle: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
-                      child: CupertinoDatePicker(
-                        // Keyed by sectionIndex + activeDay so the picker resets
-                        // to 00:00 each time the active day changes.
-                        key: ValueKey('tw_${sectionIndex}_$activeDay'),
-                        mode: CupertinoDatePickerMode.time,
-                        use24hFormat: true,
-                        initialDateTime: DateTime(2000, 1, 1, 0, 0),
-                        onDateTimeChanged: (dt) {
-                          // Update in-place — no setState needed (no visual rebuild required).
-                          section.dayTimes[activeDay] =
-                              TimeOfDay(hour: dt.hour, minute: dt.minute);
-                        },
+                        child: CupertinoDatePicker(
+                          // Keyed by sectionIndex + activeDay so the picker resets
+                          // to 00:00 each time the active day changes.
+                          key: ValueKey('tw_${sectionIndex}_$activeDay'),
+                          mode: CupertinoDatePickerMode.time,
+                          use24hFormat: true,
+                          initialDateTime: DateTime(2000, 1, 1, 0, 0),
+                          onDateTimeChanged: (dt) {
+                            // Update in-place — no setState needed (no visual rebuild required).
+                            section.dayTimes[activeDay] =
+                                TimeOfDay(hour: dt.hour, minute: dt.minute);
+                          },
+                        ),
                       ),
                     ),
                   ),
