@@ -8,6 +8,7 @@ VALUES ('exercise-gifs', 'exercise-gifs', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Allow anyone to read (public bucket)
-CREATE POLICY IF NOT EXISTS "exercise_gifs_public_read"
+DROP POLICY IF EXISTS "exercise_gifs_public_read" ON storage.objects;
+CREATE POLICY "exercise_gifs_public_read"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'exercise-gifs');
