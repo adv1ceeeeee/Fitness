@@ -18,6 +18,7 @@ import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 enum _SessionPhase { warmup, exercise, cooldown }
 
@@ -909,6 +910,27 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                       style: const TextStyle(
                           fontSize: 13, color: AppColors.textSecondary),
                     ),
+                    // Exercise GIF
+                    if (we.exercise?.gifUrl != null) ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: we.exercise!.gifUrl!,
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          placeholder: (_, __) => Container(
+                            height: 180,
+                            color: AppColors.surface,
+                            child: const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
                     if (_lastSets[we.exerciseId] != null) ...[
                       const SizedBox(height: 2),
                       Builder(builder: (_) {

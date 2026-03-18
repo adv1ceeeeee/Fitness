@@ -7,6 +7,7 @@ class Exercise {
   final bool isStandard;
   final String? userId;
   final bool isFavorite;
+  final String? gifUrl;
 
   Exercise({
     required this.id,
@@ -17,6 +18,7 @@ class Exercise {
     this.isStandard = true,
     this.userId,
     this.isFavorite = false,
+    this.gifUrl,
   });
 
   bool get isCustom => !isStandard && userId != null;
@@ -31,6 +33,7 @@ class Exercise {
       isStandard: json['is_standard'] as bool? ?? true,
       userId: json['user_id'] as String?,
       isFavorite: json['is_favorite'] as bool? ?? false,
+      gifUrl: json['gif_url'] as String?,
     );
   }
 

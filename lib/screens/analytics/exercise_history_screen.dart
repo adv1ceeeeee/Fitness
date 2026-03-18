@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
@@ -75,6 +76,15 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
                 )
               : Column(
                   children: [
+                    if (ex.gifUrl != null)
+                      CachedNetworkImage(
+                        imageUrl: ex.gifUrl!,
+                        height: 160,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const SizedBox(height: 160),
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                      ),
                     if (pb != null && pbDate != null)
                       _PbBanner(weight: pb, date: pbDate),
                     Expanded(
