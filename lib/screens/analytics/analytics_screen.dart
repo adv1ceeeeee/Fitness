@@ -2010,11 +2010,35 @@ class _WorkoutHeatmap extends StatelessWidget {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // If the grid fits without scrolling, center it; otherwise allow scroll.
+          final fits = totalWidth <= constraints.maxWidth;
+          Widget grid = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _buildGridChildren(context, columns, monthLabels, totalWidth),
+          );
+          if (fits) return Center(child: grid);
+          // Scale down to fit the available width and center it
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: grid,
+          );
+        },
+      ),
+    );
+  }
+
+  List<Widget> _buildGridChildren(
+    BuildContext context,
+    List<List<DateTime>> columns,
+    Map<int, String> monthLabels,
+    double totalWidth,
+  ) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return [
             // Month labels row
             SizedBox(
               width: totalWidth,
@@ -2127,10 +2151,7 @@ class _WorkoutHeatmap extends StatelessWidget {
                 ),
               ],
             ),
-          ],
-        ),
-      ),
-    );
+        ];
   }
 }
 

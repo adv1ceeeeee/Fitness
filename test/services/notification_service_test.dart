@@ -2,6 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sportwai/services/notification_service.dart';
 
 void main() {
+  // ── cancelAll ──────────────────────────────────────────────────────────────
+
+  group('NotificationService.cancelAll', () {
+    test('does not throw when plugin is not initialized', () async {
+      // Regression: before the guard was added, calling cancelAll() without
+      // first calling initialize() would throw LateInitializationError on
+      // platforms that don't support local notifications (e.g. Windows).
+      await expectLater(NotificationService.cancelAll(), completes);
+    });
+  });
+
+  // ── timezoneNameForOffset ──────────────────────────────────────────────────
+
   group('timezoneNameForOffset', () {
     test('returns Europe/Kaliningrad for UTC+2', () {
       expect(timezoneNameForOffset(2), 'Europe/Kaliningrad');

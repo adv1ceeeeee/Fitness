@@ -470,7 +470,12 @@ class NotificationService {
   }
 
   static Future<void> cancelAll() async {
-    await _plugin.cancelAll();
+    if (!_initialized) return;
+    try {
+      await _plugin.cancelAll();
+    } on UnimplementedError catch (e) {
+      debugPrint('[NotifService] cancelAll not supported on this platform: $e');
+    }
   }
 
   /// Wraps [_plugin.zonedSchedule] and silently ignores [UnimplementedError]
