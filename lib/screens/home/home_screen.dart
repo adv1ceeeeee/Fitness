@@ -310,6 +310,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       });
       if (plannedTime != null) _startCountdown(plannedTime);
       _maybeShowWeeklySummary(weeklyGoal);
+      _maybeShowDeloadSuggestion();
     } catch (e) {
       if (mounted) {
         setState(() => _loadingWorkout = false);
@@ -344,6 +345,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
         builder: (ctx) => _WeeklySummarySheet(weeklyGoal: weeklyGoal),
+      );
+    });
+  }
+
+  Future<void> _maybeShowDeloadSuggestion() async {
+    if (AppStorage.deloadActive) return; // уже включён
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    if (AppStorage.lastDeloadSuggestionDate == today) return; // уже показывали сегодня
+    final suggest = await AnalyticsService.shouldSuggestDeload();
+    if (!suggest || !mounted) return;
+    await AppStorage.setLastDeloadSuggestionDate(today);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text(
+            'Пора на deload?',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
+          content: const Text(
+            '4 недели подряд твой объём выше среднего. '
+            'Неделя с пониженным весом поможет восстановиться и избежать плато.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Не сейчас',
+                  style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await AppStorage.setDeloadActive(true);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Deload-режим включён (-40% веса)')),
+                  );
+                }
+              },
+              child: const Text('Включить deload',
+                  style: TextStyle(color: AppColors.accent)),
+            ),
+          ],
+        ),
       );
     });
   }

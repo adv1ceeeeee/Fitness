@@ -90,6 +90,12 @@ class AppStorage {
   static Future<void> setDeloadActive(bool v) =>
       _p.setBool('deload_active', v);
 
+  /// Дата (yyyy-MM-dd), когда последний раз показывалось предложение deload.
+  static String? get lastDeloadSuggestionDate =>
+      _p.getString('last_deload_suggestion_date');
+  static Future<void> setLastDeloadSuggestionDate(String v) =>
+      _p.setString('last_deload_suggestion_date', v);
+
   // ── Еженедельный итог ────────────────────────────────────────────────────────
   static bool get weeklySummaryEnabled =>
       _p.getBool('weekly_summary_enabled') ?? true;

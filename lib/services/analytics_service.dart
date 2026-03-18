@@ -873,6 +873,72 @@ class AnalyticsService {
 
   /// Returns weekly training volume (kg×reps) for the past [weeks] weeks.
   /// Result: list of {label: 'DD.MM', volume: double}, oldest first.
+  /// Returns true if the user has trained 4+ consecutive weeks above their
+  /// personal average volume — signal to suggest a deload week.
+  /// Requires at least 6 weeks of data (4 recent + 2 baseline).
+  static Future<bool> shouldSuggestDeload() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return false;
+
+    final now = DateTime.now();
+    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+    // Fetch 8 weeks of sessions
+    final earliest = thisMonday.subtract(const Duration(days: 7 * 8));
+    final earliestStr = earliest.toIso8601String().split('T')[0];
+
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .gte('date', earliestStr);
+
+    if ((sessRes as List).length < 3) return false;
+
+    final sessionDates = {for (final s in sessRes) s['id'] as String: s['date'] as String};
+    final sessionIds = sessionDates.keys.toList();
+
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, weight, reps')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false);
+
+    // Bucket volume by ISO week (Monday)
+    final weekVolume = <String, double>{};
+    for (final set in setsRes as List) {
+      final sid = set['training_session_id'] as String?;
+      if (sid == null) continue;
+      final dateStr = sessionDates[sid];
+      if (dateStr == null) continue;
+      final d = DateTime.parse(dateStr);
+      final monday = d.subtract(Duration(days: d.weekday - 1));
+      final key = monday.toIso8601String().split('T')[0];
+      final w = (set['weight'] as num?)?.toDouble() ?? 0;
+      final r = (set['reps'] as num?)?.toInt() ?? 0;
+      weekVolume[key] = (weekVolume[key] ?? 0) + w * r;
+    }
+
+    if (weekVolume.length < 5) return false;
+
+    final sorted = weekVolume.keys.toList()..sort();
+    // Exclude current (possibly incomplete) week
+    final current = thisMonday.toIso8601String().split('T')[0];
+    final complete = sorted.where((k) => k != current).toList();
+    if (complete.length < 5) return false;
+
+    // Last 4 complete weeks vs older weeks as baseline
+    final recent4 = complete.sublist(complete.length - 4);
+    final baseline = complete.sublist(0, complete.length - 4);
+
+    final recentAvg = recent4.fold(0.0, (s, k) => s + (weekVolume[k] ?? 0)) / 4;
+    final baselineAvg = baseline.fold(0.0, (s, k) => s + (weekVolume[k] ?? 0)) / baseline.length;
+
+    // Suggest deload if recent avg >= 110% of baseline and all 4 weeks > 0
+    return recentAvg >= baselineAvg * 1.1 &&
+        recent4.every((k) => (weekVolume[k] ?? 0) > 0);
+  }
+
   static Future<List<Map<String, dynamic>>> getWeeklyVolumeHistory(
       {int weeks = 8}) async {
     final userId = AuthService.currentUser?.id;

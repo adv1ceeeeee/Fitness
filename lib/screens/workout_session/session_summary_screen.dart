@@ -2,6 +2,7 @@ import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/services/achievement_service.dart';
@@ -940,6 +941,18 @@ class _AchievementUnlockSheet extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               child: const Text('Отлично!'),
             ),
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: () {
+              Share.share(
+                '${achievement.emoji} Разблокировал достижение «${achievement.title}» в Sportify!\n${achievement.description}',
+                subject: 'Достижение в Sportify',
+              );
+            },
+            icon: const Icon(Icons.share_rounded, size: 16),
+            label: const Text('Поделиться'),
+            style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
           ),
         ],
       ),
