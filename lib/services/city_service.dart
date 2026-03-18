@@ -1,38 +1,20 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:sportwai/config/app_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CityService {
-  static const _endpoint =
-      'https://suggestions.dadata.ru/suggestions/api/4_1/rs/suggest/city';
-
-  /// Возвращает список предложений городов по запросу.
-  /// Требует действительный [AppConfig.dadataApiKey].
+  /// Возвращает список предложений городов по запросу через Edge Function.
+  /// Ключ DaData хранится на сервере (Supabase secret), не в бинарнике.
   static Future<List<String>> suggest(String query) async {
     if (query.trim().isEmpty) return [];
 
-    if (AppConfig.dadataApiKey == 'YOUR_DADATA_API_KEY') {
-      // Ключ не настроен — возвращаем пустой список
-      return [];
-    }
-
     try {
-      final response = await http
-          .post(
-            Uri.parse(_endpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': 'Token ${AppConfig.dadataApiKey}',
-            },
-            body: jsonEncode({'query': query, 'count': 7}),
-          )
-          .timeout(const Duration(seconds: 5));
+      final response = await Supabase.instance.client.functions.invoke(
+        'suggest-city',
+        body: {'query': query},
+      );
 
-      if (response.statusCode != 200) return [];
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final suggestions = data['suggestions'] as List<dynamic>;
+      final data = response.data as Map<String, dynamic>?;
+      if (data == null) return [];
+      final suggestions = data['suggestions'] as List<dynamic>? ?? [];
       return suggestions
           .map((s) => (s as Map<String, dynamic>)['value'] as String)
           .toList();
