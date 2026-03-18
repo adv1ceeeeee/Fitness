@@ -1,6 +1,9 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/streak_freeze_service.dart';
 
 /// Compact data about one notable improvement vs the previous session.
 typedef WorkoutInsight = ({
@@ -17,17 +20,34 @@ class AnalyticsService {
   static Future<int> getTotalWorkouts() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
+    return AppCache.get<int>(
+      key: 'total_workouts:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select()
+            .eq('user_id', userId)
+            .eq('completed', true);
+        return (res as List).length;
+      },
+      encode: (v) => '$v',
+      decode: (s) => s == null ? 0 : (int.tryParse(s) ?? 0),
+    );
+  }
 
-    final res = await _client
-        .from('training_sessions')
-        .select()
-        .eq('user_id', userId)
-        .eq('completed', true);
-
-    return (res as List).length;
+  /// Invalidates stat caches after a workout is completed.
+  static Future<void> invalidateStatsCache() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+    await AppCache.invalidatePrefix('total_workouts:$userId');
+    await AppCache.invalidatePrefix('best_streak:$userId');
+    await AppCache.invalidatePrefix('workouts_week:$userId');
+    await AppCache.invalidatePrefix('volume_week:$userId');
   }
 
   /// Current consecutive workout streak ending today or yesterday.
+  /// Automatically applies a streak freeze for a 1-day gap if one is available.
   static Future<int> getCurrentStreak() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
@@ -48,16 +68,33 @@ class AnalyticsService {
     final today = DateTime.now();
     final todayNorm = DateTime(today.year, today.month, today.day);
 
-    // Streak must touch today or yesterday to be "current"
+    // Streak must touch today or yesterday (or today covered by freeze) to be current
     final latestNorm = DateTime(dates[0].year, dates[0].month, dates[0].day);
-    if (todayNorm.difference(latestNorm).inDays > 1) return 0;
+    final lagDays = todayNorm.difference(latestNorm).inDays;
+    if (lagDays > 2) return 0;
+    if (lagDays == 2) {
+      // Today was skipped — try covering with a freeze
+      final skipped = todayNorm.subtract(const Duration(days: 1));
+      if (!StreakFreezeService.applyIfAvailable(skipped)) return 0;
+    }
 
     int streak = 1;
+    bool freezeUsedInChain = false;
     for (var i = 1; i < dates.length; i++) {
       final prev = DateTime(dates[i].year, dates[i].month, dates[i].day);
       final curr = DateTime(dates[i - 1].year, dates[i - 1].month, dates[i - 1].day);
-      if (curr.difference(prev).inDays == 1) {
+      final diff = curr.difference(prev).inDays;
+      if (diff == 1) {
         streak++;
+      } else if (diff == 2 && !freezeUsedInChain) {
+        // One day gap — try covering with freeze (only once per chain)
+        final skipped = prev.add(const Duration(days: 1));
+        if (StreakFreezeService.applyIfAvailable(skipped)) {
+          freezeUsedInChain = true;
+          streak++;
+        } else {
+          break;
+        }
       } else {
         break;
       }
@@ -68,32 +105,36 @@ class AnalyticsService {
   static Future<int> getBestStreak() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
-
-    final res = await _client
-        .from('training_sessions')
-        .select('date')
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .order('date');
-
-    final dates = (res as List)
-        .map((e) => DateTime.parse(e['date'] as String))
-        .toList();
-
-    if (dates.isEmpty) return 0;
-
-    int streak = 1;
-    int best = 1;
-    for (var i = 1; i < dates.length; i++) {
-      final diff = dates[i].difference(dates[i - 1]).inDays;
-      if (diff == 1) {
-        streak++;
-        if (streak > best) best = streak;
-      } else {
-        streak = 1;
-      }
-    }
-    return best;
+    return AppCache.get<int>(
+      key: 'best_streak:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select('date')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .order('date');
+        final dates = (res as List)
+            .map((e) => DateTime.parse(e['date'] as String))
+            .toList();
+        if (dates.isEmpty) return 0;
+        int streak = 1;
+        int best = 1;
+        for (var i = 1; i < dates.length; i++) {
+          final diff = dates[i].difference(dates[i - 1]).inDays;
+          if (diff == 1) {
+            streak++;
+            if (streak > best) best = streak;
+          } else {
+            streak = 1;
+          }
+        }
+        return best;
+      },
+      encode: (v) => '$v',
+      decode: (s) => s == null ? 0 : (int.tryParse(s) ?? 0),
+    );
   }
 
   static Future<Map<String, double>> getExerciseMaxWeight(String exerciseId) async {
@@ -148,20 +189,25 @@ class AnalyticsService {
   static Future<int> getWorkoutsThisWeek() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
-
-    final startStr = DateTime.now()
-        .subtract(const Duration(days: 7))
-        .toIso8601String()
-        .split('T')[0];
-
-    final res = await _client
-        .from('training_sessions')
-        .select()
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .gte('date', startStr);
-
-    return (res as List).length;
+    return AppCache.get<int>(
+      key: 'workouts_week:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () async {
+        final startStr = DateTime.now()
+            .subtract(const Duration(days: 7))
+            .toIso8601String()
+            .split('T')[0];
+        final res = await _client
+            .from('training_sessions')
+            .select()
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .gte('date', startStr);
+        return (res as List).length;
+      },
+      encode: (v) => '$v',
+      decode: (s) => s == null ? 0 : (int.tryParse(s) ?? 0),
+    );
   }
 
   static Future<int> getWorkoutsThisMonth() async {
@@ -220,10 +266,12 @@ class AnalyticsService {
         .select('workout_exercise_id')
         .inFilter('training_session_id', sessIds)
         .eq('completed', true)
-        .not('weight', 'is', null);
+        .not('weight', 'is', null)
+        .not('workout_exercise_id', 'is', null);
 
     final weIds = (setsRes as List)
-        .map((e) => e['workout_exercise_id'] as String)
+        .map((e) => e['workout_exercise_id'] as String?)
+        .whereType<String>()
         .toSet()
         .toList();
     if (weIds.isEmpty) return [];
@@ -355,12 +403,14 @@ class AnalyticsService {
         .select('workout_exercise_id, reps, training_session_id')
         .inFilter('workout_exercise_id', weToExercise.keys.toList())
         .inFilter('training_session_id', sessionIds)
-        .eq('completed', true);
+        .eq('completed', true)
+        .not('workout_exercise_id', 'is', null);
 
     // Group by exerciseId → sessionId → list of reps
     final byExercise = <String, Map<String, List<int>>>{};
     for (final s in setsRes as List) {
-      final weId = s['workout_exercise_id'] as String;
+      final weId = s['workout_exercise_id'] as String?;
+      if (weId == null) continue;
       final exId = weToExercise[weId];
       if (exId == null) continue;
       final sessId = s['training_session_id'] as String;
@@ -424,14 +474,18 @@ class AnalyticsService {
         .from('sets')
         .select('training_session_id, workout_exercise_id, weight, reps')
         .inFilter('training_session_id', [latestId, prevId])
-        .eq('completed', true);
+        .eq('completed', true)
+        .not('workout_exercise_id', 'is', null);
 
     final sets = (allSets as List).cast<Map<String, dynamic>>();
     if (sets.isEmpty) return null;
 
     // Exercise names for the workout_exercise IDs in these sets
-    final weIds =
-        sets.map((s) => s['workout_exercise_id'] as String).toSet().toList();
+    final weIds = sets
+        .map((s) => s['workout_exercise_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
 
     final weRes = await _client
         .from('workout_exercises')
@@ -452,7 +506,8 @@ class AnalyticsService {
 
     for (final s in sets) {
       final sid = s['training_session_id'] as String;
-      final weId = s['workout_exercise_id'] as String;
+      final weId = s['workout_exercise_id'] as String?;
+      if (weId == null) continue;
       final w = (s['weight'] as num?)?.toDouble() ?? 0;
       final r = (s['reps'] as num?)?.toInt() ?? 0;
 
@@ -509,34 +564,38 @@ class AnalyticsService {
   static Future<double> getVolumeThisWeek() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
-
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    final startStr = startOfWeek.toIso8601String().split('T')[0];
-
-    final sessionsRes = await _client
-        .from('training_sessions')
-        .select('id')
-        .eq('user_id', userId)
-        .gte('date', startStr);
-
-    final sessionIds = (sessionsRes as List).map((e) => e['id'] as String).toList();
-    if (sessionIds.isEmpty) return 0;
-
-    final setsRes = await _client
-        .from('sets')
-        .select('weight, reps')
-        .inFilter('training_session_id', sessionIds)
-        .eq('completed', true)
-        .eq('is_warmup', false);
-
-    double volume = 0;
-    for (final s in setsRes as List) {
-      final w = (s['weight'] as num?)?.toDouble() ?? 0;
-      final r = (s['reps'] as int?) ?? 0;
-      volume += w * r;
-    }
-    return volume;
+    return AppCache.get<double>(
+      key: 'volume_week:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () async {
+        final now = DateTime.now();
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        final startStr = startOfWeek.toIso8601String().split('T')[0];
+        final sessionsRes = await _client
+            .from('training_sessions')
+            .select('id')
+            .eq('user_id', userId)
+            .gte('date', startStr);
+        final sessionIds =
+            (sessionsRes as List).map((e) => e['id'] as String).toList();
+        if (sessionIds.isEmpty) return 0.0;
+        final setsRes = await _client
+            .from('sets')
+            .select('weight, reps')
+            .inFilter('training_session_id', sessionIds)
+            .eq('completed', true)
+            .eq('is_warmup', false);
+        double volume = 0;
+        for (final s in setsRes as List) {
+          final w = (s['weight'] as num?)?.toDouble() ?? 0;
+          final r = (s['reps'] as int?) ?? 0;
+          volume += w * r;
+        }
+        return volume;
+      },
+      encode: (v) => '$v',
+      decode: (s) => s == null ? 0.0 : (double.tryParse(s) ?? 0.0),
+    );
   }
 
   /// Returns {volumeThisWeek, volumeLastWeek, sessionsThisWeek, sessionsLastWeek}.
@@ -634,10 +693,12 @@ class AnalyticsService {
         .from('sets')
         .select('training_session_id, workout_exercise_id')
         .inFilter('training_session_id', sessionIds)
-        .eq('completed', true);
+        .eq('completed', true)
+        .not('workout_exercise_id', 'is', null);
 
     final weIds = (setsRes as List)
-        .map((e) => e['workout_exercise_id'] as String)
+        .map((e) => e['workout_exercise_id'] as String?)
+        .whereType<String>()
         .toSet()
         .toList();
     if (weIds.isEmpty) return {};
@@ -782,10 +843,12 @@ class AnalyticsService {
         .from('sets')
         .select('workout_exercise_id')
         .inFilter('training_session_id', sessionIds)
-        .eq('completed', true);
+        .eq('completed', true)
+        .not('workout_exercise_id', 'is', null);
 
     final weIds = (setsRes as List)
-        .map((e) => e['workout_exercise_id'] as String)
+        .map((e) => e['workout_exercise_id'] as String?)
+        .whereType<String>()
         .toList();
     if (weIds.isEmpty) return {};
 
@@ -835,7 +898,8 @@ class AnalyticsService {
         .select('workout_exercise_id, weight, training_session_id')
         .inFilter('training_session_id', sessionIds)
         .eq('completed', true)
-        .not('weight', 'is', null);
+        .not('weight', 'is', null)
+        .not('workout_exercise_id', 'is', null);
 
     // Find max weight per workout_exercise_id
     final maxPerWe = <String, double>{};
@@ -849,7 +913,8 @@ class AnalyticsService {
       sessionDates[s['id'] as String] = s['date'] as String;
     }
     for (final set in setsRes as List) {
-      final weId = set['workout_exercise_id'] as String;
+      final weId = set['workout_exercise_id'] as String?;
+      if (weId == null) continue;
       final w = (set['weight'] as num).toDouble();
       final sid = set['training_session_id'] as String;
       if (!maxPerWe.containsKey(weId) || w > maxPerWe[weId]!) {
@@ -991,5 +1056,131 @@ class AnalyticsService {
       result[date] = (result[date] ?? 0.0) + kcal;
     }
     return result;
+  }
+
+  /// Returns workout dates + volume for the past [weeks] weeks for the heatmap.
+  /// Result: map of normalized date → volume_kg (or 1.0 if no sets data).
+  static Future<Map<DateTime, double>> getWorkoutHeatmap({int weeks = 26}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+
+    final now = DateTime.now();
+    final from = now.subtract(Duration(days: weeks * 7));
+    final fromStr = '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
+
+    final res = await _client
+        .from('training_sessions')
+        .select('date, id')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', fromStr);
+
+    if ((res as List).isEmpty) return {};
+
+    final sessionIds = res.map((e) => e['id'] as String).toList();
+
+    // Fetch volume per session
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, weight, reps, is_warmup')
+        .filter('training_session_id', 'in', '(${sessionIds.map((id) => '"$id"').join(',')})')
+        .eq('is_warmup', false);
+
+    final volumeBySession = <String, double>{};
+    for (final s in (setsRes as List)) {
+      final sid = s['training_session_id'] as String?;
+      final w = (s['weight'] as num?)?.toDouble() ?? 0;
+      final r = (s['reps'] as num?)?.toInt() ?? 0;
+      if (sid == null) continue;
+      volumeBySession[sid] = (volumeBySession[sid] ?? 0) + w * r;
+    }
+
+    final result = <DateTime, double>{};
+    for (final row in res) {
+      final date = DateTime.parse(row['date'] as String);
+      final norm = DateTime(date.year, date.month, date.day);
+      final vol = volumeBySession[row['id'] as String] ?? 1.0;
+      result[norm] = (result[norm] ?? 0) + vol;
+    }
+    return result;
+  }
+
+  /// Compact stats for the weekly summary push notification.
+  static Future<({int workouts, double volumeKg, int streak, int prs})>
+      getWeeklySummaryData() async {
+    final results = await Future.wait([
+      getWeekComparison(),
+      getCurrentStreak(),
+      _getWeeklyPrCount(),
+    ]);
+    final cmp = results[0] as ({
+      double volumeThisWeek,
+      double volumeLastWeek,
+      int sessionsThisWeek,
+      int sessionsLastWeek
+    });
+    return (
+      workouts: cmp.sessionsThisWeek,
+      volumeKg: cmp.volumeThisWeek,
+      streak: results[1] as int,
+      prs: results[2] as int,
+    );
+  }
+
+  /// Count personal records achieved this week.
+  static Future<int> _getWeeklyPrCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    final mondayStr = '${monday.year}-${monday.month.toString().padLeft(2,'0')}-${monday.day.toString().padLeft(2,'0')}';
+    final res = await _client
+        .from('personal_records')
+        .select('id')
+        .eq('user_id', userId)
+        .gte('achieved_at', mondayStr);
+    return (res as List).length;
+  }
+
+  /// Total personal records count for this user (all time).
+  static Future<int> getTotalPrCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('personal_records')
+          .select('id')
+          .eq('user_id', userId);
+      return (res as List).length;
+    } catch (e) {
+      debugPrint('[AnalyticsService] getTotalPrCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Total weight lifted across all completed sets (weight_kg × reps), all time.
+  static Future<double> getTotalVolumeKg() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      // Join via training_sessions to scope to this user
+      final res = await _client
+          .from('sets')
+          .select('weight, reps, training_sessions!inner(user_id)')
+          .eq('training_sessions.user_id', userId)
+          .eq('completed', true)
+          .not('weight', 'is', null)
+          .not('reps', 'is', null);
+      double total = 0;
+      for (final row in res as List) {
+        final w = (row['weight'] as num?)?.toDouble() ?? 0;
+        final r = (row['reps'] as num?)?.toDouble() ?? 0;
+        total += w * r;
+      }
+      return total;
+    } catch (e) {
+      debugPrint('[AnalyticsService] getTotalVolumeKg error: $e');
+      return 0;
+    }
   }
 }

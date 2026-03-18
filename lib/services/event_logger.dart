@@ -343,6 +343,33 @@ class EventLogger {
         'is_strong': isStrong,
       });
 
+  static void autoProgressAccepted({
+    required String exerciseId,
+    required double suggestedWeightKg,
+    required bool isStrong,
+  }) =>
+      log('auto_progress_accepted', props: {
+        'exercise_id': exerciseId,
+        'suggested_weight_kg': suggestedWeightKg,
+        'is_strong': isStrong,
+      });
+
+  // ─── Session deleted ──────────────────────────────────────────────────────
+
+  static void sessionDeleted({required String sessionId}) =>
+      log('session_deleted', props: {'session_id': sessionId});
+
+  // ─── Calculator used ──────────────────────────────────────────────────────
+
+  /// [type]: '1rm' or 'plates'
+  static void calculatorUsed({required String type}) =>
+      log('calculator_used', props: {'type': type});
+
+  // ─── Streak milestone ─────────────────────────────────────────────────────
+
+  static void streakMilestone({required int days}) =>
+      log('streak_milestone', props: {'days': days});
+
   // ─── Navigation ──────────────────────────────────────────────────────────
 
   static void screenView(String screenName) =>

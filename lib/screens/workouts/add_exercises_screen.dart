@@ -871,20 +871,41 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(sectionTitle),
-            if (days.isNotEmpty)
-              Text(
-                days.map((d) => _dayLabels[d]).join(' · '),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.normal,
+            Hero(
+              tag: 'workout-icon-${widget.workoutId}',
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: const Icon(
+                  Icons.fitness_center_rounded,
+                  color: AppColors.accent,
+                  size: 18,
                 ),
               ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(sectionTitle),
+                if (days.isNotEmpty)
+                  Text(
+                    days.map((d) => _dayLabels[d]).join(' · '),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
         leading: IconButton(

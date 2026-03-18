@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/cache_service.dart';
 import 'package:sportwai/services/event_logger.dart';
@@ -306,7 +307,11 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     final sessionId = widget.upcomingInfo[w.id]?['session_id'] as String?;
     if (sessionId == null) return;
     try {
-      await TrainingService.skipSession(sessionId, 'cancelled by user');
+      // Cancel the notification first (best-effort)
+      try {
+        await NotificationService.cancelSessionNotification(sessionId);
+      } catch (_) {}
+      await TrainingService.deleteSession(sessionId);
       widget.onRefresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -362,7 +367,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     final picked = await showDatePicker(
       context: context,
       initialDate: now,
-      firstDate: now,
+      firstDate: now.subtract(const Duration(days: 365)),
       lastDate: now.add(const Duration(days: 365)),
       helpText: 'Выберите дату тренировки',
       confirmText: 'Запланировать',
@@ -389,11 +394,24 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     );
     if (!mounted) return;
 
+    final TrainingSession session;
     try {
-      final session = await TrainingService.scheduleSession(
+      session = await TrainingService.scheduleSession(
         w.id, picked, plannedTime: pickedTime,
       );
-      if (pickedTime != null) {
+    } catch (e) {
+      debugPrint('[WorkoutsScreen] _scheduleOneTime error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось запланировать тренировку')),
+        );
+      }
+      return;
+    }
+
+    // Notification is best-effort — failure must not block the success flow.
+    if (pickedTime != null) {
+      try {
         final prefs = await SharedPreferences.getInstance();
         final mode = prefs.getString('notif_mode') ?? 'fixed';
         final minutesBefore =
@@ -405,27 +423,23 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           workoutName: w.name,
           minutesBefore: minutesBefore,
         );
+      } catch (e) {
+        debugPrint('[WorkoutsScreen] notification scheduling failed: $e');
       }
-      if (mounted) {
-        widget.onRefresh();
-        final d = '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
-        final t = pickedTime != null
-            ? ' в ${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}'
-            : '';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Запланировано на $d$t'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('[WorkoutsScreen] _scheduleOneTime error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось запланировать тренировку')),
-        );
-      }
+    }
+
+    if (mounted) {
+      widget.onRefresh();
+      final d = '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
+      final t = pickedTime != null
+          ? ' в ${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}'
+          : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Запланировано на $d$t'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -914,16 +928,19 @@ class _WorkoutCardContent extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.fitness_center_rounded,
-              color: AppColors.accent,
-              size: 28,
+          Hero(
+            tag: 'workout-icon-${workout.id}',
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.fitness_center_rounded,
+                color: AppColors.accent,
+                size: 28,
+              ),
             ),
           ),
           const SizedBox(width: 16),

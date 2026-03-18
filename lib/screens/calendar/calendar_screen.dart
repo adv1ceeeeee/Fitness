@@ -81,7 +81,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       false;
               if (!alreadyHas) {
                 events.putIfAbsent(d, () => []).add(
-                      _DayEvent(workoutId: w.id, completed: false, planned: true),
+                      _DayEvent(
+                        workoutId: w.id,
+                        completed: false,
+                        planned: true,
+                        plannedTime: w.dayTimes[dayIndex],
+                      ),
                     );
               }
             }
@@ -112,8 +117,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  List<_DayEvent> _eventsFor(DateTime day) =>
-      _events[_dayOnly(day)] ?? [];
+  List<_DayEvent> _eventsFor(DateTime day) {
+    final list = List<_DayEvent>.from(_events[_dayOnly(day)] ?? []);
+    list.sort((a, b) {
+      // Cyclic program slots (planned=true) before one-time sessions.
+      final priorityDiff = (a.planned ? 0 : 1) - (b.planned ? 0 : 1);
+      if (priorityDiff != 0) return priorityDiff;
+      // Within the same type, sort by start time (null → treated as end-of-day).
+      final aMin = a.plannedTime != null
+          ? a.plannedTime!.hour * 60 + a.plannedTime!.minute
+          : 1440;
+      final bMin = b.plannedTime != null
+          ? b.plannedTime!.hour * 60 + b.plannedTime!.minute
+          : 1440;
+      return aMin.compareTo(bMin);
+    });
+    return list;
+  }
 
   void _onDaySelected(DateTime selected, DateTime focused) {
     setState(() {
@@ -341,7 +361,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ? events.firstWhere((e) => e.planned).workoutId
         : null;
 
-    // Uncompleted non-skipped session that can be marked as skipped
+    // Any non-completed DB session that can be deleted
+    final deletableEvent = events
+        .where((e) => !e.planned && !e.completed && e.sessionId != null)
+        .firstOrNull;
+
+    // Uncompleted non-skipped session that can be marked as skipped (past only)
     final skippableEvent = isPast
         ? events
             .where((e) => !e.planned && !e.completed && !e.skipped && e.sessionId != null)
@@ -400,8 +425,55 @@ class _CalendarScreenState extends State<CalendarScreen> {
             onTap: () => _skipSessionSheet(skippableEvent.sessionId!),
           ),
         ],
+        if (deletableEvent != null) ...[
+          const SizedBox(height: 8),
+          _ActionBtn(
+            icon: Icons.delete_outline,
+            label: 'Удалить разовую тренировку',
+            onTap: () => _deleteSessionConfirm(deletableEvent.sessionId!),
+          ),
+        ],
       ],
     );
+  }
+
+  Future<void> _deleteSessionConfirm(String sessionId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Удалить тренировку?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'Тренировка будет удалена из календаря.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      try { await NotificationService.cancelSessionNotification(sessionId); } catch (_) {}
+      await TrainingService.deleteSession(sessionId);
+      EventLogger.sessionDeleted(sessionId: sessionId);
+      await _load(silent: true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
   }
 
   Future<void> _skipSessionSheet(String sessionId) async {

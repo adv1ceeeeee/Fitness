@@ -535,4 +535,36 @@ class TrainingService {
 
     return (res as List).cast<Map<String, dynamic>>();
   }
+
+  /// Returns the planned_time of today's uncompleted session, if any.
+  /// Returns null when no session is scheduled or planned_time is not set.
+  static Future<DateTime?> getTodayPlannedTime() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+    final now = DateTime.now();
+    final todayStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    try {
+      final res = await Supabase.instance.client
+          .from('training_sessions')
+          .select('planned_time')
+          .eq('user_id', userId)
+          .eq('date', todayStr)
+          .eq('completed', false)
+          .not('planned_time', 'is', null)
+          .limit(1)
+          .maybeSingle();
+      if (res == null) return null;
+      final ptStr = res['planned_time'] as String?;
+      if (ptStr == null) return null;
+      // planned_time is stored as HH:MM — combine with today's date
+      final parts = ptStr.split(':');
+      if (parts.length < 2) return null;
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = int.tryParse(parts[1]) ?? 0;
+      return DateTime(now.year, now.month, now.day, hour, minute);
+    } catch (_) {
+      return null;
+    }
+  }
 }

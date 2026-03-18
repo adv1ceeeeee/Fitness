@@ -29,7 +29,7 @@ void main() {
       expect(p.middleName, isNull);
       expect(p.birthDate, isNull);
       expect(p.nickname, isNull);
-      expect(p.age, isNull);
+      expect(p.age, isNull); // computed from birthDate — null when no birthDate
       expect(p.gender, isNull);
       expect(p.weight, isNull);
       expect(p.goal, isNull);
@@ -49,7 +49,6 @@ void main() {
         'middle_name': 'Петрович',
         'birth_date': '1990-05-15',
         'nickname': 'ivan98',
-        'age': 33,
         'gender': 'male',
         'weight': 82.5,
         'goal': 'muscle_gain',
@@ -67,7 +66,7 @@ void main() {
       expect(p.middleName, 'Петрович');
       expect(p.birthDate, DateTime.parse('1990-05-15'));
       expect(p.nickname, 'ivan98');
-      expect(p.age, 33);
+      expect(p.age, isNotNull); // computed from birth_date
       expect(p.gender, 'male');
       expect(p.weight, 82.5);
       expect(p.goal, 'muscle_gain');
@@ -97,6 +96,43 @@ void main() {
     });
   });
 
+  group('Profile.age computed getter', () {
+    test('returns null when birthDate is null', () {
+      final p = Profile(
+        id: 'u',
+        createdAt: DateTime.parse(_createdAt),
+        updatedAt: DateTime.parse(_updatedAt),
+      );
+      expect(p.age, isNull);
+    });
+
+    test('returns correct age for a known birthDate', () {
+      // Use a birthDate that gives a deterministic age regardless of test run date.
+      // We pick a date far enough in the past (1990) so age is always > 30.
+      final p = Profile(
+        id: 'u',
+        birthDate: DateTime(1990, 1, 1),
+        createdAt: DateTime.parse(_createdAt),
+        updatedAt: DateTime.parse(_updatedAt),
+      );
+      final expectedAge = _computeAge(DateTime(1990, 1, 1));
+      expect(p.age, expectedAge);
+    });
+
+    test('age increases on birthday', () {
+      final now = DateTime.now();
+      // Birthday was yesterday → age = full years
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
+      final p = Profile(
+        id: 'u',
+        birthDate: DateTime(yesterday.year - 25, yesterday.month, yesterday.day),
+        createdAt: DateTime.parse(_createdAt),
+        updatedAt: DateTime.parse(_updatedAt),
+      );
+      expect(p.age, 25);
+    });
+  });
+
   group('Profile.toJson', () {
     test('serialises all non-null fields correctly', () {
       final p = Profile(
@@ -105,7 +141,6 @@ void main() {
         firstName: 'Тест',
         lastName: 'Тестов',
         nickname: 'tester',
-        age: 25,
         gender: 'female',
         weight: 55.0,
         goal: 'weight_loss',
@@ -120,7 +155,7 @@ void main() {
       expect(json['first_name'], 'Тест');
       expect(json['last_name'], 'Тестов');
       expect(json['nickname'], 'tester');
-      expect(json['age'], 25);
+      expect(json.containsKey('age'), isFalse); // age no longer serialised
       expect(json['gender'], 'female');
       expect(json['weight'], 55.0);
       expect(json['goal'], 'weight_loss');
@@ -150,7 +185,7 @@ void main() {
       final original = Profile(
         id: 'u5',
         nickname: 'roundtrip',
-        age: 30,
+        birthDate: DateTime(1993, 6, 15),
         gender: 'male',
         weight: 70.0,
         level: 'advanced',
@@ -161,7 +196,8 @@ void main() {
 
       expect(restored.id, original.id);
       expect(restored.nickname, original.nickname);
-      expect(restored.age, original.age);
+      expect(restored.birthDate, original.birthDate);
+      expect(restored.age, original.age); // both computed from same birthDate
       expect(restored.gender, original.gender);
       expect(restored.weight, original.weight);
       expect(restored.level, original.level);
@@ -175,7 +211,7 @@ void main() {
       base = Profile(
         id: 'u6',
         nickname: 'base',
-        age: 20,
+        birthDate: DateTime(2000, 3, 10),
         gender: 'male',
         weight: 65.0,
         level: 'beginner',
@@ -186,25 +222,25 @@ void main() {
     });
 
     test('returns profile with changed fields', () {
-      final updated = base.copyWith(age: 21, weight: 66.5, level: 'intermediate');
+      final updated = base.copyWith(weight: 66.5, level: 'intermediate');
 
       expect(updated.id, base.id);
-      expect(updated.age, 21);
       expect(updated.weight, 66.5);
       expect(updated.level, 'intermediate');
     });
 
     test('unchanged fields are preserved', () {
-      final updated = base.copyWith(age: 21);
+      final updated = base.copyWith(weight: 67.0);
 
       expect(updated.nickname, base.nickname);
       expect(updated.gender, base.gender);
       expect(updated.goal, base.goal);
+      expect(updated.birthDate, base.birthDate);
     });
 
     test('updatedAt is refreshed on copyWith', () {
       final before = DateTime.now();
-      final updated = base.copyWith(age: 22);
+      final updated = base.copyWith(weight: 68.0);
       final after = DateTime.now();
 
       expect(updated.updatedAt.isAfter(before.subtract(const Duration(seconds: 1))), isTrue);
@@ -212,7 +248,7 @@ void main() {
     });
 
     test('createdAt is unchanged after copyWith', () {
-      final updated = base.copyWith(age: 23);
+      final updated = base.copyWith(weight: 69.0);
       expect(updated.createdAt, base.createdAt);
     });
 
@@ -221,4 +257,15 @@ void main() {
       expect(updated.id, 'u6');
     });
   });
+}
+
+// Helper: mirrors the Profile.age getter logic for test assertions
+int _computeAge(DateTime birthDate) {
+  final now = DateTime.now();
+  int years = now.year - birthDate.year;
+  if (now.month < birthDate.month ||
+      (now.month == birthDate.month && now.day < birthDate.day)) {
+    years--;
+  }
+  return years;
 }

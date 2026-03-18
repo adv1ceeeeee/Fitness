@@ -90,6 +90,35 @@ class AppStorage {
   static Future<void> setDeloadActive(bool v) =>
       _p.setBool('deload_active', v);
 
+  // ── Еженедельный итог ────────────────────────────────────────────────────────
+  static bool get weeklySummaryEnabled =>
+      _p.getBool('weekly_summary_enabled') ?? true;
+  static Future<void> setWeeklySummaryEnabled(bool v) =>
+      _p.setBool('weekly_summary_enabled', v);
+
+  // ── Streak freeze ────────────────────────────────────────────────────────────
+  /// Дата последней использованной заморозки (yyyy-MM-dd) или null.
+  static String? get streakFreezeUsedDate =>
+      _p.getString('streak_freeze_used_date');
+  static Future<void> setStreakFreezeUsedDate(String? v) => v != null
+      ? _p.setString('streak_freeze_used_date', v)
+      : _p.remove('streak_freeze_used_date');
+
+  /// Кол-во доступных заморозок (максимум 1, восстанавливается каждую неделю).
+  static int get streakFreezeCount => _p.getInt('streak_freeze_count') ?? 1;
+  static Future<void> setStreakFreezeCount(int v) =>
+      _p.setInt('streak_freeze_count', v);
+
+  /// Дата последнего восстановления заморозки (yyyy-MM-dd).
+  static String? get streakFreezeRefillDate =>
+      _p.getString('streak_freeze_refill_date');
+  static Future<void> setStreakFreezeRefillDate(String? v) => v != null
+      ? _p.setString('streak_freeze_refill_date', v)
+      : _p.remove('streak_freeze_refill_date');
+
+  // ── Еженедельная цель ────────────────────────────────────────────────────────
+  // weeklyWorkoutGoal уже объявлена выше (int, 0 = не задана)
+
   // ── Порядок и видимость программ ────────────────────────────────────────────
   static List<String> get workoutOrder =>
       _p.getStringList('workout_order') ?? [];
@@ -127,4 +156,19 @@ class AppStorage {
   static bool get biometricEnabled => _p.getBool('biometric_enabled') ?? false;
   static Future<void> setBiometricEnabled(bool v) =>
       _p.setBool('biometric_enabled', v);
+
+  // ── Еженедельный отчёт ───────────────────────────────────────────────────────
+  /// ISO-неделя последнего показанного отчёта, формат "yyyy-Www" (например "2026-W12").
+  /// null — ещё не показывался.
+  static String? get lastWeeklySummaryShownWeek =>
+      _p.getString('weekly_summary_shown_week');
+  static Future<void> setLastWeeklySummaryShownWeek(String v) =>
+      _p.setString('weekly_summary_shown_week', v);
+
+  // ── Достижения ───────────────────────────────────────────────────────────────
+  /// IDs достижений, о которых пользователь уже был уведомлён.
+  static List<String> get seenAchievementIds =>
+      _p.getStringList('seen_achievement_ids') ?? [];
+  static Future<void> setSeenAchievementIds(List<String> v) =>
+      _p.setStringList('seen_achievement_ids', v);
 }

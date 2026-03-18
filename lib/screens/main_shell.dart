@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
@@ -53,6 +54,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   }
 
   void _onTap(int index) {
+    HapticFeedback.selectionClick();
     // Always go to the root of the tab — handles both switching tabs
     // and popping back to root when the same tab is tapped again.
     context.go(_routes[index]);

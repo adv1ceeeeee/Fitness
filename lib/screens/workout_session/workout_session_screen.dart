@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
+import 'package:flutter/services.dart' show HapticFeedback, SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/models/exercise.dart';
@@ -14,6 +14,7 @@ import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/calorie_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
@@ -422,16 +423,24 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       final prev = _personalBests[exerciseId];
       if (prev == null || weightKg > prev) {
         _personalBests[exerciseId] = weightKg;
+        HapticFeedback.heavyImpact();
         EventLogger.personalRecord(exerciseId: exerciseId, weightKg: weightKg);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Личный рекорд! 🏆'),
-            backgroundColor: AppColors.success,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        _showPrBanner(we.exercise?.name ?? '', weightKg);
       }
     }
+  }
+
+  void _showPrBanner(String exerciseName, double weightKg) {
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _PrBanner(
+        exerciseName: exerciseName,
+        weightKg: weightKg,
+        onDismiss: () => entry.remove(),
+      ),
+    );
+    overlay.insert(entry);
   }
 
   void _startRest(int targetSeconds, {required bool goToNext}) {
@@ -448,6 +457,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       setState(() => _restSeconds++);
       if (_restSeconds == _targetRestSeconds && _targetRestSeconds > 0) {
         HapticFeedback.heavyImpact();
+        SystemSound.play(SystemSoundType.alert);
       }
     });
   }
@@ -472,6 +482,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   void _advanceExercise() {
     final nextIndex = _currentExerciseIndex + 1;
     if (nextIndex < _exercises.length) {
+      HapticFeedback.mediumImpact();
       setState(() {
         _completedSetsBefore += _sets.length;
         _currentExerciseIndex = nextIndex;
@@ -481,6 +492,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   }
 
   void _addSet() {
+    HapticFeedback.selectionClick();
     final defaultReps = _parseDefaultReps(_currentExercise!.repsRange);
     setState(() {
       _sets.add(_SetData(reps: defaultReps, repsTarget: defaultReps));
@@ -587,6 +599,16 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
+              final currentEx = _currentExerciseIndex < _exercises.length
+                  ? _exercises[_currentExerciseIndex]
+                  : null;
+              if (currentEx != null) {
+                EventLogger.workoutAbandonedAt(
+                  sessionId: widget.sessionId,
+                  exerciseName: currentEx.exercise?.name ?? '?',
+                  setsCompleted: _sets.where((s) => s.completed).length,
+                );
+              }
               EventLogger.workoutAbandoned(sessionId: widget.sessionId);
               ref.read(activeSessionProvider.notifier).stop();
               context.go('/home');
@@ -602,6 +624,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   }
 
   Future<void> _goToSummary() async {
+    HapticFeedback.heavyImpact();
     final sessionState = ref.read(activeSessionProvider);
     final durationSeconds = sessionState.isActive
         ? sessionState.elapsed.inSeconds
@@ -613,6 +636,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     );
     // Aggregate per-set kcal into session total (fire-and-forget, errors logged internally)
     TrainingService.saveSessionKcal(widget.sessionId);
+    // Invalidate cached stats so next screen open shows fresh numbers
+    AnalyticsService.invalidateStatsCache();
+    // Refresh weekly summary notification with updated stats (fire-and-forget)
+    NotificationService.refreshWeeklySummary();
+    // Check streak milestone (fire-and-forget)
+    AnalyticsService.getCurrentStreak().then((streak) {
+      const milestones = [7, 14, 30, 60, 100, 200, 365];
+      if (milestones.contains(streak)) EventLogger.streakMilestone(days: streak);
+    }).catchError((_) {});
     if (!mounted) return;
     context.pushReplacement(
       '/session-summary',
@@ -841,43 +873,73 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                   fontSize: 12, color: AppColors.accent),
                             ),
                             if (strongSuggest) ...[
-                              Container(
-                                margin: const EdgeInsets.only(top: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.trending_up, size: 14, color: AppColors.success),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      'Пора увеличить вес! 3 подряд → ${suggestWeight.toStringAsFixed(1)} $unit',
-                                      style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w600),
-                                    ),
-                                  ],
+                              GestureDetector(
+                                onTap: () {
+                                  final suggestWeightKg = w + 2.5;
+                                  for (final c in _weightControllers) {
+                                    if (c.text.isEmpty || double.tryParse(c.text.replaceAll(',', '.')) == w) {
+                                      c.text = suggestWeightKg.toStringAsFixed(suggestWeightKg % 1 == 0 ? 0 : 1);
+                                    }
+                                  }
+                                  EventLogger.autoProgressAccepted(
+                                    exerciseId: we.exerciseId,
+                                    suggestedWeightKg: suggestWeightKg,
+                                    isStrong: true,
+                                  );
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(top: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.trending_up, size: 14, color: AppColors.success),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        'Пора увеличить вес! 3 подряд → ${suggestWeight.toStringAsFixed(1)} $unit',
+                                        style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ] else if (suggestIncrease) ...[
-                              Container(
-                                margin: const EdgeInsets.only(top: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.trending_up, size: 14, color: AppColors.success),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      'Попробуй +2.5 $unit → ${suggestWeight.toStringAsFixed(1)} $unit',
-                                      style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w500),
-                                    ),
-                                  ],
+                              GestureDetector(
+                                onTap: () {
+                                  final suggestWeightKg = w + 2.5;
+                                  for (final c in _weightControllers) {
+                                    if (c.text.isEmpty || double.tryParse(c.text.replaceAll(',', '.')) == w) {
+                                      c.text = suggestWeightKg.toStringAsFixed(suggestWeightKg % 1 == 0 ? 0 : 1);
+                                    }
+                                  }
+                                  EventLogger.autoProgressAccepted(
+                                    exerciseId: we.exerciseId,
+                                    suggestedWeightKg: suggestWeightKg,
+                                    isStrong: false,
+                                  );
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(top: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.trending_up, size: 14, color: AppColors.success),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        'Попробуй +2.5 $unit → ${suggestWeight.toStringAsFixed(1)} $unit',
+                                        style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -1277,7 +1339,7 @@ class _Stepper extends StatelessWidget {
   }
 }
 
-class _MiniBtn extends StatelessWidget {
+class _MiniBtn extends StatefulWidget {
   final IconData icon;
   final bool enabled;
   final VoidCallback onTap;
@@ -1286,17 +1348,49 @@ class _MiniBtn extends StatelessWidget {
       {required this.icon, required this.enabled, required this.onTap});
 
   @override
+  State<_MiniBtn> createState() => _MiniBtnState();
+}
+
+class _MiniBtnState extends State<_MiniBtn> {
+  Timer? _timer;
+
+  void _startRepeat() {
+    widget.onTap();
+    HapticFeedback.selectionClick();
+    _timer = Timer.periodic(const Duration(milliseconds: 120), (_) {
+      if (widget.enabled) {
+        widget.onTap();
+        HapticFeedback.selectionClick();
+      }
+    });
+  }
+
+  void _stopRepeat() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: enabled ? onTap : null,
+      onTap: widget.enabled ? widget.onTap : null,
+      onLongPressStart: widget.enabled ? (_) => _startRepeat() : null,
+      onLongPressEnd: (_) => _stopRepeat(),
+      onLongPressCancel: _stopRepeat,
       child: Container(
         width: 26,
         height: 26,
         decoration: const BoxDecoration(
             shape: BoxShape.circle, color: AppColors.surface),
-        child: Icon(icon,
+        child: Icon(widget.icon,
             size: 14,
-            color: enabled
+            color: widget.enabled
                 ? AppColors.textPrimary
                 : AppColors.textSecondary.withValues(alpha: 0.35)),
       ),
@@ -1333,6 +1427,122 @@ class _AddSetButton extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w500)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── PR Overlay Banner ───────────────────────────────────────────────────────
+
+class _PrBanner extends StatefulWidget {
+  final String exerciseName;
+  final double weightKg;
+  final VoidCallback onDismiss;
+
+  const _PrBanner({
+    required this.exerciseName,
+    required this.weightKg,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_PrBanner> createState() => _PrBannerState();
+}
+
+class _PrBannerState extends State<_PrBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+    _ctrl.forward();
+    Future.delayed(const Duration(milliseconds: 2200), _dismiss);
+  }
+
+  Future<void> _dismiss() async {
+    if (!mounted) return;
+    await _ctrl.reverse(from: 1.0);
+    widget.onDismiss();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safeTop = MediaQuery.of(context).padding.top;
+    return Positioned(
+      top: safeTop + 12,
+      left: 24,
+      right: 24,
+      child: SlideTransition(
+        position: _slide,
+        child: FadeTransition(
+          opacity: _opacity,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.success,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.success.withValues(alpha: 0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  const Text('🏆', style: TextStyle(fontSize: 28)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Личный рекорд!',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        if (widget.exerciseName.isNotEmpty)
+                          Text(
+                            '${widget.exerciseName} — ${widget.weightKg % 1 == 0 ? widget.weightKg.toInt() : widget.weightKg.toStringAsFixed(1)} кг',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1582,31 +1792,35 @@ class _RestScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              timeStr,
-              style: TextStyle(
-                fontSize: 72,
-                fontWeight: FontWeight.bold,
-                color: done ? AppColors.accent : AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            if (targetSeconds > 0) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 48),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 6,
-                    backgroundColor: AppColors.surface,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      done ? AppColors.accent : AppColors.accent.withValues(alpha: 0.5),
+            SizedBox(
+              width: 220,
+              height: 220,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox.expand(
+                    child: CircularProgressIndicator(
+                      value: targetSeconds > 0 ? (1 - progress) : null,
+                      strokeWidth: 8,
+                      backgroundColor: AppColors.surface,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        done ? AppColors.accent : AppColors.accent.withValues(alpha: 0.6),
+                      ),
                     ),
                   ),
-                ),
+                  Text(
+                    timeStr,
+                    style: TextStyle(
+                      fontSize: 56,
+                      fontWeight: FontWeight.bold,
+                      color: done ? AppColors.accent : AppColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
+            ),
+            const SizedBox(height: 16),
+            if (targetSeconds > 0)
               Text(
                 done ? 'Можно продолжать!' : 'Цель: ${targetSeconds ~/ 60}:${(targetSeconds % 60).toString().padLeft(2, '0')}',
                 style: TextStyle(
@@ -1614,13 +1828,13 @@ class _RestScreen extends StatelessWidget {
                   color: done ? AppColors.accent : AppColors.textSecondary,
                   fontWeight: done ? FontWeight.w600 : FontWeight.normal,
                 ),
-              ),
-            ] else
+              )
+            else
               const Text(
                 'Отдых',
                 style: TextStyle(fontSize: 20, color: AppColors.textSecondary),
               ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 32),
             SizedBox(
               width: 200,
               height: 52,

@@ -1,9 +1,12 @@
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
+import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 
@@ -33,15 +36,19 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
   // Grouped exercise data: exerciseName → list of _SetRow
   final List<_ExerciseGroup> _groups = [];
   final TextEditingController _notesCtrl = TextEditingController();
+  late final ConfettiController _confettiController;
 
   @override
   void initState() {
     super.initState();
+    _confettiController =
+        ConfettiController(duration: const Duration(seconds: 3));
     _loadSets();
   }
 
   @override
   void dispose() {
+    _confettiController.dispose();
     _notesCtrl.dispose();
     super.dispose();
   }
@@ -95,7 +102,39 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         _totalVolume = vol;
         _loading = false;
       });
+      _confettiController.play();
+      _checkNewAchievements();
     }
+  }
+
+  Future<void> _checkNewAchievements() async {
+    try {
+      final all = await AchievementService.getAchievements();
+      final unlocked = all.where((a) => a.unlocked).toList();
+      final seen = AppStorage.seenAchievementIds;
+      final newOnes = unlocked.where((a) => !seen.contains(a.id)).toList();
+      if (newOnes.isEmpty || !mounted) return;
+
+      // Mark as seen immediately so we don't show again
+      await AppStorage.setSeenAchievementIds([
+        ...seen,
+        ...newOnes.map((a) => a.id),
+      ]);
+
+      if (!mounted) return;
+      for (final ach in newOnes) {
+        await showModalBottomSheet<void>(
+          context: context,
+          useRootNavigator: true,
+          backgroundColor: AppColors.card,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          builder: (ctx) => _AchievementUnlockSheet(achievement: ach),
+        );
+        if (!mounted) return;
+      }
+    } catch (_) {}
   }
 
   String _formatDuration(int seconds) {
@@ -254,9 +293,12 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
             },
           ),
         ),
-        body: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : ListView(
+        body: Stack(
+          children: [
+            if (_loading)
+              const Center(child: CircularProgressIndicator())
+            else
+              ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   // ── Duration card ──────────────────────────────────────
@@ -311,6 +353,34 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                   const SizedBox(height: 16),
                 ],
               ),
+            // ── Confetti overlay ───────────────────────────────────────
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConfettiWidget(
+                confettiController: _confettiController,
+                blastDirectionality: BlastDirectionality.explosive,
+                emissionFrequency: 0.05,
+                numberOfParticles: 20,
+                maxBlastForce: 20,
+                minBlastForce: 8,
+                gravity: 0.3,
+                colors: const [
+                  Color(0xFFE8C547),
+                  Color(0xFF4CAF50),
+                  Color(0xFF2196F3),
+                  Color(0xFFFF5722),
+                  Color(0xFFE91E63),
+                ],
+                createParticlePath: (size) {
+                  final path = Path();
+                  path.addOval(
+                      Rect.fromCircle(center: Offset.zero, radius: size.width / 2));
+                  return path;
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -797,6 +867,78 @@ class _SetEditSheetState extends State<_SetEditSheet> {
             child: ElevatedButton(
               onPressed: _apply,
               child: const Text('Применить'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Achievement unlock popup ─────────────────────────────────────────────────
+
+class _AchievementUnlockSheet extends StatelessWidget {
+  final Achievement achievement;
+
+  const _AchievementUnlockSheet({required this.achievement});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // drag handle
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            achievement.emoji,
+            style: const TextStyle(fontSize: 64),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Новое достижение!',
+            style: TextStyle(
+              color: AppColors.accent,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            achievement.title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            achievement.description,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отлично!'),
             ),
           ),
         ],

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
+import 'package:sportwai/services/event_logger.dart';
 
 class CalculatorsScreen extends StatefulWidget {
   const CalculatorsScreen({super.key});
@@ -124,6 +125,7 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
   int _reps = 5;
   int _exerciseIndex = 0;
   double? _result;
+  bool _loggedUsage = false;
   List<({String name, String source, double value})> _breakdown = [];
 
   @override
@@ -161,6 +163,10 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
       _result = rounded;
       _breakdown = results;
     });
+    if (!_loggedUsage) {
+      _loggedUsage = true;
+      EventLogger.calculatorUsed(type: '1rm');
+    }
   }
 
   @override
@@ -591,6 +597,7 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
   final _targetCtrl = TextEditingController();
   double _barWeight = 20;
   bool _useKg = true;
+  bool _loggedUsage = false;
 
   static const _plateWeightsKg = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25];
   static const _plateWeightsLb = [45.0, 35.0, 25.0, 10.0, 5.0, 2.5];
@@ -699,7 +706,13 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
               controller: _targetCtrl,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              onChanged: (_) => setState(() {}),
+              onChanged: (v) {
+                setState(() {});
+                if (!_loggedUsage && double.tryParse(v.replaceAll(',', '.')) != null) {
+                  _loggedUsage = true;
+                  EventLogger.calculatorUsed(type: 'plates');
+                }
+              },
               decoration:
                   InputDecoration(hintText: _useKg ? '100' : '225'),
             ),

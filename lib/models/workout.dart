@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'workout_exercise.dart';
 
 class Workout {
@@ -14,6 +15,8 @@ class Workout {
   final DateTime createdAt;
   final DateTime updatedAt;
   List<WorkoutExercise>? exercises;
+  /// Per-day start time. Key = day index (0=Mon…6=Sun), value = TimeOfDay.
+  final Map<int, TimeOfDay> dayTimes;
 
   Workout({
     required this.id,
@@ -29,6 +32,7 @@ class Workout {
     required this.createdAt,
     required this.updatedAt,
     this.exercises,
+    this.dayTimes = const {},
   });
 
   factory Workout.fromJson(Map<String, dynamic> json) {
@@ -51,7 +55,26 @@ class Workout {
       groupId: json['group_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      dayTimes: _parseDayTimes(json['day_times']),
     );
+  }
+
+  static Map<int, TimeOfDay> _parseDayTimes(dynamic raw) {
+    if (raw == null) return {};
+    final map = raw as Map<String, dynamic>;
+    final result = <int, TimeOfDay>{};
+    for (final entry in map.entries) {
+      final day = int.tryParse(entry.key);
+      final timeStr = entry.value as String?;
+      if (day != null && timeStr != null && timeStr.length >= 5) {
+        final parts = timeStr.split(':');
+        result[day] = TimeOfDay(
+          hour: int.tryParse(parts[0]) ?? 0,
+          minute: int.tryParse(parts[1]) ?? 0,
+        );
+      }
+    }
+    return result;
   }
 
   Map<String, dynamic> toJson() => {

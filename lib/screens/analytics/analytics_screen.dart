@@ -14,6 +14,7 @@ import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/services/streak_freeze_service.dart';
 import 'package:sportwai/widgets/skeleton.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -76,6 +77,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       .where((k) => _bodyHistory.any((r) => r[k] != null))
       .toList();
 
+  Map<DateTime, double> _heatmapData = {};
   List<Achievement> _achievements = [];
   List<Map<String, dynamic>> _weeklyVolume = [];
   Map<String, int> _muscleBalance = {};
@@ -91,6 +93,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       await Future(() async {
@@ -108,6 +111,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final caloriesPerSession = await AnalyticsService.getCaloriesPerSession();
         final communityAvgVol = await AnalyticsService.getCommunityAvgWeeklyVolume();
         final weekCmp = await AnalyticsService.getWeekComparison();
+        final heatmap = await AnalyticsService.getWorkoutHeatmap();
 
         if (mounted) {
           setState(() {
@@ -125,6 +129,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _caloriesPerSession = caloriesPerSession;
             _communityAvgWeeklyVolume = communityAvgVol;
             _weekComparison = weekCmp;
+            _heatmapData = heatmap;
             _loading = false;
           });
         }
@@ -299,6 +304,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 _StreakCard(
                   streak: _bestStreak,
                   totalWorkouts: _totalWorkouts,
+                  freezeActive: StreakFreezeService.freezeIsActive,
+                  hasFreeze: StreakFreezeService.hasFreeze,
                 ),
                 const SizedBox(height: 12),
                 _NavCard(
@@ -314,6 +321,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 ),
                 const SizedBox(height: 24),
                 const Text(
+                  'Активность',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Последние 26 недель',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                _WorkoutHeatmap(data: _heatmapData),
+                const SizedBox(height: 24),
+                const Text(
                   'Статистика за неделю',
                   style: TextStyle(
                     fontSize: 18,
@@ -327,14 +350,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     Expanded(
                       child: _StatBox(
                         label: 'Тренировок',
-                        value: '$_workoutsThisWeek',
+                        value: _workoutsThisWeek.toDouble(),
+                        format: (v) => v.round().toString(),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _StatBox(
                         label: 'Объём (кг)',
-                        value: _volumeThisWeek.toStringAsFixed(0),
+                        value: _volumeThisWeek,
+                        format: (v) => v.toStringAsFixed(0),
                       ),
                     ),
                   ],
@@ -635,13 +660,38 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
+class _AnimatedCounter extends StatelessWidget {
+  final double value;
+  final String Function(double) format;
+  final TextStyle style;
+  const _AnimatedCounter({
+    required this.value,
+    required this.format,
+    required this.style,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: value),
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.easeOut,
+      builder: (_, v, __) => Text(format(v), style: style),
+    );
+  }
+}
+
 class _StreakCard extends StatelessWidget {
   final int streak;
   final int totalWorkouts;
+  final bool freezeActive;
+  final bool hasFreeze;
 
   const _StreakCard({
     required this.streak,
     required this.totalWorkouts,
+    this.freezeActive = false,
+    this.hasFreeze = false,
   });
 
   @override
@@ -657,25 +707,75 @@ class _StreakCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text('🔥', style: TextStyle(fontSize: 32)),
-              const SizedBox(width: 12),
               Text(
-                'Стрик: $streak дней',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                freezeActive ? '🛡️' : '🔥',
+                style: const TextStyle(fontSize: 32),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text(
+                      'Стрик: ',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    _AnimatedCounter(
+                      value: streak.toDouble(),
+                      format: (v) => '${v.round()} дней',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: freezeActive ? const Color(0xFF4FC3F7) : AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              if (hasFreeze && !freezeActive)
+                Tooltip(
+                  message: 'Заморозка стрика доступна',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('🛡️', style: TextStyle(fontSize: 13)),
+                        SizedBox(width: 4),
+                        Text('×1', style: TextStyle(fontSize: 12, color: Color(0xFF4FC3F7), fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Тренировок всего: $totalWorkouts',
-            style: const TextStyle(
-              fontSize: 16,
-              color: AppColors.textSecondary,
+          if (freezeActive) ...[
+            const SizedBox(height: 6),
+            const Text(
+              '🧊 Пропущенный день покрыт заморозкой',
+              style: TextStyle(fontSize: 12, color: Color(0xFF4FC3F7)),
             ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Text(
+                'Тренировок всего: ',
+                style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+              ),
+              _AnimatedCounter(
+                value: totalWorkouts.toDouble(),
+                format: (v) => v.round().toString(),
+                style: const TextStyle(fontSize: 16, color: AppColors.textSecondary),
+              ),
+            ],
           ),
         ],
       ),
@@ -685,9 +785,14 @@ class _StreakCard extends StatelessWidget {
 
 class _StatBox extends StatelessWidget {
   final String label;
-  final String value;
+  final double value;
+  final String Function(double) format;
 
-  const _StatBox({required this.label, required this.value});
+  const _StatBox({
+    required this.label,
+    required this.value,
+    required this.format,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -708,8 +813,9 @@ class _StatBox extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            value,
+          _AnimatedCounter(
+            value: value,
+            format: format,
             style: const TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -967,68 +1073,158 @@ class _AchievementsGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (achievements.isEmpty) return const SizedBox.shrink();
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: achievements.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 0.88,
-      ),
-      itemBuilder: (context, i) {
-        final a = achievements[i];
-        final locked = !a.unlocked;
-        return Tooltip(
-          message: a.description,
-          child: Container(
-            decoration: BoxDecoration(
-              color: locked
-                  ? AppColors.card.withValues(alpha: 0.5)
-                  : AppColors.card,
-              borderRadius: BorderRadius.circular(14),
-              border: a.unlocked
-                  ? Border.all(color: AppColors.accent.withValues(alpha: 0.4), width: 1.5)
-                  : null,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ColorFiltered(
-                  colorFilter: locked
-                      ? const ColorFilter.matrix([
-                          0.2, 0, 0, 0, 0,
-                          0, 0.2, 0, 0, 0,
-                          0, 0, 0.2, 0, 0,
-                          0, 0, 0, 1, 0,
-                        ])
-                      : const ColorFilter.mode(
-                          Colors.transparent, BlendMode.dst),
-                  child: Text(a.emoji,
-                      style: const TextStyle(fontSize: 28)),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  a.title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: locked
-                        ? AppColors.textSecondary.withValues(alpha: 0.5)
-                        : AppColors.textPrimary,
-                  ),
-                ),
-              ],
+
+    // Group by category preserving order of first appearance
+    final categoryOrder = <String>[];
+    final grouped = <String, List<Achievement>>{};
+    for (final a in achievements) {
+      if (!grouped.containsKey(a.category)) {
+        categoryOrder.add(a.category);
+        grouped[a.category] = [];
+      }
+      grouped[a.category]!.add(a);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final cat in categoryOrder) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              cat,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
-        );
-      },
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: grouped[cat]!.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.78,
+            ),
+            itemBuilder: (context, i) {
+              final a = grouped[cat]![i];
+              return _AchievementCell(achievement: a);
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ],
     );
+  }
+}
+
+class _AchievementCell extends StatelessWidget {
+  final Achievement achievement;
+  const _AchievementCell({required this.achievement});
+
+  @override
+  Widget build(BuildContext context) {
+    final a = achievement;
+    final locked = !a.unlocked;
+    final frac = a.progressFraction;
+
+    return Tooltip(
+      message: locked
+          ? '${a.description}\n${_progressLabel(a)} / ${_thresholdLabel(a)}'
+          : a.description,
+      child: Container(
+        decoration: BoxDecoration(
+          color: locked
+              ? AppColors.surface
+              : AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+          border: a.unlocked
+              ? Border.all(
+                  color: AppColors.accent.withValues(alpha: 0.5), width: 1.5)
+              : Border.all(
+                  color: AppColors.surface, width: 1),
+        ),
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Emoji (greyscale if locked)
+            ColorFiltered(
+              colorFilter: locked
+                  ? const ColorFilter.matrix([
+                      0.25, 0, 0, 0, 0,
+                      0, 0.25, 0, 0, 0,
+                      0, 0, 0.25, 0, 0,
+                      0, 0, 0, 0.6, 0,
+                    ])
+                  : const ColorFilter.mode(
+                      Colors.transparent, BlendMode.dst),
+              child: Text(a.emoji, style: const TextStyle(fontSize: 24)),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              a.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: locked
+                    ? AppColors.textSecondary.withValues(alpha: 0.5)
+                    : AppColors.textPrimary,
+              ),
+            ),
+            if (locked) ...[
+              const SizedBox(height: 6),
+              // Progress bar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: frac,
+                  minHeight: 3,
+                  backgroundColor: AppColors.card,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    AppColors.accent.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${_progressLabel(a)} / ${_thresholdLabel(a)}',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: AppColors.textSecondary.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _progressLabel(Achievement a) {
+    if (a.category == 'Объём') {
+      return _kgShort(a.progress);
+    }
+    return a.progress.toInt().toString();
+  }
+
+  String _thresholdLabel(Achievement a) {
+    if (a.category == 'Объём') {
+      return _kgShort(a.threshold);
+    }
+    return a.threshold.toInt().toString();
+  }
+
+  String _kgShort(double kg) {
+    if (kg >= 1000) return '${(kg / 1000).toStringAsFixed(0)}к кг';
+    return '${kg.toInt()} кг';
   }
 }
 
@@ -1747,6 +1943,194 @@ class _MuscleFrequencyChart extends StatelessWidget {
       'cardio': 'Кардио',
     };
     return map[cat] ?? cat;
+  }
+}
+
+// ─── Workout heatmap ─────────────────────────────────────────────────────────
+
+class _WorkoutHeatmap extends StatelessWidget {
+  final Map<DateTime, double> data;
+
+  const _WorkoutHeatmap({required this.data});
+
+  static const _cellSize = 11.0;
+  static const _cellGap = 2.0;
+  static const _weeks = 26;
+
+  static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+  Color _cellColor(double value, BuildContext context) {
+    if (value <= 0) return AppColors.surface;
+    // Max opacity cap — anything above 5000 kg·reps = full colour
+    final t = (value / 5000).clamp(0.15, 1.0);
+    return AppColors.accent.withValues(alpha: t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    // Find the Sunday that ends the current week
+    // weekday: Mon=1 … Sun=7
+    final daysToSunday = 7 - today.weekday; // 0 on Sunday, 6 on Monday
+    final lastSunday = today.add(Duration(days: daysToSunday));
+
+    // Build columns from oldest (left) to newest (right)
+    // Each column = one week Mon…Sun
+    final columns = <List<DateTime>>[];
+    for (int w = _weeks - 1; w >= 0; w--) {
+      final weekSunday = lastSunday.subtract(Duration(days: w * 7));
+      final weekDays = List.generate(
+        7,
+        (d) => weekSunday.subtract(Duration(days: 6 - d)), // Mon…Sun
+      );
+      columns.add(weekDays);
+    }
+
+    // Month label positions (first column where a new month starts)
+    final monthLabels = <int, String>{};
+    for (int i = 0; i < columns.length; i++) {
+      final monday = columns[i].first;
+      if (i == 0 || monday.month != columns[i - 1].first.month) {
+        const months = [
+          '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+          'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'
+        ];
+        monthLabels[i] = months[monday.month];
+      }
+    }
+
+    const totalWidth =
+        _weeks * (_cellSize + _cellGap) - _cellGap + 28; // 28 for day labels
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Month labels row
+            SizedBox(
+              width: totalWidth,
+              height: 14,
+              child: Stack(
+                children: monthLabels.entries.map((e) {
+                  final x = 28.0 + e.key * (_cellSize + _cellGap);
+                  return Positioned(
+                    left: x,
+                    child: Text(
+                      e.value,
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 4),
+            // Day rows + cells
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Day-of-week labels (Mon, Wed, Fri only to save space)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(7, (d) {
+                    final show = d == 0 || d == 2 || d == 4 || d == 6;
+                    return SizedBox(
+                      height: _cellSize + _cellGap,
+                      child: show
+                          ? Text(
+                              _dayLabels[d],
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: AppColors.textSecondary,
+                                height: 1.3,
+                              ),
+                            )
+                          : null,
+                    );
+                  }),
+                ),
+                const SizedBox(width: 4),
+                // Columns of cells
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: columns.map((weekDays) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: _cellGap),
+                      child: Column(
+                        children: weekDays.map((day) {
+                          final isFuture = day.isAfter(today);
+                          final volume = isFuture ? 0.0 : (data[day] ?? 0.0);
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: _cellGap),
+                            child: Tooltip(
+                              message: isFuture
+                                  ? ''
+                                  : volume > 0
+                                      ? '${day.day}.${day.month}: ${volume.toStringAsFixed(0)} кг·повт.'
+                                      : '${day.day}.${day.month}: нет тренировки',
+                              child: Container(
+                                width: _cellSize,
+                                height: _cellSize,
+                                decoration: BoxDecoration(
+                                  color: isFuture
+                                      ? Colors.transparent
+                                      : _cellColor(volume, context),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Legend
+            Row(
+              children: [
+                const Text(
+                  'Меньше',
+                  style: TextStyle(fontSize: 9, color: AppColors.textSecondary),
+                ),
+                const SizedBox(width: 4),
+                ...List.generate(5, (i) {
+                  final t = i == 0 ? 0.0 : 0.15 + (i - 1) * 0.2125;
+                  return Container(
+                    width: _cellSize,
+                    height: _cellSize,
+                    margin: const EdgeInsets.only(right: _cellGap),
+                    decoration: BoxDecoration(
+                      color: i == 0
+                          ? AppColors.surface
+                          : AppColors.accent.withValues(alpha: t),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  );
+                }),
+                const Text(
+                  'Больше',
+                  style: TextStyle(fontSize: 9, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

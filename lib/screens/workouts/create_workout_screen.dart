@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,11 +14,39 @@ class _SectionData {
   final TextEditingController nameController;
   final Set<int> selectedDays; // workout days
   final Set<int> restDays;     // rest days
+  /// Per-day start time set by the user in the time wheel.
+  final Map<int, TimeOfDay> dayTimes;
+  /// Tracks selection order so we can restore the previous day when one is deselected.
+  final List<int> _selectionHistory;
 
   _SectionData()
       : nameController = TextEditingController(),
         selectedDays = {},
-        restDays = {};
+        restDays = {},
+        dayTimes = {},
+        _selectionHistory = [];
+
+  /// The day whose time is currently shown in the wheel (= most recently selected).
+  int? get lastSelectedDay =>
+      _selectionHistory.isEmpty ? null : _selectionHistory.last;
+
+  void selectDay(int day) {
+    _selectionHistory.remove(day); // avoid duplicates
+    _selectionHistory.add(day);
+    selectedDays.add(day);
+  }
+
+  void deselectDay(int day) {
+    selectedDays.remove(day);
+    dayTimes.remove(day);
+    _selectionHistory.remove(day);
+  }
+
+  /// Converts dayTimes to {"0": "HH:MM", ...} for the DB.
+  Map<int, String> get dayTimesForDb => {
+        for (final e in dayTimes.entries)
+          e.key: '${e.value.hour.toString().padLeft(2, '0')}:${e.value.minute.toString().padLeft(2, '0')}',
+      };
 
   void dispose() => nameController.dispose();
 }
@@ -35,6 +65,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   int _cycleWeeks = 8;
   bool _isLoading = false;
   String? _error;
+  int _shakeCount = 0;
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -69,10 +100,10 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
       if (s.restDays.contains(day)) {
         s.restDays.remove(day);
       } else if (s.selectedDays.contains(day)) {
-        s.selectedDays.remove(day);
+        s.deselectDay(day);
         s.restDays.add(day);
       } else {
-        s.selectedDays.add(day);
+        s.selectDay(day);
       }
       _error = null;
     });
@@ -82,8 +113,10 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   void _markSelectedAsRest(int sectionIndex) {
     setState(() {
       final s = _sections[sectionIndex];
-      s.restDays.addAll(s.selectedDays);
-      s.selectedDays.clear();
+      for (final day in s.selectedDays.toList()) {
+        s.deselectDay(day);
+        s.restDays.add(day);
+      }
       _error = null;
     });
   }
@@ -140,11 +173,11 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
       final s = _sections[i];
       final label = _sections.length > 1 ? ' раздела ${i + 1}' : '';
       if (s.nameController.text.trim().isEmpty) {
-        setState(() => _error = 'Введите название$label');
+        setState(() { _error = 'Введите название$label'; _shakeCount++; });
         return;
       }
       if (s.selectedDays.isEmpty) {
-        setState(() => _error = 'Выберите дни тренировок$label');
+        setState(() { _error = 'Выберите дни тренировок$label'; _shakeCount++; });
         return;
       }
     }
@@ -154,7 +187,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     for (final s in _sections) {
       for (final d in s.selectedDays) {
         if (!seen.add(d)) {
-          setState(() => _error = 'Один день не может быть в двух разделах');
+          setState(() { _error = 'Один день не может быть в двух разделах'; _shakeCount++; });
           return;
         }
       }
@@ -173,6 +206,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                   days: s.selectedDays.toList()..sort(),
                   restDays: s.restDays.toList()..sort(),
                   cycleWeeks: _cycleWeeks,
+                  dayTimes: s.dayTimesForDb,
                 ))
             .toList(),
       );
@@ -209,6 +243,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     } catch (e) {
       setState(() {
         _error = 'Что-то пошло не так. Попробуйте позже.';
+        _shakeCount++;
         _isLoading = false;
       });
     }
@@ -256,7 +291,10 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             // Error
             if (_error != null) ...[
               const SizedBox(height: 16),
-              Text(_error!, style: const TextStyle(color: AppColors.error)),
+              _ShakeWidget(
+                trigger: _shakeCount,
+                child: Text(_error!, style: const TextStyle(color: AppColors.error)),
+              ),
             ],
 
             const SizedBox(height: 32),
@@ -394,7 +432,8 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             );
           }),
         ),
-        const SizedBox(height: 12),
+        // Time wheel — appears with animation when first day is selected.
+        _buildTimeWheel(index),
         // "Mark as rest day" button
         GestureDetector(
           onTap: section.selectedDays.isEmpty
@@ -431,6 +470,65 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  static const _dayLabelsShort = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+
+  Widget _buildTimeWheel(int sectionIndex) {
+    final section = _sections[sectionIndex];
+    final activeDay = section.lastSelectedDay;
+    final visible = activeDay != null;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOut,
+      child: visible
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                children: [
+                  const SizedBox(height: 4),
+                  Text(
+                    'Время начала — ${_dayLabelsShort[activeDay]}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 140,
+                    child: CupertinoTheme(
+                      data: const CupertinoThemeData(
+                        brightness: Brightness.dark,
+                        textTheme: CupertinoTextThemeData(
+                          dateTimePickerTextStyle: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      child: CupertinoDatePicker(
+                        // Keyed by sectionIndex + activeDay so the picker resets
+                        // to 00:00 each time the active day changes.
+                        key: ValueKey('tw_${sectionIndex}_$activeDay'),
+                        mode: CupertinoDatePickerMode.time,
+                        use24hFormat: true,
+                        initialDateTime: DateTime(2000, 1, 1, 0, 0),
+                        onDateTimeChanged: (dt) {
+                          // Update in-place — no setState needed (no visual rebuild required).
+                          section.dayTimes[activeDay] =
+                              TimeOfDay(hour: dt.hour, minute: dt.minute);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 
@@ -581,6 +679,57 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ShakeWidget extends StatefulWidget {
+  final Widget child;
+  final int trigger;
+
+  const _ShakeWidget({required this.child, required this.trigger});
+
+  @override
+  State<_ShakeWidget> createState() => _ShakeWidgetState();
+}
+
+class _ShakeWidgetState extends State<_ShakeWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_ShakeWidget old) {
+    super.didUpdateWidget(old);
+    if (widget.trigger != old.trigger) _ctrl.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, child) => Transform.translate(
+        offset: Offset(
+          math.sin(_ctrl.value * math.pi * 4) * 6 * (1 - _ctrl.value),
+          0,
+        ),
+        child: child,
+      ),
+      child: widget.child,
     );
   }
 }

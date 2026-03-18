@@ -1,27 +1,47 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/profile.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class ProfileService {
   static SupabaseClient get _client => Supabase.instance.client;
 
+  static String _cacheKey(String userId) => 'profile:$userId';
+
   static Future<Profile?> getProfile() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
-    final res = await _client
-        .from('profiles')
-        .select()
-        .eq('id', userId)
-        .maybeSingle();
-
-    if (res == null) return null;
-    return Profile.fromJson(res);
+    return AppCache.get<Profile?>(
+      key: _cacheKey(userId),
+      ttl: const Duration(minutes: 10),
+      fetch: () async {
+        final res = await _client
+            .from('profiles')
+            .select()
+            .eq('id', userId)
+            .maybeSingle();
+        if (res == null) return null;
+        return Profile.fromJson(res);
+      },
+      encode: (p) => p == null ? null : jsonEncode(p.toJson()),
+      decode: (s) {
+        if (s == null) return null;
+        try {
+          return Profile.fromJson(jsonDecode(s) as Map<String, dynamic>);
+        } catch (_) {
+          return null;
+        }
+      },
+    );
   }
 
   static Future<Profile> createProfile(Profile profile) async {
     await _client.from('profiles').upsert(profile.toJson());
+    final userId = AuthService.currentUser?.id;
+    if (userId != null) await AppCache.invalidate(_cacheKey(userId));
     return profile;
   }
 
@@ -33,6 +53,9 @@ class ProfileService {
       ...updates,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', userId);
+
+    // Invalidate so next read fetches fresh data
+    await AppCache.invalidate(_cacheKey(userId));
   }
 
   /// Проверяет, свободен ли ник (не занят другим пользователем).

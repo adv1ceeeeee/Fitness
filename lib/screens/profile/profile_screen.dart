@@ -12,6 +12,7 @@ import 'package:sportwai/services/biometric_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/export_service.dart';
+import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/workout_service.dart';
@@ -41,11 +42,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _weeklyWorkoutGoal = 0; // 0 = not set
   bool _deloadActive = false;
   bool _weighInEnabled = false;
-  int _weighInWeekday = 0; // 0=Пн…6=Вс
+  Set<int> _weighInWeekdays = {0}; // 0=Пн…6=Вс, multi-select
   int _weighInHour = 9;
   int _weighInMinute = 0;
   int _restDayNotifHour = 9;
   int _restDayNotifMinute = 0;
+  bool _weeklySummaryEnabled = true;
 
   @override
   void initState() {
@@ -77,7 +79,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _weeklyWorkoutGoal = prefs.getInt('weekly_workout_goal') ?? 0;
         _deloadActive = prefs.getBool('deload_active') ?? false;
         _weighInEnabled = prefs.getBool('weigh_in_notif_enabled') ?? false;
-        _weighInWeekday = prefs.getInt('weigh_in_weekday') ?? 0;
+        _weeklySummaryEnabled = AppStorage.weeklySummaryEnabled;
+        // Migrate: old single-day key → new list key
+        final legacyDay = prefs.getInt('weigh_in_weekday');
+        final savedList = prefs.getStringList('weigh_in_weekdays');
+        if (savedList != null) {
+          _weighInWeekdays = savedList.map(int.parse).toSet();
+        } else if (legacyDay != null) {
+          _weighInWeekdays = {legacyDay};
+        } else {
+          _weighInWeekdays = {0};
+        }
         _weighInHour = prefs.getInt('weigh_in_hour') ?? 9;
         _weighInMinute = prefs.getInt('weigh_in_minute') ?? 0;
         _restDayNotifHour = prefs.getInt('rest_day_notif_hour') ?? 9;
@@ -99,13 +111,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     EventLogger.deloadToggled(enabled: value);
   }
 
+  Future<void> _toggleWeeklySummary(bool value) async {
+    await AppStorage.setWeeklySummaryEnabled(value);
+    if (mounted) setState(() => _weeklySummaryEnabled = value);
+    if (value) {
+      NotificationService.refreshWeeklySummary();
+    } else {
+      await NotificationService.cancelWeeklySummary();
+    }
+  }
+
   Future<void> _toggleWeighIn(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('weigh_in_notif_enabled', value);
     if (mounted) setState(() => _weighInEnabled = value);
     if (value) {
-      await NotificationService.scheduleWeighInReminder(
-        weekday: _weighInWeekday, hour: _weighInHour, minute: _weighInMinute,
+      await NotificationService.scheduleWeighInReminders(
+        _weighInWeekdays.toList(), hour: _weighInHour, minute: _weighInMinute,
       );
     } else {
       await NotificationService.cancelWeighInReminder();
@@ -123,8 +145,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     await prefs.setInt('weigh_in_minute', picked.minute);
     setState(() { _weighInHour = picked.hour; _weighInMinute = picked.minute; });
     if (_weighInEnabled) {
-      await NotificationService.scheduleWeighInReminder(
-        weekday: _weighInWeekday, hour: picked.hour, minute: picked.minute,
+      await NotificationService.scheduleWeighInReminders(
+        _weighInWeekdays.toList(), hour: picked.hour, minute: picked.minute,
       );
     }
   }
@@ -156,15 +178,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return names[day.clamp(0, 6)];
   }
 
-  Future<void> _changeWeighInDay(int weekday) async {
+  Future<void> _toggleWeighInDay(int weekday) async {
+    final next = Set<int>.from(_weighInWeekdays);
+    if (next.contains(weekday)) {
+      next.remove(weekday);
+      if (next.isEmpty) return; // always keep at least one day
+    } else {
+      next.add(weekday);
+    }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('weigh_in_weekday', weekday);
-    if (mounted) setState(() => _weighInWeekday = weekday);
+    await prefs.setStringList(
+        'weigh_in_weekdays', next.map((d) => '$d').toList());
+    if (mounted) setState(() => _weighInWeekdays = next);
     if (_weighInEnabled) {
-      await NotificationService.scheduleWeighInReminder(
-        weekday: weekday, hour: _weighInHour, minute: _weighInMinute,
+      await NotificationService.scheduleWeighInReminders(
+        next.toList(), hour: _weighInHour, minute: _weighInMinute,
       );
     }
+  }
+
+  Future<void> _toggleWeighInEveryDay() async {
+    final allDays = {0, 1, 2, 3, 4, 5, 6};
+    final next = _weighInWeekdays.length == 7 ? {0} : allDays;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+        'weigh_in_weekdays', next.map((d) => '$d').toList());
+    if (mounted) setState(() => _weighInWeekdays = next);
+    if (_weighInEnabled) {
+      await NotificationService.scheduleWeighInReminders(
+        next.toList(), hour: _weighInHour, minute: _weighInMinute,
+      );
+    }
+  }
+
+  /// Builds a day→workoutName map from all workouts for richer notification text.
+  static Map<int, String> _dayToNameMap(List<dynamic> workouts) {
+    final map = <int, String>{};
+    for (final w in workouts) {
+      for (final day in (w.days as List<int>)) {
+        map.putIfAbsent(day, () => w.name as String);
+      }
+    }
+    return map;
   }
 
   Future<void> _pickNotifTime() async {
@@ -182,7 +237,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final workouts = await WorkoutService.getMyWorkouts();
       final days = workouts.expand((w) => w.days).toList();
       await NotificationService.scheduleWorkoutReminders(
-        days, hour: picked.hour, minute: picked.minute,
+        days,
+        hour: picked.hour,
+        minute: picked.minute,
+        dayToName: _dayToNameMap(workouts),
       );
     }
   }
@@ -197,7 +255,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       final workouts = await WorkoutService.getMyWorkouts();
       final days = workouts.expand((w) => w.days).toList();
       await NotificationService.scheduleWorkoutReminders(
-        days, hour: _notifHour, minute: _notifMinute,
+        days,
+        hour: _notifHour,
+        minute: _notifMinute,
+        dayToName: _dayToNameMap(workouts),
       );
     } else {
       // 'before' mode — weekly reminders don't apply, cancel them
@@ -281,7 +342,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (!granted) return;
       final workouts = await WorkoutService.getMyWorkouts();
       final days = workouts.expand((w) => w.days).toList();
-      await NotificationService.scheduleWorkoutReminders(days);
+      await NotificationService.scheduleWorkoutReminders(
+        days,
+        dayToName: _dayToNameMap(workouts),
+      );
     } else {
       await NotificationService.cancelAll();
     }
@@ -779,47 +843,89 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                     ),
                     if (_weighInEnabled) ...[
-                      _SettingsRow(
-                        label: 'День взвешивания',
-                        trailing: PopupMenuButton<int>(
-                          onSelected: _changeWeighInDay,
-                          color: AppColors.card,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 0, child: Text('Понедельник')),
-                            PopupMenuItem(value: 1, child: Text('Вторник')),
-                            PopupMenuItem(value: 2, child: Text('Среда')),
-                            PopupMenuItem(value: 3, child: Text('Четверг')),
-                            PopupMenuItem(value: 4, child: Text('Пятница')),
-                            PopupMenuItem(value: 5, child: Text('Суббота')),
-                            PopupMenuItem(value: 6, child: Text('Воскресенье')),
-                          ],
-                          child: Container(
+                      // ── День(и) взвешивания ───────────────────────────────
+                      Column(
+                        children: [
+                          Padding(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppColors.accent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                                horizontal: 16, vertical: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  _weekdayName(_weighInWeekday),
-                                  style: const TextStyle(
-                                    color: AppColors.accent,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
+                                const Text('День взвешивания',
+                                    style: TextStyle(
+                                        color: AppColors.textPrimary)),
+                                const SizedBox(height: 10),
+                                // "Каждый день" toggle chip
+                                GestureDetector(
+                                  onTap: _toggleWeighInEveryDay,
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: _weighInWeekdays.length == 7
+                                          ? AppColors.accent
+                                          : AppColors.surface,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      'Каждый день',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: _weighInWeekdays.length == 7
+                                            ? Colors.white
+                                            : AppColors.textSecondary,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.arrow_drop_down,
-                                    color: AppColors.accent, size: 18),
+                                const SizedBox(height: 8),
+                                // Individual day chips
+                                Row(
+                                  children: List.generate(7, (i) {
+                                    final selected =
+                                        _weighInWeekdays.contains(i);
+                                    return Expanded(
+                                      child: Padding(
+                                        padding: EdgeInsets.only(
+                                            right: i < 6 ? 6 : 0),
+                                        child: GestureDetector(
+                                          onTap: () => _toggleWeighInDay(i),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: selected
+                                                  ? AppColors.accent
+                                                  : AppColors.surface,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              _weekdayName(i),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: selected
+                                                    ? Colors.white
+                                                    : AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ),
                               ],
                             ),
                           ),
-                        ),
+                          const Divider(height: 1, indent: 16, endIndent: 16),
+                        ],
                       ),
                       _SettingsRow(
                         label: 'Время взвешивания',
@@ -845,6 +951,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ),
                     ],
+                      _SettingsRow(
+                        label: 'Итог недели (воскресенье)',
+                        last: true,
+                        trailing: Switch(
+                          value: _weeklySummaryEnabled,
+                          onChanged: _toggleWeeklySummary,
+                        ),
+                      ),
                   ],
                 );
               }),

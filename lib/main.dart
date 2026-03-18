@@ -13,6 +13,7 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
+import 'package:sportwai/services/streak_freeze_service.dart';
 
 void _setupErrorHandlers() {
   FlutterError.onError = (details) {
@@ -50,6 +51,7 @@ Future<void> _bootstrap() async {
   );
 
   await AppStorage.init();
+  StreakFreezeService.maybeRefill();
   await NotificationService.initialize();
   OfflineQueueService.init();
 
@@ -100,6 +102,7 @@ class _SportifyAppState extends ConsumerState<SportifyApp> {
       onResume: () {
         EventLogger.resetSession();
         EventLogger.appOpened(source: 'resume');
+        NotificationService.refreshWeeklySummary();
       },
       onPause: EventLogger.flushOnExit,
       onDetach: EventLogger.flushOnExit,

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +18,7 @@ import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/version_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
+import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/workout_service.dart';
 
 // ─── Metric options for body progress panel ───────────────────────────────────
@@ -56,6 +60,20 @@ String elapsedGoalText(DateTime startDate) {
   if (days < 30) return 'за ${(days / 7).round()} нед.';
   return 'за ${(days / 30).round()} мес.';
 }
+
+/// Returns the week key for the weekly summary (date of the preceding Sunday).
+/// Format: "yyyy-MM-dd".  Example: Monday 2026-03-16 → "2026-03-15".
+String weeklySummaryKeyFor(DateTime now) {
+  final daysSinceSunday = now.weekday % 7; // 0=Sun, 1=Mon … 6=Sat
+  final sunday = DateTime(now.year, now.month, now.day - daysSinceSunday);
+  return '${sunday.year}-'
+      '${sunday.month.toString().padLeft(2, '0')}-'
+      '${sunday.day.toString().padLeft(2, '0')}';
+}
+
+/// Returns true only on Sunday, Monday, or Tuesday (the grace window for
+/// showing the previous week's summary).
+bool shouldShowWeeklySummaryOn(DateTime now) => now.weekday % 7 <= 2;
 
 /// Format the "+X кг" / "+X повт." badge text for an achievement card.
 String achievementDiffText(WorkoutInsight insight) {
@@ -102,6 +120,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Workout? _nextScheduledWorkout;
   bool _isRestDay = false;
 
+  // Countdown to next planned workout
+  DateTime? _todayPlannedTime;
+  Timer? _countdownTimer;
+  Duration? _timeUntilWorkout;
+
   @override
   void initState() {
     super.initState();
@@ -110,6 +133,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _checkCrashRecovery();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) VersionService.checkAndPrompt(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCountdown(DateTime plannedTime) {
+    _countdownTimer?.cancel();
+    _updateCountdown(plannedTime);
+    _countdownTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) _updateCountdown(plannedTime);
+    });
+  }
+
+  void _updateCountdown(DateTime plannedTime) {
+    final diff = plannedTime.difference(DateTime.now());
+    setState(() {
+      _timeUntilWorkout = diff.isNegative ? null : diff;
     });
   }
 
@@ -246,6 +290,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (daysSince >= 2 && !isRestDay) {
         nextWorkout = results[1] as Workout? ?? await TrainingService.getNextScheduledWorkout();
       }
+      // Load planned time for today's session (for countdown)
+      final plannedTime = await TrainingService.getTodayPlannedTime();
+
       setState(() {
         _profile = results[0] as Profile?;
         _todayWorkout = results[1] as Workout?;
@@ -259,7 +306,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _daysSinceLastWorkout = daysSince;
         _nextScheduledWorkout = nextWorkout;
         _isRestDay = isRestDay;
+        _todayPlannedTime = plannedTime;
       });
+      if (plannedTime != null) _startCountdown(plannedTime);
+      _maybeShowWeeklySummary(weeklyGoal);
     } catch (e) {
       if (mounted) {
         setState(() => _loadingWorkout = false);
@@ -271,6 +321,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
       }
     }
+  }
+
+  /// Показывает еженедельный отчёт в воскресенье, понедельник или вторник,
+  /// если он ещё не показывался на этой неделе и функция включена.
+  void _maybeShowWeeklySummary(int weeklyGoal) {
+    if (!AppStorage.weeklySummaryEnabled) return;
+    final now = DateTime.now();
+    if (!shouldShowWeeklySummaryOn(now)) return;
+
+    final weekKey = weeklySummaryKeyFor(now);
+    if (AppStorage.lastWeeklySummaryShownWeek == weekKey) return;
+
+    // Откладываем до следующего кадра, чтобы Scaffold был готов
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await AppStorage.setLastWeeklySummaryShownWeek(weekKey);
+      if (!mounted) return;
+      showModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => _WeeklySummarySheet(weeklyGoal: weeklyGoal),
+      );
+    });
   }
 
   static SupabaseClient get _db => Supabase.instance.client;
@@ -408,13 +483,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Привет, $name!',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                _GreetingHeader(
+                  name: name,
+                  timeUntilWorkout: _timeUntilWorkout,
+                  plannedTime: _todayPlannedTime,
                 ),
                 const SizedBox(height: 24),
                 _TodayCard(
@@ -422,6 +494,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   loading: _loadingWorkout,
                   onTap: () => context.push('/today'),
                   onCreateProgram: () => context.go('/workouts'),
+                  onQuickStart: () => showModalBottomSheet<void>(
+                    context: context,
+                    useRootNavigator: true,
+                    isScrollControlled: true,
+                    backgroundColor: AppColors.card,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    builder: (ctx) => _QuickStartSheet(
+                      onCreated: (workoutId) {
+                        context.push('/workouts/$workoutId/exercises');
+                      },
+                    ),
+                  ),
                 ),
 
                 // ── Weekly goal card ──────────────────────────────────────
@@ -1113,12 +1200,112 @@ class _SkeletonBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Shimmer.fromColors(
+      baseColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
+      highlightColor: isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5),
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Greeting header ──────────────────────────────────────────────────────────
+
+class _GreetingHeader extends StatelessWidget {
+  final String name;
+  final Duration? timeUntilWorkout;
+  final DateTime? plannedTime;
+
+  const _GreetingHeader({
+    required this.name,
+    required this.timeUntilWorkout,
+    required this.plannedTime,
+  });
+
+  static String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Доброе утро';
+    if (hour < 18) return 'Добрый день';
+    return 'Добрый вечер';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final countdown = timeUntilWorkout;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${_greeting()}, $name!',
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        if (countdown != null && plannedTime != null) ...[
+          const SizedBox(height: 8),
+          _CountdownChip(duration: countdown, plannedTime: plannedTime!),
+        ],
+      ],
+    );
+  }
+}
+
+class _CountdownChip extends StatelessWidget {
+  final Duration duration;
+  final DateTime plannedTime;
+
+  const _CountdownChip({required this.duration, required this.plannedTime});
+
+  String _format() {
+    final h = duration.inHours;
+    final m = duration.inMinutes % 60;
+    if (h > 0) return '$h ч ${m.toString().padLeft(2, '0')} мин';
+    if (m > 0) return '$m мин';
+    return 'Сейчас!';
+  }
+
+  String _timeLabel() {
+    final h = plannedTime.hour.toString().padLeft(2, '0');
+    final m = plannedTime.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isIminent = duration.inMinutes <= 15;
     return Container(
-      width: width,
-      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(radius),
+        color: (isIminent ? AppColors.accent : AppColors.card),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.timer_outlined,
+            size: 14,
+            color: isIminent ? Colors.white : AppColors.accent,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'До тренировки (${_timeLabel()}): ${_format()}',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: isIminent ? Colors.white : AppColors.textPrimary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1131,12 +1318,14 @@ class _TodayCard extends StatelessWidget {
   final bool loading;
   final VoidCallback onTap;
   final VoidCallback? onCreateProgram;
+  final VoidCallback? onQuickStart;
 
   const _TodayCard({
     required this.workout,
     required this.loading,
     required this.onTap,
     this.onCreateProgram,
+    this.onQuickStart,
   });
 
   @override
@@ -1161,11 +1350,127 @@ class _TodayCard extends StatelessWidget {
       );
     }
     final hasWorkout = workout != null;
+
+    // ── Empty state for new users ──────────────────────────────────────────────
+    if (!hasWorkout) {
+      return Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppColors.accent.withValues(alpha: 0.25),
+            width: 1,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              // Subtle accent glow in the top-right corner
+              Positioned(
+                top: -30,
+                right: -30,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.accent.withValues(alpha: 0.08),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Icon
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.fitness_center_rounded,
+                        size: 48,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Title
+                    const Text(
+                      'Начни своё первое занятие',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Subtitle
+                    const Text(
+                      'Создай программу тренировок — и мы всё настроим за тебя',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.4,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // CTA button
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: onCreateProgram,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Создать программу',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: onQuickStart,
+                        child: const Text(
+                          'Начать с готовой программы',
+                          style: TextStyle(
+                            color: AppColors.accent,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // ── Workout exists ─────────────────────────────────────────────────────────
     return Material(
-      color: hasWorkout ? AppColors.card : AppColors.surface,
+      color: AppColors.card,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        onTap: hasWorkout ? onTap : onCreateProgram,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1174,18 +1479,12 @@ class _TodayCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: hasWorkout
-                      ? AppColors.accent.withValues(alpha: 0.2)
-                      : AppColors.separator.withValues(alpha: 0.5),
+                  color: AppColors.accent.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  hasWorkout
-                      ? Icons.fitness_center_rounded
-                      : Icons.today_rounded,
-                  color: hasWorkout
-                      ? AppColors.accent
-                      : AppColors.textSecondary,
+                child: const Icon(
+                  Icons.fitness_center_rounded,
+                  color: AppColors.accent,
                   size: 28,
                 ),
               ),
@@ -1195,40 +1494,25 @@ class _TodayCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      hasWorkout
-                          ? workout!.name
-                          : 'Сегодня тренировки нет',
-                      style: TextStyle(
+                      workout!.name,
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
-                        color: hasWorkout
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
+                        color: AppColors.textPrimary,
                       ),
                     ),
-                    if (hasWorkout) ...[
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Нажми, чтобы начать',
-                        style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary),
-                      ),
-                    ] else if (onCreateProgram != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Создать программу →',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.accent.withValues(alpha: 0.8)),
-                      ),
-                    ],
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Нажми, чтобы начать',
+                      style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary),
+                    ),
                   ],
                 ),
               ),
-              if (hasWorkout)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 16, color: AppColors.textSecondary),
+              const Icon(Icons.arrow_forward_ios,
+                  size: 16, color: AppColors.textSecondary),
             ],
           ),
         ),
@@ -1753,59 +2037,101 @@ class _WeeklyGoalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = (done / goal).clamp(0.0, 1.0);
     final isDone = done >= goal;
+    final ringColor = isDone ? const Color(0xFF4CAF50) : AppColors.accent;
+
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Icon(
-                isDone ? Icons.emoji_events_rounded : Icons.flag_rounded,
-                color: AppColors.accent,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  isDone
-                      ? 'Цель недели выполнена!'
-                      : 'Цель на неделю: $done / $goal тренировок',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+          // ── Circular ring ──────────────────────────────────────────────
+          SizedBox(
+            width: 80,
+            height: 80,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox.expand(
+                  child: CircularProgressIndicator(
+                    value: progress,
+                    strokeWidth: 7,
+                    backgroundColor: AppColors.surface,
+                    valueColor: AlwaysStoppedAnimation<Color>(ringColor),
+                    strokeCap: StrokeCap.round,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 6,
-              backgroundColor: AppColors.surface,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                isDone ? Colors.green : AppColors.accent,
-              ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$done',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: ringColor,
+                        height: 1,
+                      ),
+                    ),
+                    Text(
+                      'из $goal',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          if (!isDone) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Осталось ${goal - done} ${_workoutWord(goal - done)}',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
+          const SizedBox(width: 20),
+          // ── Labels ────────────────────────────────────────────────────
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isDone ? 'Цель недели выполнена! 🎉' : 'Цель на неделю',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: isDone ? const Color(0xFF4CAF50) : AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (isDone)
+                  const Text(
+                    'Отличная работа, так держать!',
+                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  )
+                else ...[
+                  Text(
+                    'Осталось ${goal - done} ${_workoutWord(goal - done)}',
+                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  // Mini progress dots
+                  Row(
+                    children: List.generate(goal, (i) => Padding(
+                      padding: const EdgeInsets.only(right: 5),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i < done ? ringColor : AppColors.surface,
+                        ),
+                      ),
+                    )),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -1813,9 +2139,7 @@ class _WeeklyGoalCard extends StatelessWidget {
 
   String _workoutWord(int n) {
     if (n % 10 == 1 && n % 100 != 11) return 'тренировка';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
-      return 'тренировки';
-    }
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'тренировки';
     return 'тренировок';
   }
 }
@@ -1950,6 +2274,438 @@ class _RestDayCard extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Quick start sheet ────────────────────────────────────────────────────────
+
+class _QuickTemplate {
+  final String name;
+  final String description;
+  final String emoji;
+  final List<int> days; // 0=Пн … 6=Вс
+
+  const _QuickTemplate({
+    required this.name,
+    required this.description,
+    required this.emoji,
+    required this.days,
+  });
+}
+
+class _QuickStartSheet extends StatefulWidget {
+  final ValueChanged<String> onCreated; // receives new workout id
+
+  const _QuickStartSheet({required this.onCreated});
+
+  @override
+  State<_QuickStartSheet> createState() => _QuickStartSheetState();
+}
+
+class _QuickStartSheetState extends State<_QuickStartSheet> {
+  static const _templates = [
+    _QuickTemplate(
+      emoji: '💪',
+      name: 'Фулл боди · 3 дня',
+      description: 'Пн · Ср · Пт — прорабатываем всё тело на каждой тренировке',
+      days: [0, 2, 4],
+    ),
+    _QuickTemplate(
+      emoji: '🏋',
+      name: 'Верх / Низ · 4 дня',
+      description: 'Пн · Вт · Чт · Пт — чередование верха и низа тела',
+      days: [0, 1, 3, 4],
+    ),
+    _QuickTemplate(
+      emoji: '🔥',
+      name: 'Push–Pull–Legs · 6 дней',
+      description: 'Пн–Сб — классическое разделение на жим / тяга / ноги',
+      days: [0, 1, 2, 3, 4, 5],
+    ),
+    _QuickTemplate(
+      emoji: '🚀',
+      name: 'Два дня в неделю',
+      description: 'Вт · Пт — минимальная нагрузка для поддержания формы',
+      days: [1, 4],
+    ),
+  ];
+
+  bool _loading = false;
+
+  Future<void> _select(_QuickTemplate t) async {
+    setState(() => _loading = true);
+    try {
+      final workout = await WorkoutService.createWorkout(t.name, t.days);
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onCreated(workout.id);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка: $e')),
+        );
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 16, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Готовые программы',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Выберите шаблон — добавьте упражнения и начинайте',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          if (_loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else
+            ...List.generate(_templates.length, (i) {
+              final t = _templates[i];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  onTap: () => _select(t),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  tileColor: AppColors.surface,
+                  leading: Text(t.emoji, style: const TextStyle(fontSize: 28)),
+                  title: Text(
+                    t.name,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    t.description,
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right,
+                      color: AppColors.textSecondary),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Weekly summary sheet ─────────────────────────────────────────────────────
+
+class _WeeklySummarySheet extends StatefulWidget {
+  final int weeklyGoal;
+  const _WeeklySummarySheet({required this.weeklyGoal});
+
+  @override
+  State<_WeeklySummarySheet> createState() => _WeeklySummarySheetState();
+}
+
+class _WeeklySummarySheetState extends State<_WeeklySummarySheet>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _fadeCtrl;
+  late final Animation<double> _fade;
+
+  bool _loading = true;
+  int _workouts = 0;
+  double _volumeKg = 0;
+  int _streak = 0;
+  int _prs = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fadeCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 400));
+    _fade = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _fadeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final data = await AnalyticsService.getWeeklySummaryData();
+      if (mounted) {
+        setState(() {
+          _workouts = data.workouts;
+          _volumeKg = data.volumeKg;
+          _streak = data.streak;
+          _prs = data.prs;
+          _loading = false;
+        });
+        _fadeCtrl.forward();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _motivationText() {
+    final goal = widget.weeklyGoal;
+    if (goal > 0 && _workouts >= goal) return 'Цель недели выполнена! Отличная работа!';
+    if (_workouts == 0) return 'На этой неделе ещё есть время начать. Вперёд!';
+    if (goal > 0 && _workouts < goal) {
+      return 'Ещё ${goal - _workouts} тренировки до цели — ты справишься!';
+    }
+    if (_streak >= 7) return 'Серия $_streak дней — это уже настоящая привычка!';
+    if (_prs > 0) return '$_prs личных рекорда за неделю — огонь!';
+    return 'Хорошая неделя, продолжай в том же духе!';
+  }
+
+  String _volLabel() {
+    if (_volumeKg >= 1000) {
+      return '${(_volumeKg / 1000).toStringAsFixed(1)} т';
+    }
+    return '${_volumeKg.toStringAsFixed(0)} кг';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+          24, 16, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.bar_chart_rounded,
+                    color: AppColors.accent, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Итоги недели',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'Как прошла эта неделя',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: CircularProgressIndicator(),
+            )
+          else
+            FadeTransition(
+              opacity: _fade,
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryTile(
+                          emoji: '🏋',
+                          value: '$_workouts',
+                          label: 'тренировок',
+                          sub: widget.weeklyGoal > 0
+                              ? 'цель: ${widget.weeklyGoal}'
+                              : null,
+                          highlight: widget.weeklyGoal > 0 &&
+                              _workouts >= widget.weeklyGoal,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _SummaryTile(
+                          emoji: '📦',
+                          value: _volLabel(),
+                          label: 'объём',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SummaryTile(
+                          emoji: '🔥',
+                          value: '$_streak',
+                          label: 'дней серии',
+                          highlight: _streak >= 7,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _SummaryTile(
+                          emoji: '🏆',
+                          value: '$_prs',
+                          label: 'личных рекорда',
+                          highlight: _prs > 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.2)),
+                    ),
+                    child: Text(
+                      _motivationText(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Отлично, вперёд!'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryTile extends StatelessWidget {
+  final String emoji;
+  final String value;
+  final String label;
+  final String? sub;
+  final bool highlight;
+
+  const _SummaryTile({
+    required this.emoji,
+    required this.value,
+    required this.label,
+    this.sub,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: highlight
+            ? AppColors.accent.withValues(alpha: 0.12)
+            : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: highlight
+            ? Border.all(color: AppColors.accent.withValues(alpha: 0.3))
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 22)),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              color: highlight ? AppColors.accent : AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 12),
+          ),
+          if (sub != null)
+            Text(
+              sub!,
+              style: TextStyle(
+                color: AppColors.accent.withValues(alpha: 0.8),
+                fontSize: 11,
+              ),
+            ),
         ],
       ),
     );

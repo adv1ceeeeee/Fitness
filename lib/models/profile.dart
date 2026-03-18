@@ -6,7 +6,6 @@ class Profile {
   final String? middleName;
   final DateTime? birthDate;
   final String? nickname;
-  final int? age;
   final String? gender;
   final double? weight;
   final String? goal;
@@ -26,7 +25,6 @@ class Profile {
     this.middleName,
     this.birthDate,
     this.nickname,
-    this.age,
     this.gender,
     this.weight,
     this.goal,
@@ -39,6 +37,18 @@ class Profile {
     required this.updatedAt,
   });
 
+  /// Возраст в полных годах, вычисленный из birth_date. Null если дата не задана.
+  int? get age {
+    if (birthDate == null) return null;
+    final now = DateTime.now();
+    int years = now.year - birthDate!.year;
+    if (now.month < birthDate!.month ||
+        (now.month == birthDate!.month && now.day < birthDate!.day)) {
+      years--;
+    }
+    return years;
+  }
+
   factory Profile.fromJson(Map<String, dynamic> json) {
     return Profile(
       id: json['id'] as String,
@@ -50,7 +60,6 @@ class Profile {
           ? DateTime.tryParse(json['birth_date'] as String)
           : null,
       nickname: json['nickname'] as String?,
-      age: json['age'] as int?,
       gender: json['gender'] as String?,
       weight: (json['weight'] as num?)?.toDouble(),
       goal: json['goal'] as String?,
@@ -72,7 +81,6 @@ class Profile {
         'middle_name': middleName,
         'birth_date': birthDate?.toIso8601String().split('T')[0],
         'nickname': nickname,
-        'age': age,
         'gender': gender,
         'weight': weight,
         'goal': goal,
@@ -92,7 +100,6 @@ class Profile {
     String? middleName,
     DateTime? birthDate,
     String? nickname,
-    int? age,
     String? gender,
     double? weight,
     String? goal,
@@ -110,7 +117,6 @@ class Profile {
       middleName: middleName ?? this.middleName,
       birthDate: birthDate ?? this.birthDate,
       nickname: nickname ?? this.nickname,
-      age: age ?? this.age,
       gender: gender ?? this.gender,
       weight: weight ?? this.weight,
       goal: goal ?? this.goal,

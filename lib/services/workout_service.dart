@@ -15,6 +15,7 @@ class WorkoutService {
         .select()
         .eq('user_id', userId)
         .eq('is_standard', false)
+        .isFilter('deleted_at', null)
         .order('updated_at', ascending: false);
 
     return (res as List)
@@ -28,6 +29,7 @@ class WorkoutService {
     List<int> restDays = const [],
     int cycleWeeks = 8,
     String? groupId,
+    Map<int, String>? dayTimes,
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) throw StateError('createWorkout called while not authenticated');
@@ -39,6 +41,8 @@ class WorkoutService {
       'is_standard': false,
       'cycle_weeks': cycleWeeks,
       if (groupId != null) 'group_id': groupId,
+      if (dayTimes != null && dayTimes.isNotEmpty)
+        'day_times': {for (final e in dayTimes.entries) '${e.key}': e.value},
     }).select().single();
 
     return Workout.fromJson(res);
@@ -54,7 +58,7 @@ class WorkoutService {
   /// Creates multiple workouts that form a multi-section program.
   /// All sections share the same group_id (= first workout's id).
   static Future<List<Workout>> createWorkoutGroup(
-    List<({String name, List<int> days, List<int> restDays, int cycleWeeks})> sections,
+    List<({String name, List<int> days, List<int> restDays, int cycleWeeks, Map<int, String> dayTimes})> sections,
   ) async {
     if (sections.isEmpty || sections.length > 7) {
       throw ArgumentError('sections must have 1–7 entries, got ${sections.length}');
@@ -66,6 +70,7 @@ class WorkoutService {
       sections.first.days,
       restDays: sections.first.restDays,
       cycleWeeks: sections.first.cycleWeeks,
+      dayTimes: sections.first.dayTimes,
     );
 
     if (sections.length == 1) return [first];
@@ -85,6 +90,7 @@ class WorkoutService {
               restDays: s.restDays,
               cycleWeeks: s.cycleWeeks,
               groupId: groupId,
+              dayTimes: s.dayTimes,
             ),
           ),
     );
@@ -217,10 +223,13 @@ class WorkoutService {
         .eq('id', workoutExerciseId);
   }
 
-  /// Delete a workout and all its exercises.
+  /// Soft-delete a workout (sets deleted_at, hidden from the app but recoverable).
+  /// workout_exercises remain intact; historical sets are never touched.
   static Future<void> deleteWorkout(String id) async {
-    await _client.from('workout_exercises').delete().eq('workout_id', id);
-    await _client.from('workouts').delete().eq('id', id);
+    await _client
+        .from('workouts')
+        .update({'deleted_at': DateTime.now().toIso8601String()})
+        .eq('id', id);
   }
 
   /// Creates a copy of a workout with all its exercises.
