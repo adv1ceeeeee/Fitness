@@ -967,7 +967,7 @@ class _CaloriesChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spots = List.generate(sessions.length, (i) {
-      final kcal = (sessions[i]['kcal_total'] as num).toDouble();
+      final kcal = (sessions[i]['kcal_total'] as num?)?.toDouble() ?? 0.0;
       return FlSpot(i.toDouble(), kcal);
     });
 
@@ -1051,7 +1051,7 @@ class _CaloriesChart extends StatelessWidget {
               x: i,
               barRods: [
                 BarChartRodData(
-                  toY: (sessions[i]['kcal_total'] as num).toDouble(),
+                  toY: (sessions[i]['kcal_total'] as num?)?.toDouble() ?? 0.0,
                   color: AppColors.accent,
                   width: sessions.length > 10 ? 8 : 14,
                   borderRadius: BorderRadius.circular(4),
