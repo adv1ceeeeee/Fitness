@@ -3,17 +3,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/app_config.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/firebase_options.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/router.dart';
+import 'package:sportwai/services/device_token_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
 import 'package:sportwai/services/streak_freeze_service.dart';
+
+bool get _isMobilePlatform =>
+    defaultTargetPlatform == TargetPlatform.android ||
+    defaultTargetPlatform == TargetPlatform.iOS;
+
+/// Initialises Firebase and wires up FCM token registration.
+/// Skipped on non-mobile platforms (Windows, etc.) so tests keep passing.
+Future<void> _initFcm() async {
+  if (!_isMobilePlatform) return;
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // Foreground message handler (optional — shows local notif if needed)
+    FirebaseMessaging.onMessage.listen((_) {});
+
+    // Register / refresh token whenever auth state changes
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      if (data.session == null) return;
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) await DeviceTokenService.register(token);
+    });
+
+    FirebaseMessaging.instance.onTokenRefresh.listen(
+      DeviceTokenService.register,
+    );
+  } catch (e) {
+    // Firebase not configured yet — app works fine with local notifications
+    debugPrint('[FCM] init skipped: $e');
+  }
+}
 
 void _setupErrorHandlers() {
   FlutterError.onError = (details) {
@@ -53,6 +88,7 @@ Future<void> _bootstrap() async {
   await AppStorage.init();
   StreakFreezeService.maybeRefill();
   await NotificationService.initialize();
+  await _initFcm();
   NotificationService.scheduleChurnNotification();
   OfflineQueueService.init();
 
