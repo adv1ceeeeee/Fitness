@@ -76,10 +76,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final startDateStr =
         '${_trainingStart.year}-${_trainingStart.month.toString().padLeft(2, '0')}-01';
 
+    // Compute birth_date from age (approximate: same month/day, year = now - age)
+    String? birthDate;
+    if (ageText.isNotEmpty) {
+      final age = int.tryParse(ageText);
+      if (age != null) {
+        final birthYear = now.year - age;
+        birthDate = '$birthYear-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      }
+    }
+
     await ProfileService.updateProfile({
       'gender': _gender,
-      'age': ageText.isNotEmpty ? int.tryParse(ageText) : null,
-      'weight': weightText.isNotEmpty ? double.tryParse(weightText) : null,
+      if (birthDate != null) 'birth_date': birthDate,
+      if (weightText.isNotEmpty && double.tryParse(weightText) != null)
+        'weight_kg': double.parse(weightText),
       'goal': _goal,
       'level': level,
       'training_start_date': startDateStr,
