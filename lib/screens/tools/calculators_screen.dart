@@ -18,7 +18,7 @@ class _CalculatorsScreenState extends State<CalculatorsScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -37,6 +37,7 @@ class _CalculatorsScreenState extends State<CalculatorsScreen>
           tabs: const [
             Tab(text: '1ПМ'),
             Tab(text: 'Блины'),
+            Tab(text: 'Состав тела'),
           ],
         ),
       ),
@@ -45,6 +46,7 @@ class _CalculatorsScreenState extends State<CalculatorsScreen>
         children: const [
           _OneRepMaxTab(),
           _PlateCalculatorTab(),
+          _BodyCompositionTab(),
         ],
       ),
     );
@@ -1072,6 +1074,249 @@ class _ToggleChip extends StatelessWidget {
             fontSize: 13,
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Body composition calculator (BMI / FFMI / LBM) ─────────────────────────
+
+class _BodyCompositionTab extends StatefulWidget {
+  const _BodyCompositionTab();
+
+  @override
+  State<_BodyCompositionTab> createState() => _BodyCompositionTabState();
+}
+
+class _BodyCompositionTabState extends State<_BodyCompositionTab> {
+  final _weightCtrl = TextEditingController();
+  final _heightCtrl = TextEditingController();
+  final _fatCtrl = TextEditingController();
+  String _gender = 'male';
+  bool _loggedUsage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefill();
+  }
+
+  Future<void> _prefill() async {
+    final metrics = await BodyMetricsService.getLatest();
+    if (!mounted) return;
+    final w = (metrics?['weight_kg'] as num?)?.toDouble();
+    final fat = (metrics?['body_fat_pct'] as num?)?.toDouble();
+    setState(() {
+      if (w != null && w > 0) _weightCtrl.text = _fmt(w);
+      if (fat != null && fat > 0) _fatCtrl.text = _fmt(fat);
+    });
+  }
+
+  String _fmt(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
+  ({double bmi, double? ffmi, double? lbm})? get _result {
+    final w = double.tryParse(_weightCtrl.text.replaceAll(',', '.'));
+    final h = double.tryParse(_heightCtrl.text.replaceAll(',', '.'));
+    if (w == null || w <= 0 || h == null || h <= 0) return null;
+    final hm = h / 100.0;
+    final bmi = w / (hm * hm);
+    final fat = double.tryParse(_fatCtrl.text.replaceAll(',', '.'));
+    double? lbm, ffmi;
+    if (fat != null && fat > 0 && fat < 100) {
+      lbm = w * (1 - fat / 100);
+      ffmi = lbm / (hm * hm);
+    }
+    if (!_loggedUsage) {
+      _loggedUsage = true;
+      EventLogger.calculatorUsed(type: 'body_composition');
+    }
+    return (bmi: bmi, ffmi: ffmi, lbm: lbm);
+  }
+
+  String _bmiCategory(double bmi) {
+    if (bmi < 18.5) return 'Недовес';
+    if (bmi < 25.0) return 'Норма';
+    if (bmi < 30.0) return 'Избыточный вес';
+    return 'Ожирение';
+  }
+
+  String _ffmiCategory(double ffmi) {
+    if (_gender == 'female') {
+      if (ffmi < 14) return 'Ниже среднего';
+      if (ffmi < 17) return 'Среднее';
+      if (ffmi < 20) return 'Выше среднего';
+      return 'Элитный уровень';
+    }
+    if (ffmi < 18) return 'Ниже среднего';
+    if (ffmi < 20) return 'Среднее';
+    if (ffmi < 22) return 'Выше среднего';
+    if (ffmi < 25) return 'Атлетический';
+    return 'Элитный уровень';
+  }
+
+  @override
+  void dispose() {
+    _weightCtrl.dispose();
+    _heightCtrl.dispose();
+    _fatCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _result;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Gender toggle
+          Row(
+            children: [
+              Expanded(
+                child: _genderBtn('male', 'Муж'),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _genderBtn('female', 'Жен'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _field('Вес (кг)', _weightCtrl, hint: '80'),
+          const SizedBox(height: 16),
+          _field('Рост (см)', _heightCtrl, hint: '180'),
+          const SizedBox(height: 16),
+          _field('% жира (опционально)', _fatCtrl, hint: '15'),
+          const SizedBox(height: 28),
+          if (r != null) ...[
+            _ResultTile(
+              label: 'ИМТ (BMI)',
+              value: r.bmi.toStringAsFixed(1),
+              sub: _bmiCategory(r.bmi),
+              color: r.bmi < 18.5 || r.bmi >= 30
+                  ? AppColors.error
+                  : r.bmi >= 25
+                      ? AppColors.warning
+                      : AppColors.success,
+            ),
+            const SizedBox(height: 12),
+            if (r.lbm != null) ...[
+              _ResultTile(
+                label: 'Сухая масса (LBM)',
+                value: '${r.lbm!.toStringAsFixed(1)} кг',
+                sub: 'Масса без жира',
+                color: AppColors.accent,
+              ),
+              const SizedBox(height: 12),
+              _ResultTile(
+                label: 'FFMI',
+                value: r.ffmi!.toStringAsFixed(1),
+                sub: _ffmiCategory(r.ffmi!),
+                color: AppColors.accent,
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'FFMI (Fat-Free Mass Index) показывает мышечный потенциал. '
+                  'Натуральный предел ~25 для мужчин и ~22 для женщин.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ] else
+            const Text(
+              'Введи вес и рост для расчёта',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _genderBtn(String value, String label) {
+    final selected = _gender == value;
+    return GestureDetector(
+      onTap: () => setState(() => _gender = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? AppColors.accent.withValues(alpha: 0.2) : AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.accent : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.accent : AppColors.textPrimary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _field(String label, TextEditingController ctrl, {String hint = ''}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(hintText: hint),
+          onChanged: (_) => setState(() {}),
+        ),
+      ],
+    );
+  }
+}
+
+class _ResultTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final String sub;
+  final Color color;
+  const _ResultTile({required this.label, required this.value, required this.sub, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                const SizedBox(height: 2),
+                Text(sub, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }
