@@ -103,6 +103,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Workout? _todayWorkout;
   bool _loadingWorkout = true;
   bool _wellnessLogged = true;
+  Map<String, dynamic>? _todayWellness;
 
   WorkoutInsight? _insight;
   List<Map<String, dynamic>> _bodyMetricsHistory = [];
@@ -298,6 +299,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _todayWorkout = results[1] as Workout?;
         _loadingWorkout = false;
         _wellnessLogged = results[2] != null;
+        _todayWellness = results[2] as Map<String, dynamic>?;
         _insight = results[3] as WorkoutInsight?;
         _bodyMetricsHistory = metricsHistory;
         _showMeasurementReminder = showReminder;
@@ -588,8 +590,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 if (!_wellnessLogged) ...[
                   const SizedBox(height: 16),
                   _WellnessCard(
-                    onSaved: () => setState(() => _wellnessLogged = true),
+                    onSaved: () async {
+                      final log = await WellnessService.getTodayLog();
+                      if (mounted) setState(() { _wellnessLogged = true; _todayWellness = log; });
+                    },
                   ),
+                ],
+
+                // ── Wellness advice ───────────────────────────────────────
+                if (_todayWellness != null) ...[
+                  const SizedBox(height: 16),
+                  _WellnessAdviceCard(wellness: _todayWellness!),
                 ],
 
                 // ── Achievement card ──────────────────────────────────────
@@ -1564,6 +1575,72 @@ class _TodayCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Wellness advice card ─────────────────────────────────────────────────────
+
+class _WellnessAdviceCard extends StatelessWidget {
+  final Map<String, dynamic> wellness;
+  const _WellnessAdviceCard({required this.wellness});
+
+  String get _advice {
+    final energy = wellness['energy'] as int?;
+    final stress = wellness['stress'] as int?;
+    final sleep = (wellness['sleep_hours'] as num?)?.toDouble();
+    final soreness = wellness['soreness'] as int?;
+
+    if (energy != null && energy <= 3) return 'Низкий уровень энергии — лучше отдохни или сделай лёгкую растяжку.';
+    if (stress != null && stress >= 8) return 'Высокий стресс — избегай перегрузок, сфокусируйся на восстановлении.';
+    if (sleep != null && sleep < 5.0) return 'Мало сна — организм не восстановился, избегай интенсивных нагрузок.';
+    if (soreness != null && soreness >= 4) return 'Высокая крепатура — потренируй другие группы мышц или возьми день отдыха.';
+    if (energy != null && energy <= 5) return 'Умеренный уровень энергии — подойдёт тренировка средней интенсивности.';
+    if (sleep != null && sleep < 6.5) return 'Маловато сна — снизь интенсивность тренировки сегодня.';
+    return 'Отличное состояние — хороший день для интенсивной тренировки!';
+  }
+
+  IconData get _icon {
+    final energy = wellness['energy'] as int?;
+    final stress = wellness['stress'] as int?;
+    final sleep = (wellness['sleep_hours'] as num?)?.toDouble();
+    final soreness = wellness['soreness'] as int?;
+    final isBad = (energy != null && energy <= 3) ||
+        (stress != null && stress >= 8) ||
+        (sleep != null && sleep < 5.0) ||
+        (soreness != null && soreness >= 4);
+    final isMid = (energy != null && energy <= 5) || (sleep != null && sleep < 6.5);
+    if (isBad) return Icons.bedtime_rounded;
+    if (isMid) return Icons.trending_flat_rounded;
+    return Icons.bolt_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_icon, color: AppColors.accent, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _advice,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

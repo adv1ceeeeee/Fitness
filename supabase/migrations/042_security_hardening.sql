@@ -44,6 +44,7 @@ GROUP BY ts.user_id, week_start, e.category;
 -- This prevents unauthenticated clients from reading store URLs / min_version.
 
 DROP POLICY IF EXISTS "app_config readable by all" ON public.app_config;
+DROP POLICY IF EXISTS "app_config readable by authenticated" ON public.app_config;
 
 CREATE POLICY "app_config readable by authenticated"
   ON public.app_config FOR SELECT

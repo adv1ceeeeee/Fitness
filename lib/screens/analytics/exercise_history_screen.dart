@@ -21,7 +21,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     _load();
   }
 
@@ -43,12 +43,17 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
 
     double? pb;
     String? pbDate;
+    double? pbOrm;
     if (history != null) {
       for (final e in history) {
         final w = e['maxWeight'] as double;
+        final orm = e['oneRepMax'] as double;
         if (w > 0 && (pb == null || w > pb)) {
           pb = w;
           pbDate = e['date'] as String;
+        }
+        if (orm > 0 && (pbOrm == null || orm > pbOrm)) {
+          pbOrm = orm;
         }
       }
     }
@@ -61,6 +66,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
           tabs: const [
             Tab(text: 'Вес'),
             Tab(text: 'Объём'),
+            Tab(text: '1RM'),
           ],
         ),
       ),
@@ -86,7 +92,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
                         errorWidget: (_, __, ___) => const SizedBox.shrink(),
                       ),
                     if (pb != null && pbDate != null)
-                      _PbBanner(weight: pb, date: pbDate),
+                      _PbBanner(weight: pb, date: pbDate, oneRepMax: pbOrm),
                     Expanded(
                       child: TabBarView(
                         controller: _tabCtrl,
@@ -100,6 +106,11 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
                             history: history,
                             valueKey: 'volume',
                             label: 'Объём (кг·повт.)',
+                          ),
+                          _ChartTab(
+                            history: history,
+                            valueKey: 'oneRepMax',
+                            label: '1RM — Эпли (кг)',
                           ),
                         ],
                       ),
@@ -117,12 +128,18 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
 class _PbBanner extends StatelessWidget {
   final double weight;
   final String date;
-  const _PbBanner({required this.weight, required this.date});
+  final double? oneRepMax;
+  const _PbBanner({required this.weight, required this.date, this.oneRepMax});
 
   @override
   Widget build(BuildContext context) {
     final w = weight % 1 == 0 ? weight.toInt().toString() : weight.toStringAsFixed(1);
     final d = _fmtDate(date);
+    final ormStr = oneRepMax != null && oneRepMax! > 0
+        ? oneRepMax! % 1 == 0
+            ? oneRepMax!.toInt().toString()
+            : oneRepMax!.toStringAsFixed(1)
+        : null;
     return Container(
       width: double.infinity,
       color: AppColors.accent.withValues(alpha: 0.12),
@@ -131,13 +148,26 @@ class _PbBanner extends StatelessWidget {
         children: [
           const Icon(Icons.emoji_events_rounded, color: Color(0xFFFFB800), size: 20),
           const SizedBox(width: 8),
-          Text(
-            'Личный рекорд: $w кг  ($d)',
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Личный рекорд: $w кг  ($d)',
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              if (ormStr != null)
+                Text(
+                  '1RM (Эпли): ~$ormStr кг',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -282,7 +312,7 @@ class _SessionList extends StatelessWidget {
         itemBuilder: (_, i) {
           final e = reversed[i];
           final w = e['maxWeight'] as double;
-          final vol = e['volume'] as double;
+          final orm = e['oneRepMax'] as double;
           final reps = e['reps'] as int;
           final date = _fmtDate(e['date'] as String);
           return Padding(
@@ -290,7 +320,7 @@ class _SessionList extends StatelessWidget {
             child: Row(
               children: [
                 SizedBox(
-                  width: 76,
+                  width: 72,
                   child: Text(date,
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 12)),
@@ -313,11 +343,11 @@ class _SessionList extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    vol > 0
-                        ? '${vol % 1 == 0 ? vol.toInt() : vol.toStringAsFixed(0)} кг·п'
+                    orm > 0
+                        ? '~${orm % 1 == 0 ? orm.toInt() : orm.toStringAsFixed(1)} 1RM'
                         : '—',
                     style: const TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12),
+                        color: AppColors.accent, fontSize: 12),
                     textAlign: TextAlign.right,
                   ),
                 ),

@@ -228,10 +228,15 @@ class AnalyticsService {
       if (sid == null) continue;
       final w = (set['weight'] as num?)?.toDouble() ?? 0.0;
       final r = (set['reps'] as num?)?.toInt() ?? 0;
-      final entry = bySession.putIfAbsent(sid, () => {'maxWeight': 0.0, 'volume': 0.0, 'reps': 0});
+      final entry = bySession.putIfAbsent(sid, () => {'maxWeight': 0.0, 'volume': 0.0, 'reps': 0, 'oneRepMax': 0.0});
       if (w > (entry['maxWeight'] as double)) entry['maxWeight'] = w;
       entry['volume'] = (entry['volume'] as double) + w * r;
       entry['reps'] = (entry['reps'] as int) + r;
+      // Epley 1RM: weight × (1 + reps/30), valid for 1–30 reps
+      if (w > 0 && r > 0) {
+        final orm = r <= 30 ? w * (1.0 + r / 30.0) : w;
+        if (orm > (entry['oneRepMax'] as double)) entry['oneRepMax'] = orm;
+      }
     }
 
     final result = <Map<String, dynamic>>[];
@@ -243,6 +248,7 @@ class AnalyticsService {
         'maxWeight': agg['maxWeight'] as double,
         'volume': agg['volume'] as double,
         'reps': agg['reps'] as int,
+        'oneRepMax': agg['oneRepMax'] as double,
       });
     }
     return result;
