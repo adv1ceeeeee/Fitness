@@ -374,4 +374,24 @@ class EventLogger {
 
   static void screenView(String screenName) =>
       log('screen_view', props: {'screen': screenName});
+
+  // ─── Feedback ─────────────────────────────────────────────────────────────
+
+  static void npsScore({required int score, String? comment}) =>
+      log('nps_score', props: {
+        'score': score,
+        if (comment != null && comment.isNotEmpty) 'comment': comment,
+      });
+
+  static void featureRequest({required String feature}) =>
+      log('feature_request', props: {'feature': feature});
+
+  static void screenFeedback({required String screen, required int vote}) =>
+      log('screen_feedback', props: {'screen': screen, 'vote': vote});
+
+  static void churnReason({required String reason}) =>
+      log('churn_reason', props: {'reason': reason});
+
+  static void feedbackSubmitted({required String category}) =>
+      log('feedback_submitted', props: {'category': category});
 }

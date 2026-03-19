@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 
@@ -32,6 +33,7 @@ class _CalculatorsScreenState extends State<CalculatorsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Калькуляторы'),
+        actions: const [ScreenThumbsWidget(screen: 'calculators')],
         bottom: TabBar(
           controller: _tab,
           tabs: const [

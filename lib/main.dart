@@ -53,6 +53,7 @@ Future<void> _bootstrap() async {
   await AppStorage.init();
   StreakFreezeService.maybeRefill();
   await NotificationService.initialize();
+  NotificationService.scheduleChurnNotification();
   OfflineQueueService.init();
 
   SystemChrome.setSystemUIOverlayStyle(
@@ -103,6 +104,7 @@ class _SportifyAppState extends ConsumerState<SportifyApp> {
         EventLogger.resetSession();
         EventLogger.appOpened(source: 'resume');
         NotificationService.refreshWeeklySummary();
+        NotificationService.scheduleChurnNotification();
       },
       onPause: EventLogger.flushOnExit,
       onDetach: EventLogger.flushOnExit,

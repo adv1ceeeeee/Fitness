@@ -3,6 +3,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
+import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/analytics_service.dart';
 
 class ExerciseHistoryScreen extends StatefulWidget {
@@ -61,6 +62,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(ex.displayName, overflow: TextOverflow.ellipsis),
+        actions: const [ScreenThumbsWidget(screen: 'exercise_history')],
         bottom: TabBar(
           controller: _tabCtrl,
           tabs: const [

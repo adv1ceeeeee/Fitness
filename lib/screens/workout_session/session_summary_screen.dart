@@ -10,6 +10,8 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
+import 'package:sportwai/screens/shared/feedback_sheets.dart';
+import 'package:sportwai/services/feedback_service.dart';
 
 class SessionSummaryScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -231,6 +233,12 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
       NotificationService.scheduleInactivityReminder(daysLater: 3);
       // Clear global session state
       ref.read(activeSessionProvider.notifier).stop();
+      // Show NPS survey after 3rd session (before navigating away)
+      final showNps = await FeedbackService.shouldShowNps();
+      if (mounted && showNps) {
+        // ignore: use_build_context_synchronously
+        await showNpsSheet(context);
+      }
       if (mounted) context.go('/home');
     } catch (e) {
       if (mounted) {

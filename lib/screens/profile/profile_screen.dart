@@ -997,6 +997,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ),
                   _SettingsRow(
+                    label: 'Обратная связь',
+                    trailing: GestureDetector(
+                      onTap: () => context.push('/feedback'),
+                      child: const Icon(Icons.chevron_right,
+                          color: AppColors.textSecondary, size: 18),
+                    ),
+                  ),
+                  _SettingsRow(
                     label: 'Экспорт данных',
                     last: true,
                     trailing: GestureDetector(

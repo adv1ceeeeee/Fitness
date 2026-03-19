@@ -278,6 +278,32 @@ class NotificationService {
   static Future<void> cancelInactivityReminder() async =>
       _plugin.cancel(_kInactivityId);
 
+  /// Cancels and reschedules a churn notification 14 days from now.
+  /// Call on every app open so only users truly silent for 14 days get it.
+  static Future<void> scheduleChurnNotification() async {
+    await _plugin.cancel(_kChurnId);
+    final fire = tz.TZDateTime.now(tz.local).add(const Duration(days: 14));
+    const channel = AndroidNotificationDetails(
+      _channelId, _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.high, priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    const details = NotificationDetails(
+        android: channel, iOS: DarwinNotificationDetails());
+    await _zonedSchedule(
+      _kChurnId,
+      'Скучаем по тебе 🏋️',
+      'Две недели без тренировок. Возвращайся — твой прогресс ждёт!',
+      fire,
+      details,
+      payload: 'churn',
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
   /// Schedule weekly weigh-in reminders for one or more weekdays.
   /// [weekdays]: list of 0=Пн … 6=Вс. Pass [0,1,2,3,4,5,6] for every day.
   static Future<void> scheduleWeighInReminders(
@@ -515,6 +541,7 @@ class NotificationService {
   static const int _kWeighInId = 901;
   static const int _kWeeklySummaryId = 920;
   static const int _kDailyReminderId = 930;
+  static const int _kChurnId = 940;
   // Rest-day notifications use IDs 800–806 (one per weekday)
   static const int _kRestDayBase = 800;
   // Weigh-in notifications use IDs 910–916 (one per weekday)
