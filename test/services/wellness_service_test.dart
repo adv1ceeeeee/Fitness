@@ -29,11 +29,11 @@ class _DayEvent {
   const _DayEvent({required this.completed, this.planned = false});
 }
 
-bool hasCompletedDot(List<_DayEvent> events) =>
+bool _hasCompletedDot(List<_DayEvent> events) =>
     events.any((e) => e.completed);
 
 /// Semi-transparent dot: any upcoming event (cyclic OR one-time scheduled).
-bool hasPlannedDot(List<_DayEvent> events) =>
+bool _hasPlannedDot(List<_DayEvent> events) =>
     events.any((e) => !e.completed);
 
 void main() {
@@ -75,26 +75,26 @@ void main() {
 
   group('Calendar dot logic', () {
     test('no dot when list is empty', () {
-      expect(hasCompletedDot([]), isFalse);
-      expect(hasPlannedDot([]), isFalse);
+      expect(_hasCompletedDot([]), isFalse);
+      expect(_hasPlannedDot([]), isFalse);
     });
 
     test('completed dot for finished session', () {
       final events = [const _DayEvent(completed: true)];
-      expect(hasCompletedDot(events), isTrue);
-      expect(hasPlannedDot(events), isFalse);
+      expect(_hasCompletedDot(events), isTrue);
+      expect(_hasPlannedDot(events), isFalse);
     });
 
     test('planned dot for cyclic planned slot', () {
       final events = [const _DayEvent(completed: false, planned: true)];
-      expect(hasCompletedDot(events), isFalse);
-      expect(hasPlannedDot(events), isTrue);
+      expect(_hasCompletedDot(events), isFalse);
+      expect(_hasPlannedDot(events), isTrue);
     });
 
     test('planned dot for one-time scheduled session (planned=false, completed=false)', () {
       final events = [const _DayEvent(completed: false, planned: false)];
-      expect(hasCompletedDot(events), isFalse);
-      expect(hasPlannedDot(events), isTrue);
+      expect(_hasCompletedDot(events), isFalse);
+      expect(_hasPlannedDot(events), isTrue);
     });
 
     test('both dots when day has completed and upcoming events', () {
@@ -102,8 +102,8 @@ void main() {
         const _DayEvent(completed: true),
         const _DayEvent(completed: false, planned: true),
       ];
-      expect(hasCompletedDot(events), isTrue);
-      expect(hasPlannedDot(events), isTrue);
+      expect(_hasCompletedDot(events), isTrue);
+      expect(_hasPlannedDot(events), isTrue);
     });
 
     test('only completed dot when all sessions are done', () {
@@ -111,8 +111,8 @@ void main() {
         const _DayEvent(completed: true),
         const _DayEvent(completed: true),
       ];
-      expect(hasCompletedDot(events), isTrue);
-      expect(hasPlannedDot(events), isFalse);
+      expect(_hasCompletedDot(events), isTrue);
+      expect(_hasPlannedDot(events), isFalse);
     });
   });
 
@@ -162,8 +162,8 @@ void main() {
       final events = [
         const _DayEvent(completed: false, planned: true), // planned, not done
       ];
-      final hasCompletedFlag = hasCompletedDot(events);
-      final hasPlannedFlag = hasPlannedDot(events);
+      final hasCompletedFlag = _hasCompletedDot(events);
+      final hasPlannedFlag = _hasPlannedDot(events);
       expect(hasMissed(isPast: true, hasPlanned: hasPlannedFlag, hasCompleted: hasCompletedFlag),
           isTrue);
     });

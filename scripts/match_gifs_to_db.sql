@@ -1,46 +1,54 @@
--- Step 1: Add gif_url column to exercises (if not exists)
-ALTER TABLE exercises ADD COLUMN IF NOT EXISTS gif_url TEXT;
+-- ─── Match exercise images from free-exercise-db to our exercises table ───────
+--
+-- 1. Apply migration 040 first (adds gif_url column + storage bucket)
+-- 2. In Supabase Table Editor: create table exercisedb_map, import the CSV
+--    OR use SQL below to create + populate manually
+-- 3. Run the UPDATE below
+-- 4. Check results
 
--- Step 2: Create temp table with ExerciseDB data
--- (paste the CSV from exercisedb_mapping.csv into here,
---  or use \copy in psql / import via Supabase dashboard)
-CREATE TEMP TABLE exercisedb_map (
-    exercisedb_id TEXT,
-    name          TEXT,
-    body_part     TEXT,
-    equipment     TEXT,
-    gif_url       TEXT
-);
-
--- \copy exercisedb_map FROM 'scripts/exercisedb_mapping.csv' CSV HEADER;
-
--- Step 3: Match by name similarity and update gif_url
--- Uses pg_trgm for fuzzy match — covers plural/case/punctuation differences
+-- Step 1: Enable fuzzy matching
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+-- Step 2: Create staging table
+DROP TABLE IF EXISTS exercisedb_map;
+CREATE TEMP TABLE exercisedb_map (
+    exercisedb_id  TEXT,
+    name           TEXT,
+    category       TEXT,
+    primary_muscle TEXT,
+    image_url      TEXT
+);
+
+-- Step 3: Load CSV
+-- Option A — psql CLI:
+--   \copy exercisedb_map FROM 'scripts/exercisedb_mapping.csv' CSV HEADER;
+--
+-- Option B — Supabase dashboard:
+--   Table Editor → New table → import CSV → then reference it here
+
+-- Step 4: Update gif_url using fuzzy name match
 UPDATE exercises e
-SET gif_url = m.gif_url
-FROM exercisedb_map m
+SET gif_url = (
+    SELECT m.image_url
+    FROM exercisedb_map m
+    ORDER BY similarity(lower(e.name), lower(m.name)) DESC
+    LIMIT 1
+)
 WHERE e.gif_url IS NULL
-  AND similarity(lower(e.name), lower(m.name)) > 0.4
-  AND (
-    -- Prefer exact match first (handled by ORDER in subquery)
-    m.gif_url = (
-      SELECT gif_url
-      FROM exercisedb_map
-      WHERE similarity(lower(e.name), lower(name)) > 0.4
-      ORDER BY similarity(lower(e.name), lower(name)) DESC
-      LIMIT 1
-    )
+  AND EXISTS (
+    SELECT 1 FROM exercisedb_map m
+    WHERE similarity(lower(e.name), lower(m.name)) > 0.35
   );
 
--- Step 4: Check how many matched
+-- Step 5: Check results
 SELECT
   COUNT(*) FILTER (WHERE gif_url IS NOT NULL) AS matched,
   COUNT(*) FILTER (WHERE gif_url IS NULL)     AS unmatched,
-  COUNT(*)                                     AS total
+  COUNT(*)                                    AS total
 FROM exercises
 WHERE is_standard = true;
 
--- Step 5: Review unmatched — maybe fix names manually
-SELECT id, name FROM exercises WHERE gif_url IS NULL AND is_standard = true ORDER BY name;
+-- Step 6: See what didn't match
+SELECT name FROM exercises
+WHERE gif_url IS NULL AND is_standard = true
+ORDER BY name;

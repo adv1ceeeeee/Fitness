@@ -1,14 +1,16 @@
 """
-Download exercise GIFs from ExerciseDB and upload to Supabase Storage.
+Download exercise images from free-exercise-db (GitHub, public domain)
+and upload to Supabase Storage.
+
+Source: https://github.com/yuhonas/free-exercise-db
+Images: JPG (2 per exercise — start + end position)
+Count:  ~873 exercises
 
 Usage:
-    pip install requests supabase
+    pip install requests
+    SUPABASE_URL=https://xxx.supabase.co \
+    SUPABASE_SERVICE_KEY=your_service_role_key \
     python scripts/download_exercise_gifs.py
-
-Set env vars before running:
-    RAPIDAPI_KEY=your_key_here
-    SUPABASE_URL=https://xxxx.supabase.co
-    SUPABASE_SERVICE_KEY=your_service_role_key  (not anon key!)
 """
 
 import os
@@ -18,119 +20,123 @@ from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-RAPIDAPI_KEY   = os.environ["RAPIDAPI_KEY"]
-SUPABASE_URL   = os.environ["SUPABASE_URL"]
-SUPABASE_KEY   = os.environ["SUPABASE_SERVICE_KEY"]  # service_role, not anon
-BUCKET         = "exercise-gifs"
-GIF_DIR        = Path("scripts/gifs")
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+BUCKET       = "exercise-gifs"
+IMG_DIR      = Path("scripts/exercise_images")
 
-HEADERS = {
-    "X-RapidAPI-Key":  RAPIDAPI_KEY,
-    "X-RapidAPI-Host": "exercisedb.p.rapidapi.com",
-}
+RAW_BASE  = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises"
+JSON_URL  = "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/dist/exercises.json"
 
-# ── Step 1: Fetch all exercise metadata ───────────────────────────────────────
+# ── Step 1: Fetch exercise list ───────────────────────────────────────────────
 
-def fetch_all_exercises():
-    print("Fetching exercise list from ExerciseDB...")
-    resp = requests.get(
-        "https://exercisedb.p.rapidapi.com/exercises",
-        headers=HEADERS,
-        params={"limit": 1500, "offset": 0},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    print(f"  Got {len(data)} exercises")
+def fetch_exercises():
+    print("Fetching exercise list from free-exercise-db...")
+    r = requests.get(JSON_URL, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    print(f"  Total: {len(data)} exercises")
     return data
 
-# ── Step 2: Download GIFs locally ─────────────────────────────────────────────
+# ── Step 2: Download images ───────────────────────────────────────────────────
 
-def download_gifs(exercises):
-    GIF_DIR.mkdir(parents=True, exist_ok=True)
+def download_images(exercises):
+    IMG_DIR.mkdir(parents=True, exist_ok=True)
     skipped = 0
+    downloaded = 0
+    failed = 0
+
     for ex in exercises:
         ex_id  = ex["id"]
-        gif_url = ex.get("gifUrl", "")
-        if not gif_url:
+        images = ex.get("images", [])
+        if not images:
             continue
-        dest = GIF_DIR / f"{ex_id}.gif"
+
+        # Take only the first image (starting position)
+        img_path = images[0]  # e.g. "3_4_Sit-Up/0.jpg"
+        dest = IMG_DIR / f"{ex_id}.jpg"
+
         if dest.exists():
             skipped += 1
             continue
+
+        url = f"{RAW_BASE}/{img_path}"
         try:
-            r = requests.get(gif_url, timeout=15)
+            r = requests.get(url, timeout=15)
             r.raise_for_status()
             dest.write_bytes(r.content)
+            downloaded += 1
+            print(f"  [{downloaded}] {ex['name']}", end="\r")
         except Exception as e:
-            print(f"  WARN: failed to download {ex_id}: {e}")
-        time.sleep(0.05)  # be polite
+            print(f"\n  WARN {ex_id}: {e}")
+            failed += 1
+        time.sleep(0.05)
 
-    total = len(list(GIF_DIR.glob("*.gif")))
-    print(f"Downloaded: {total} GIFs ({skipped} already cached)")
+    print(f"\nDownloaded: {downloaded} | Skipped: {skipped} | Failed: {failed}")
 
 # ── Step 3: Upload to Supabase Storage ────────────────────────────────────────
 
 def upload_to_supabase(exercises):
     storage_url = f"{SUPABASE_URL}/storage/v1/object/{BUCKET}"
-    auth_headers = {
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type":  "image/gif",
-    }
+    id_to_name  = {ex["id"]: ex["name"] for ex in exercises}
 
-    # Map exercise id → name for logging
-    id_to_name = {ex["id"]: ex["name"] for ex in exercises}
-
-    gif_files = list(GIF_DIR.glob("*.gif"))
-    print(f"Uploading {len(gif_files)} GIFs to Supabase Storage (bucket: {BUCKET})...")
+    img_files = list(IMG_DIR.glob("*.jpg"))
+    print(f"Uploading {len(img_files)} images to Supabase Storage (bucket: {BUCKET})...")
 
     ok = 0
     fail = 0
-    for gif_path in gif_files:
-        ex_id = gif_path.stem
-        object_path = f"{storage_url}/{ex_id}.gif"
+
+    for img_path in img_files:
+        ex_id = img_path.stem
+        object_url = f"{storage_url}/{ex_id}.jpg"
         try:
-            with open(gif_path, "rb") as f:
+            with open(img_path, "rb") as f:
                 r = requests.post(
-                    object_path,
-                    headers=auth_headers,
+                    object_url,
+                    headers={
+                        "Authorization": f"Bearer {SUPABASE_KEY}",
+                        "Content-Type":  "image/jpeg",
+                    },
                     data=f,
                     timeout=30,
                 )
             if r.status_code in (200, 201):
                 ok += 1
-            elif r.status_code == 400 and "already exists" in r.text:
-                ok += 1  # already uploaded
+                print(f"  [{ok}] {id_to_name.get(ex_id, ex_id)}", end="\r")
+            elif "already exists" in r.text:
+                ok += 1
             else:
-                print(f"  WARN {ex_id} ({id_to_name.get(ex_id, '?')}): {r.status_code} {r.text[:80]}")
+                print(f"\n  WARN {ex_id}: {r.status_code} {r.text[:80]}")
                 fail += 1
         except Exception as e:
-            print(f"  ERROR {ex_id}: {e}")
+            print(f"\n  ERROR {ex_id}: {e}")
             fail += 1
 
-    print(f"Upload done: {ok} ok, {fail} failed")
+    print(f"\nUpload done: {ok} ok, {fail} failed")
 
-# ── Step 4: Print CSV mapping (exercisedb_id, name, gifUrl) ──────────────────
+# ── Step 4: Save CSV mapping ──────────────────────────────────────────────────
 
-def print_mapping_csv(exercises):
-    out = Path("scripts/exercisedb_mapping.csv")
+def save_mapping(exercises):
     public_base = f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}"
-    lines = ["exercisedb_id,name,body_part,equipment,gif_url"]
+    out = Path("scripts/exercisedb_mapping.csv")
+
+    lines = ["exercisedb_id,name,category,primary_muscle,image_url"]
     for ex in exercises:
-        ex_id    = ex["id"]
-        name     = ex["name"].replace(",", " ")
-        body     = ex.get("bodyPart", "")
-        equip    = ex.get("equipment", "")
-        gif_url  = f"{public_base}/{ex_id}.gif"
-        lines.append(f"{ex_id},{name},{body},{equip},{gif_url}")
+        ex_id   = ex["id"]
+        name    = ex["name"].replace(",", " ")
+        cat     = ex.get("category", "")
+        muscle  = (ex.get("primaryMuscles") or [""])[0]
+        img_url = f"{public_base}/{ex_id}.jpg"
+        lines.append(f"{ex_id},{name},{cat},{muscle},{img_url}")
+
     out.write_text("\n".join(lines), encoding="utf-8")
     print(f"Mapping saved to {out}  ({len(exercises)} rows)")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    exercises = fetch_all_exercises()
-    download_gifs(exercises)
+    exercises = fetch_exercises()
+    download_images(exercises)
     upload_to_supabase(exercises)
-    print_mapping_csv(exercises)
-    print("\nDone! Next step: run scripts/match_gifs_to_db.sql to update exercises table.")
+    save_mapping(exercises)
+    print("\nDone! Next: run scripts/match_gifs_to_db.sql in Supabase SQL editor.")

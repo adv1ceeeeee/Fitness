@@ -101,6 +101,7 @@ lib/
 | `/today` | TodayScreen |
 | `/history` | HistoryScreen |
 | `/body-metrics` | BodyMetricsScreen |
+| `/exercises/:id/history` | ExerciseHistoryScreen |
 
 ### MainShell — постоянные элементы
 - **Стеклянная нижняя навигация**: Главная · Программы · Аналитика · Профиль
@@ -180,6 +181,15 @@ lib/
   - После сохранения: `EventLogger.checkInSaved(type: 'wellness')`
 - Быстрые ссылки: Мои программы → `/workouts`, Аналитика → `/analytics`, Календарь → `/calendar`
 - Данные: загружает профиль через `ProfileService.getProfile()`
+
+**Карточка советов по самочувствию** (`_WellnessAdviceCard`)
+- Показывается после чек-ина, анализирует введённые данные
+- Правила (по убыванию приоритета):
+  - energy ≤ 3 → рекомендация отдыха
+  - stress ≥ 8 → рекомендация восстановительной тренировки
+  - sleep_hours < 5 → предупреждение об интенсивности
+  - soreness ≥ 4 → рекомендация отдыха или смены группы мышц
+  - иначе → «всё хорошо, вперёд!»
 
 **Баннер напоминания о замерах** (`_MeasurementReminderBanner`)
 - Показывается, если последний замер тела был более 30 дней назад
@@ -446,6 +456,17 @@ lib/
 - 5 серийных милестоунов (3 / 7 / 14 / 30 / 100 дней подряд)
 - Tooltip с описанием каждого достижения
 
+**История по упражнению** (`ExerciseHistoryScreen`)
+- Открывается при нажатии на упражнение из списка отслеживаемых
+- GIF-превью упражнения (если есть `gif_url`, загружается через `cached_network_image`)
+- **Баннер личного рекорда**: максимальный вес + дата + расчётный 1RM
+- Три вкладки — `TabController(length: 3)`:
+  - **Вес** — график максимального веса за сессию (`maxWeight`)
+  - **Объём** — график объёма (кг·повт.) за сессию (`volume`)
+  - **1RM** — график расчётного 1ПМ по формуле Эпли (`weight × (1 + reps/30)`)
+- Список последних 20 сессий: дата · максимальный вес · повторения · расчётный 1RM
+- Данные: `AnalyticsService.getExerciseHistory(exerciseId)` — агрегат по каждой сессии
+
 **Поделиться прогрессом**
 - Карточка с градиентным фоном: имя, стрик, тренировочная статистика
 - Кнопка «Поделиться картинкой» — захватывает карточку через `RepaintBoundary.toImage()` (PNG 3×), шарит через `Share.shareXFiles`
@@ -592,7 +613,12 @@ CRUD для программ тренировок.
 
 | Метод | Описание |
 |---|---|
-| `getExercises({search})` | Все стандартные упражнения с опциональным поиском |
+| `getExercises({search})` | Все стандартные упражнения с опциональным поиском (по `name` и `name_ru`) |
+
+Библиотека упражнений: **873 упражнения** из [free-exercise-db](https://github.com/yuhonas/free-exercise-db).
+- Название по-русски (`name_ru`) автоматически переведено через Google Translate
+- GIF-анимация (`gif_url`) — ссылка на Supabase Storage (бакет `exercise-gifs`)
+- `displayName` в UI предпочитает русское название
 
 ### AnalyticsService
 
@@ -606,6 +632,7 @@ CRUD для программ тренировок.
 | `getTrackedExercises()` | Упражнения, по которым когда-либо фиксировался вес |
 | `getLastSetsForExercises(exerciseIds)` | Последний подход (вес, повт., дата) для каждого упражнения из списка; 3 Supabase-запроса, сессии лимит 30 |
 | `getConsecutiveFullRepsExercises()` | Список упражнений, у которых последние 3 сессии подряд завершены на максимальных повторениях (для подсказки прогрессии) |
+| `getExerciseHistory(exerciseId)` | История по упражнению: список `{date, maxWeight, volume, oneRepMax, reps}` по каждой завершённой сессии; oneRepMax по формуле Эпли |
 
 ### WellnessService
 Метрики тела и самочувствия.
@@ -667,11 +694,11 @@ PIN-аутентификация с защитой от брутфорса.
 PIN синхронизируется между устройствами через `user_metadata` в Supabase Auth — при входе на новом устройстве хэш скачивается и сохраняется локально.
 
 ### CityService
-Автодополнение городов.
+Автодополнение городов через Supabase Edge Function.
 
 | Метод | Описание |
 |---|---|
-| `suggest(query)` | Запрос к Dadata API, возвращает список городов |
+| `suggest(query)` | Запрос к Edge Function `suggest-city` (Deno), которая проксирует Dadata API; ключ `DADATA_API_KEY` хранится в Supabase secrets, не попадает в APK |
 
 ### ExportService
 Экспорт всех данных пользователя.
@@ -723,9 +750,11 @@ PIN синхронизируется между устройствами чер�
 
 ### Exercise
 ```dart
-id, name, category (chest|back|legs|shoulders|arms|cardio),
-description?, imageUrl?, isStandard
+id, name, nameRu?,    // русское название (из name_ru, авто-перевод)
+category (chest|back|legs|shoulders|arms|cardio),
+description?, gifUrl?, isStandard, isBodyweight
 
+get displayName → nameRu ?? name   // предпочитает русский перевод
 static categoryDisplayName(category) → русское название категории
 ```
 
@@ -831,13 +860,20 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
 | `profiles` | Профили пользователей (id, nickname, full_name, gender, goal, level, birth_date, training_start_date, weight_kg, height_cm, middle_name, city, phone, email) |
 | `workouts` | Программы тренировок (id, user_id, name, days int[], cycle_weeks, is_standard) |
 | `workout_exercises` | Связь программа ↔ упражнение (id, workout_id, exercise_id, sets, reps_range, rest_seconds, target_weight, order) |
-| `exercises` | Библиотека стандартных упражнений (id, name, category, description, is_standard) |
-| `training_sessions` | Лог сессий (id, user_id, workout_id, date, completed, duration_seconds, notes, planned_time TIME) |
-| `sets` | Записи подходов (id, training_session_id, workout_exercise_id, set_number, weight, reps, rpe, completed, rest_seconds) |
-| `body_metrics` | Замеры тела (user_id, date, weight_kg + 14 колонок замеров) |
-| `wellness_logs` | Дневник самочувствия (user_id, date, sleep_hours, stress 1–5, energy 1–5) |
+| `exercises` | Библиотека упражнений (id, name, name_ru, category, description, is_standard, is_bodyweight, gif_url) — 873 упражнения |
+| `training_sessions` | Лог сессий (id, user_id, workout_id, date, completed, duration_seconds, session_rpe, notes, planned_time TIME, streak_at_start) |
+| `sets` | Записи подходов (id, training_session_id, workout_exercise_id, set_number, weight, reps, reps_target, rpe, completed, rest_seconds, performed_at, is_warmup, kcal_estimated) |
+| `body_metrics` | Замеры тела (user_id, date, weight_kg + 13 колонок замеров) |
+| `wellness_logs` | Дневник самочувствия (user_id, date, sleep_hours, stress 1–10, energy 1–10, sleep_quality 1–5, soreness 1–5) |
+| `personal_records` | Личные рекорды (user_id, exercise_id, weight_kg, reps, session_id, achieved_at) — авто-заполняется триггером при INSERT в `sets` |
+| `weekly_volume` | VIEW: user_id, week_start, muscle_group, total_sets, total_reps, total_volume_kg — `WITH (security_invoker = on)` для корректного RLS |
 | `user_events` | Аналитические события (user_id, event, props jsonb, created_at) |
+| `app_config` | Конфигурация приложения (key/value): min_version, store_url_android, store_url_ios |
+| `device_tokens` | Push-токены устройств (user_id, token, platform, app_version) |
+| `push_notification_logs` | Лог запланированных уведомлений |
+| `user_goals_history` | История изменений цели пользователя — авто-заполняется триггером при UPDATE `profiles.goal` |
 | `avatars` (Storage) | Аватары пользователей |
+| `exercise-gifs` (Storage) | GIF-анимации упражнений |
 
 **Миграции (010–030):**
 | Файл | Изменение |
@@ -857,6 +893,18 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
 | `028_favorite_exercises.sql` | Избранные упражнения |
 | `029_goal_targets_json.sql` | Цели по метрикам в JSON |
 | `030_session_planned_time.sql` | `training_sessions.planned_time TIME` — запланированное время начала |
+| `031_rest_days.sql` | `workouts.rest_days int[]` — явные дни отдыха |
+| `032_app_config.sql` | Таблица `app_config` для remote-конфигурации (min_version, store URLs) |
+| `033_analytics_fields.sql` | `sets.performed_at TIMESTAMPTZ`, `training_sessions.session_rpe` |
+| `034_ml_fields.sql` | `sets.reps_target`, `sets.is_warmup`, `sets.kcal_estimated` |
+| `035_analysis_tables.sql` | `personal_records` (триггер `fn_check_personal_record`), `weekly_volume` VIEW, `user_goals_history` (триггер), `device_tokens`, `push_notification_logs` |
+| `036_workout_day_times.sql` | `workouts.day_times jsonb` — время начала по дням недели |
+| `037_db_hardening.sql` | Усиление RLS, индексы, cleanups |
+| `038_exercises_rls_fix.sql` | Исправление политики RLS для таблицы `exercises` |
+| `039_minor_hardening.sql` | Минорные исправления безопасности |
+| `040_exercise_gif_url.sql` | `exercises.gif_url TEXT` + Storage-бакет `exercise-gifs` |
+| `041_exercises_v2.sql` | `exercises.name_ru TEXT` + Storage-бакет `avatars` + массовая замена упражнений на 873 из free-exercise-db |
+| `042_security_hardening.sql` | `weekly_volume WITH (security_invoker = on)` — исправление RLS bypass; `app_config` доступна только авторизованным пользователям |
 
 ---
 
@@ -937,7 +985,7 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
 ## Калькуляторы
 
 ### CalculatorsScreen
-Два таба: **1ПМ** и **Блины**.
+Три таба: **1ПМ**, **Блины**, **Состав тела**.
 
 **Вкладка «1ПМ»**
 - Выбор упражнения: Жим лёжа / Приседания / Становая тяга (каждое имеет свой набор формул)
@@ -966,6 +1014,16 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
   - Веса округляются до 2.5 кг (5 lb), дубликаты пропускаются
   - В конце — рабочий подход с иконкой гантели
 
+**Вкладка «Состав тела»** (`_BodyCompositionTab`)
+- Переключатель пол (М / Ж) — влияет на категории FFMI
+- Поля: Вес тела (кг), Рост (см), % жира
+- Вес предзаполняется автоматически из `BodyMetricsService.getLatest()`
+- Результаты:
+  - **BMI** = вес / рост² — с категорией (Дефицит / Норма / Избыточный / Ожирение)
+  - **Мышечная масса (LBM)** = вес × (1 − жир%) в кг
+  - **FFMI** = LBM / рост² — с гендерными категориями (Ниже нормы / Норма / Выше нормы / Атлетичный / Элита)
+- `_ResultTile` — виджет плитки с цветовой индикацией значений
+
 **Чистые функции** (top-level, покрыты unit-тестами):
 - `calculatePlates(target, barWeight, availablePlates)` — жадный алгоритм
 - `calculatePlatesWithPrimary(target, barWeight, primary, availablePlates)` — алгоритм с доминирующим блином
@@ -974,10 +1032,23 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
 
 ---
 
+## Инфраструктура
+
+| Компонент | Описание |
+|---|---|
+| CI | `.github/workflows/ci.yml` — `flutter analyze` + `flutter test` на push/PR; AAB build на main |
+| Sentry | DSN через `String.fromEnvironment('SENTRY_DSN')` — краш-репорты |
+| Edge Function `suggest-city` | Deno-функция в Supabase; проксирует Dadata API; ключ в secrets |
+| Версионирование | `MAJOR.MINOR.PATCH+BUILD` в pubspec.yaml; текущая: **1.0.0+1** |
+| Офлайн-очередь | `OfflineQueueService` — сохраняет события в SharedPreferences при отсутствии сети |
+| RLS тесты | `supabase/tests/rls_policies.sql` (pgTAP, требует Docker) |
+
+---
+
 ## Не реализовано (плейсхолдеры)
 
 | Функция | Где | Причина |
 |---|---|---|
 | Пригласить тренера | ProfileScreen | Требует бэкенд социальных связей |
-| Firebase Performance | — | Требует внешний Firebase проект |
 | iOS виджеты | — | Требует нативный Swift/WidgetKit код |
+| Paywall (Pro-подписка) | — | Ожидает интеграции RuStore / Google Play Billing |

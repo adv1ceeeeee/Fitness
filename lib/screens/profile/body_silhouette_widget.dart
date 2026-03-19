@@ -182,7 +182,7 @@ class _BodySilhouetteWidgetState extends State<BodySilhouetteWidget>
         child: Row(
           children: [
             SizedBox(width: sideW, child: _labelCol(label, value, CrossAxisAlignment.end)),
-            Expanded(child: CustomPaint(painter: _LinePainter(fromLeft: true))),
+            const Expanded(child: CustomPaint(painter: _LinePainter(fromLeft: true))),
           ],
         ),
       );
@@ -197,7 +197,7 @@ class _BodySilhouetteWidgetState extends State<BodySilhouetteWidget>
         right: 0,
         child: Row(
           children: [
-            Expanded(child: CustomPaint(painter: _LinePainter(fromLeft: false))),
+            const Expanded(child: CustomPaint(painter: _LinePainter(fromLeft: false))),
             SizedBox(width: sideW, child: _labelCol(label, value, CrossAxisAlignment.start)),
           ],
         ),

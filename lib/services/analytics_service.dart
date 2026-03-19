@@ -1279,7 +1279,7 @@ class AnalyticsService {
     final setsRes = await _client
         .from('sets')
         .select('training_session_id, weight, reps, is_warmup')
-        .filter('training_session_id', 'in', '(${sessionIds.map((id) => '"$id"').join(',')})')
+        .inFilter('training_session_id', sessionIds)
         .eq('is_warmup', false);
 
     final volumeBySession = <String, double>{};

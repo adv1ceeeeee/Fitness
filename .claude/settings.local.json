@@ -20,7 +20,8 @@
       "Bash(head -10 grep -n \"scheduled_time\\\\|planned_time\\\\|start_time\" \"c:/Users/lihop/Личные данные/Работа/Fitness/lib/models/training_session.dart\")",
       "Read(//c/Users/lihop/**)",
       "Bash(python -c \":*)",
-      "Bash(find 'c:/Users/lihop/Личные данные/Работа/Fitness' -name tasks* -o -name TODO* -o -name *.tasks)"
+      "Bash(find 'c:/Users/lihop/Личные данные/Работа/Fitness' -name tasks* -o -name TODO* -o -name *.tasks)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }
