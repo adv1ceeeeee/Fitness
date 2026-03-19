@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, defaultTargetPlatform, TargetPlatform;
+
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -17,8 +18,13 @@ class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
 
+  static bool get _isSupportedPlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
   static Future<void> initialize() async {
     if (_initialized) return;
+    if (!_isSupportedPlatform) return;
     tz_data.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation(_localTzName()));
 
@@ -28,11 +34,17 @@ class NotificationService {
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
-    await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: iOS),
-      onDidReceiveNotificationResponse: _onTap,
-    );
-    _initialized = true;
+    try {
+      await _plugin.initialize(
+        const InitializationSettings(android: android, iOS: iOS),
+        onDidReceiveNotificationResponse: _onTap,
+      );
+      _initialized = true;
+    } on UnimplementedError catch (e) {
+      debugPrint('[NotifService] initialize: platform not supported — $e');
+    } catch (e) {
+      debugPrint('[NotifService] initialize error: $e');
+    }
   }
 
   /// Called when the user taps a notification (foreground or background).
@@ -79,6 +91,7 @@ class NotificationService {
 
   /// Returns true if permission was granted (or already granted).
   static Future<bool> requestPermission() async {
+    if (!_initialized) return false;
     final android = _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
@@ -104,6 +117,7 @@ class NotificationService {
     int minute = 0,
     Map<int, String>? dayToName,
   }) async {
+    if (!_initialized) return;
     // Cancel only workout-day notifications (IDs 0-6) — keep other notifs
     for (int i = 0; i < 7; i++) {
       await _plugin.cancel(i);
@@ -156,6 +170,7 @@ class NotificationService {
     int hour = 8,
     int minute = 0,
   }) async {
+    if (!_initialized) return;
     await _plugin.cancel(_kDailyReminderId);
     const channel = AndroidNotificationDetails(
       _channelId, _channelName,
@@ -240,6 +255,7 @@ class NotificationService {
 
   /// Cancel the one-time notification for a session.
   static Future<void> cancelSessionNotification(String sessionId) async {
+    if (!_initialized) return;
     final notifId = sessionId.hashCode & 0x3FFFFFFF;
     await _plugin.cancel(notifId);
   }
@@ -247,6 +263,7 @@ class NotificationService {
   /// Schedule a motivational inactivity reminder N days from now.
   /// Cancels the previous one so only one is active at a time.
   static Future<void> scheduleInactivityReminder({int daysLater = 3}) async {
+    if (!_initialized) return;
     await _plugin.cancel(_kInactivityId);
     final fire = tz.TZDateTime.now(tz.local).add(Duration(days: daysLater));
     const channel = AndroidNotificationDetails(
@@ -275,12 +292,15 @@ class NotificationService {
     );
   }
 
-  static Future<void> cancelInactivityReminder() async =>
-      _plugin.cancel(_kInactivityId);
+  static Future<void> cancelInactivityReminder() async {
+    if (!_initialized) return;
+    await _plugin.cancel(_kInactivityId);
+  }
 
   /// Cancels and reschedules a churn notification 14 days from now.
   /// Call on every app open so only users truly silent for 14 days get it.
   static Future<void> scheduleChurnNotification() async {
+    if (!_initialized) return;
     await _plugin.cancel(_kChurnId);
     final fire = tz.TZDateTime.now(tz.local).add(const Duration(days: 14));
     const channel = AndroidNotificationDetails(
@@ -351,6 +371,7 @@ class NotificationService {
   }) => scheduleWeighInReminders([weekday], hour: hour, minute: minute);
 
   static Future<void> cancelWeighInReminder() async {
+    if (!_initialized) return;
     // Cancel legacy single ID + all per-day IDs
     await _plugin.cancel(_kWeighInId);
     for (int i = 0; i < 7; i++) {
@@ -365,6 +386,7 @@ class NotificationService {
     int hour = 9,
     int minute = 0,
   }) async {
+    if (!_initialized) return;
     for (int i = 0; i < 7; i++) {
       await _plugin.cancel(_kRestDayBase + i);
     }
@@ -400,6 +422,7 @@ class NotificationService {
   }
 
   static Future<void> cancelRestDayReminders() async {
+    if (!_initialized) return;
     for (int i = 0; i < 7; i++) {
       await _plugin.cancel(_kRestDayBase + i);
     }
@@ -413,6 +436,7 @@ class NotificationService {
     required int streak,
     required int prs,
   }) async {
+    if (!_initialized) return;
     await _plugin.cancel(_kWeeklySummaryId);
 
     final title = _weeklySummaryTitle(workoutsCount);
@@ -444,7 +468,10 @@ class NotificationService {
     _logScheduled(type: 'weekly_summary', notifId: _kWeeklySummaryId);
   }
 
-  static Future<void> cancelWeeklySummary() => _plugin.cancel(_kWeeklySummaryId);
+  static Future<void> cancelWeeklySummary() async {
+    if (!_initialized) return;
+    await _plugin.cancel(_kWeeklySummaryId);
+  }
 
   /// Fire-and-forget: fetch this week's stats and reschedule the Sunday summary.
   /// Safe to call on every app open and after every workout completion.

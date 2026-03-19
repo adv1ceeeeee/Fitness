@@ -69,16 +69,43 @@ CustomTransitionPage<void> _fadePage(GoRouterState state, Widget child) {
 // ─── Analytics observer ───────────────────────────────────────────────────────
 
 class _ScreenViewObserver extends NavigatorObserver {
+  String? _currentScreen;
+  DateTime? _enteredAt;
+
+  void _flush() {
+    final screen = _currentScreen;
+    final entered = _enteredAt;
+    if (screen != null && entered != null) {
+      final secs = DateTime.now().difference(entered).inSeconds;
+      if (secs > 0) EventLogger.screenLeave(screen, durationSeconds: secs);
+    }
+    _currentScreen = null;
+    _enteredAt = null;
+  }
+
+  void _enter(String? name) {
+    if (name == null || name.isEmpty) return;
+    EventLogger.screenView(name);
+    _currentScreen = name;
+    _enteredAt = DateTime.now();
+  }
+
   @override
   void didPush(Route route, Route? previousRoute) {
-    final name = route.settings.name;
-    if (name != null && name.isNotEmpty) EventLogger.screenView(name);
+    _flush();
+    _enter(route.settings.name);
+  }
+
+  @override
+  void didPop(Route route, Route? previousRoute) {
+    _flush();
+    _enter(previousRoute?.settings.name);
   }
 
   @override
   void didReplace({Route? newRoute, Route? oldRoute}) {
-    final name = newRoute?.settings.name;
-    if (name != null && name.isNotEmpty) EventLogger.screenView(name);
+    _flush();
+    _enter(newRoute?.settings.name);
   }
 }
 

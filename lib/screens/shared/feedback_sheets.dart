@@ -14,6 +14,7 @@ Future<void> showNpsSheet(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useRootNavigator: true,
     backgroundColor: AppColors.card,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -220,6 +221,7 @@ Future<void> showMicroSurveySheet(BuildContext context) async {
   if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
     backgroundColor: AppColors.card,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -273,7 +275,8 @@ class _MicroSurveySheetState extends State<_MicroSurveySheet> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      padding: EdgeInsets.fromLTRB(
+          24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

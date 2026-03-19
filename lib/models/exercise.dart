@@ -4,6 +4,7 @@ class Exercise {
   final String? nameRu;
   final String category;
   final String? description;
+  final String? descriptionRu;
   final String? imageUrl;
   final bool isStandard;
   final String? userId;
@@ -16,6 +17,7 @@ class Exercise {
     this.nameRu,
     required this.category,
     this.description,
+    this.descriptionRu,
     this.imageUrl,
     this.isStandard = true,
     this.userId,
@@ -34,6 +36,7 @@ class Exercise {
       nameRu: json['name_ru'] as String?,
       category: json['category'] as String,
       description: json['description'] as String?,
+      descriptionRu: json['description_ru'] as String?,
       imageUrl: json['image_url'] as String?,
       isStandard: json['is_standard'] as bool? ?? true,
       userId: json['user_id'] as String?,

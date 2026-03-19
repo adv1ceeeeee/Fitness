@@ -47,6 +47,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String _searchQuery = '';
   bool _favoritesOnly = false;
   Timer? _searchDebounce;
+  final Set<String> _expandedCategories = {};
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -498,29 +499,39 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  if (gifUrl != null) ...[
+                  if (gifUrl != null || (description != null && description.isNotEmpty)) ...[
                     const SizedBox(height: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: gifUrl,
-                        height: 160,
-                        width: double.infinity,
-                        fit: BoxFit.contain,
-                        placeholder: (_, __) => const SizedBox(height: 160),
-                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                      ),
-                    ),
-                  ],
-                  if (description != null && description.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                        height: 1.4,
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (gifUrl != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: CachedNetworkImage(
+                              imageUrl: gifUrl,
+                              height: 112,
+                              width: 112,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => const SizedBox(width: 112, height: 112),
+                              errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                            ),
+                          ),
+                        if (gifUrl != null && description != null && description.isNotEmpty)
+                          const SizedBox(width: 12),
+                        if (description != null && description.isNotEmpty)
+                          Expanded(
+                            child: Text(
+                              description,
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                                height: 1.45,
+                              ),
+                              maxLines: 7,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                   const SizedBox(height: 20),
@@ -835,7 +846,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 onPressed: () => _showExerciseSettingsSheet(
                   title: ex.displayName,
                   gifUrl: ex.gifUrl,
-                  description: ex.description,
+                  description: ex.descriptionRu,
                   isCardio: ex.category == 'cardio',
                   initialSets: 3,
                   initialRepsRange: '8-12',
@@ -866,7 +877,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     final workout = _workout;
     final days = workout?.days ?? [];
 
-    // Build catalog with group separators
+    // Build catalog with collapsible group separators
     final groups = _groupedExercises;
     final catalogWidgets = <Widget>[];
     bool weightedHeaderShown = false;
@@ -881,8 +892,20 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         catalogWidgets.add(const _GroupSeparator('Без отягощения'));
         cardioHeaderShown = true;
       }
-      catalogWidgets.add(_CategoryHeader(label: group.key));
-      catalogWidgets.addAll(_buildExerciseTiles(group.value));
+      final expanded = _expandedCategories.contains(group.key);
+      catalogWidgets.add(_CategoryHeader(
+        label: group.key,
+        count: group.value.length,
+        expanded: expanded,
+        onToggle: () => setState(() {
+          if (expanded) {
+            _expandedCategories.remove(group.key);
+          } else {
+            _expandedCategories.add(group.key);
+          }
+        }),
+      ));
+      if (expanded) catalogWidgets.addAll(_buildExerciseTiles(group.value));
     }
 
     final isMultiSection = widget.totalSections > 1;
@@ -1100,7 +1123,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         onEdit: () => _showExerciseSettingsSheet(
                           title: we.exercise?.displayName ?? '?',
                           gifUrl: we.exercise?.gifUrl,
-                          description: we.exercise?.description,
+                          description: we.exercise?.descriptionRu,
                           isCardio: we.exercise?.category == 'cardio',
                           initialSets: we.sets,
                           initialRepsRange: we.repsRange,
@@ -1483,20 +1506,50 @@ class _NumberButton extends StatelessWidget {
 
 class _CategoryHeader extends StatelessWidget {
   final String label;
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
 
-  const _CategoryHeader({required this.label});
+  const _CategoryHeader({
+    required this.label,
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 6),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: AppColors.accent,
-          letterSpacing: 0.5,
+    return InkWell(
+      onTap: onToggle,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accent,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary.withValues(alpha: 0.6),
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
+          ],
         ),
       ),
     );

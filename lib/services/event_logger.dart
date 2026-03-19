@@ -375,6 +375,9 @@ class EventLogger {
   static void screenView(String screenName) =>
       log('screen_view', props: {'screen': screenName});
 
+  static void screenLeave(String screenName, {required int durationSeconds}) =>
+      log('screen_leave', props: {'screen': screenName, 'duration_s': durationSeconds});
+
   // ─── Feedback ─────────────────────────────────────────────────────────────
 
   static void npsScore({required int score, String? comment}) =>
