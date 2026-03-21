@@ -20,7 +20,7 @@ class AuthService {
     return _client.auth.signUp(
       email: nicknameToEmail(nickname),
       password: password,
-      data: {'nickname': nickname},
+      data: {'nickname': nickname.toLowerCase().trim()},
     );
   }
 
