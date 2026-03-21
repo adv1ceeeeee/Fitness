@@ -1379,4 +1379,97 @@ class AnalyticsService {
       return 0;
     }
   }
+
+  /// Top [limit] exercises by total volume (weight × reps) in the last 30 days.
+  /// Each entry: {name: String, total_volume: double}
+  static Future<List<Map<String, dynamic>>> getTopExercisesByVolume(
+      {int limit = 5}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final startStr = DateTime.now()
+        .subtract(const Duration(days: 30))
+        .toIso8601String()
+        .split('T')[0];
+
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', startStr);
+
+    final sessionIds =
+        (sessionsRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return [];
+
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id, weight, reps')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .not('workout_exercise_id', 'is', null)
+        .not('weight', 'is', null)
+        .not('reps', 'is', null);
+
+    // Aggregate volume per workout_exercise_id
+    final volumePerWe = <String, double>{};
+    for (final s in setsRes as List) {
+      final weId = s['workout_exercise_id'] as String?;
+      if (weId == null) continue;
+      final w = (s['weight'] as num?)?.toDouble() ?? 0;
+      final r = (s['reps'] as num?)?.toInt() ?? 0;
+      volumePerWe[weId] = (volumePerWe[weId] ?? 0) + w * r;
+    }
+    if (volumePerWe.isEmpty) return [];
+
+    // Fetch exercise names
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(id, name)')
+        .inFilter('id', volumePerWe.keys.toList());
+
+    // Deduplicate by exercise_id — sum volumes across different workout_exercise rows
+    final volumePerExercise = <String, double>{};
+    final namePerExercise = <String, String>{};
+    for (final we in weRes as List) {
+      final ex = we['exercises'] as Map<String, dynamic>?;
+      if (ex == null) continue;
+      final exId = ex['id'] as String;
+      final weId = we['id'] as String;
+      final vol = volumePerWe[weId] ?? 0;
+      volumePerExercise[exId] = (volumePerExercise[exId] ?? 0) + vol;
+      namePerExercise[exId] = ex['name'] as String;
+    }
+
+    final result = volumePerExercise.entries
+        .map((e) => {'name': namePerExercise[e.key] ?? '', 'total_volume': e.value})
+        .toList()
+      ..sort((a, b) =>
+          (b['total_volume'] as double).compareTo(a['total_volume'] as double));
+
+    return result.take(limit).toList();
+  }
+
+  /// Wellness logs for the last [days] days, sorted ascending by date.
+  /// Each entry: {date, sleep_hours, energy, stress, sleep_quality, soreness}
+  static Future<List<Map<String, dynamic>>> getWellnessHistory(
+      {int days = 30}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final startStr = DateTime.now()
+        .subtract(Duration(days: days))
+        .toIso8601String()
+        .split('T')[0];
+
+    final res = await _client
+        .from('wellness_logs')
+        .select('date, sleep_hours, energy, stress, sleep_quality, soreness')
+        .eq('user_id', userId)
+        .gte('date', startStr)
+        .order('date', ascending: true);
+
+    return (res as List).cast<Map<String, dynamic>>();
+  }
 }

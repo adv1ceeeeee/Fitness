@@ -24,7 +24,8 @@ class AnalyticsScreen extends StatefulWidget {
   State<AnalyticsScreen> createState() => _AnalyticsScreenState();
 }
 
-class _AnalyticsScreenState extends State<AnalyticsScreen> {
+class _AnalyticsScreenState extends State<AnalyticsScreen>
+    with SingleTickerProviderStateMixin {
   final _shareKey = GlobalKey();
 
   Profile? _profile;
@@ -86,10 +87,23 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek})?
       _weekComparison;
 
+  // New state variables
+  List<Map<String, dynamic>> _topExercises = [];
+  List<Map<String, dynamic>> _wellnessHistory = [];
+
+  late final TabController _tabController;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -112,6 +126,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         final communityAvgVol = await AnalyticsService.getCommunityAvgWeeklyVolume();
         final weekCmp = await AnalyticsService.getWeekComparison();
         final heatmap = await AnalyticsService.getWorkoutHeatmap();
+        final topExercises = await AnalyticsService.getTopExercisesByVolume();
+        final wellnessHistory = await AnalyticsService.getWellnessHistory();
 
         if (mounted) {
           setState(() {
@@ -130,6 +146,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             _communityAvgWeeklyVolume = communityAvgVol;
             _weekComparison = weekCmp;
             _heatmapData = heatmap;
+            _topExercises = topExercises;
+            _wellnessHistory = wellnessHistory;
             _loading = false;
           });
         }
@@ -264,401 +282,1442 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-                24, 24, 24, MediaQuery.of(context).padding.bottom + 80),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Привет, $name!',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: _changeGoal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Твоя цель: ${_goalDisplay(goal)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.edit_rounded,
-                          size: 14, color: AppColors.textSecondary),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                _StreakCard(
-                  streak: _bestStreak,
-                  totalWorkouts: _totalWorkouts,
-                  freezeActive: StreakFreezeService.freezeIsActive,
-                  hasFreeze: StreakFreezeService.hasFreeze,
-                ),
-                const SizedBox(height: 12),
-                _NavCard(
-                  icon: Icons.history_rounded,
-                  label: 'История тренировок',
-                  onTap: () => context.push('/history'),
-                ),
-                const SizedBox(height: 8),
-                _NavCard(
-                  icon: Icons.emoji_events_rounded,
-                  label: 'Личные рекорды',
-                  onTap: () => context.push('/records'),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Активность',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Последние 26 недель',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 12),
-                _WorkoutHeatmap(data: _heatmapData),
-                const SizedBox(height: 24),
-                const Text(
-                  'Статистика за неделю',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _StatBox(
-                        label: 'Тренировок',
-                        value: _workoutsThisWeek.toDouble(),
-                        format: (v) => v.round().toString(),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StatBox(
-                        label: 'Объём (кг)',
-                        value: _volumeThisWeek,
-                        format: (v) => v.toStringAsFixed(0),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (_weekComparison != null)
-                  _WeekComparisonCard(cmp: _weekComparison!),
-                const SizedBox(height: 32),
-                const Text(
-                  'Тренд объёма нагрузки',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Последние 8 недель (кг × повт.)',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 12),
-                _VolumeBarChart(weeks: _weeklyVolume, communityAvg: _communityAvgWeeklyVolume),
-                const SizedBox(height: 32),
-                const Text(
-                  'Динамика параметров тела',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (_bodyHistory.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Добавьте замеры в разделе\n«Параметры тела» в профиле',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ),
-                  )
-                else ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: DropdownButton<String>(
-                      value: _availableBodyMetrics.contains(_selectedBodyMetric)
-                          ? _selectedBodyMetric
-                          : _availableBodyMetrics.first,
-                      isExpanded: true,
-                      underline: const SizedBox.shrink(),
-                      dropdownColor: AppColors.card,
-                      style: const TextStyle(color: AppColors.textPrimary),
-                      items: _availableBodyMetrics.map((key) {
-                        return DropdownMenuItem<String>(
-                          value: key,
-                          child: Text(_bodyMetricOptions[key] ?? key),
-                        );
-                      }).toList(),
-                      onChanged: (key) {
-                        if (key != null) {
-                          setState(() => _selectedBodyMetric = key);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_bodyMetricData.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: AppColors.card,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'Нет данных по этому параметру',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
-                    )
-                  else
-                    _ProgressChart(data: _bodyMetricData),
-                  // No community avg for body metrics — it's personal data
-                ],
-                const SizedBox(height: 32),
-                const Text(
-                  'Прогресс по упражнению',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (_trackedExercises.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Завершите тренировку с весом,\nчтобы увидеть прогресс',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ),
-                  )
-                else ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: DropdownButton<Map<String, dynamic>>(
-                      value: _selectedExercise,
-                      hint: const Text('Выберите упражнение',
-                          style: TextStyle(color: AppColors.textSecondary)),
-                      isExpanded: true,
-                      underline: const SizedBox.shrink(),
-                      dropdownColor: AppColors.card,
-                      style: const TextStyle(color: AppColors.textPrimary),
-                      items: _trackedExercises
-                          .map((ex) => DropdownMenuItem(
-                                value: ex,
-                                child: Text(ex['name'] as String),
-                              ))
-                          .toList(),
-                      onChanged: (ex) {
-                        setState(() {
-                          _selectedExercise = ex;
-                          _exerciseProgress = {};
-                        });
-                        if (ex != null) {
-                          _loadExerciseProgress(ex['id'] as String);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_selectedExercise != null)
-                    _loadingChart
-                        ? const SizedBox(
-                            height: 180,
-                            child: Center(
-                                child: CircularProgressIndicator()))
-                        : _exerciseProgress.isEmpty
-                            ? Container(
-                                height: 80,
-                                alignment: Alignment.center,
-                                child: const Text('Нет данных',
-                                    style: TextStyle(
-                                        color: AppColors.textSecondary)),
-                              )
-                            : _ProgressChart(
-                                data: _exerciseProgress,
-                                communityAvg: _communityAvgExerciseWeight,
-                              ),
-                ],
-                const SizedBox(height: 32),
-                const Text(
-                  'Калории',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Оценка затрат по тренировкам',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 12),
-                if (_caloriesPerSession.isEmpty)
-                  Container(
-                    height: 80,
-                    alignment: Alignment.center,
-                    child: const Text(
-                      'Завершите тренировку,\nчтобы увидеть данные о калориях',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
-                    ),
-                  )
-                else
-                  _CaloriesChart(sessions: _caloriesPerSession),
-                const SizedBox(height: 32),
-                const Text(
-                  'Баланс мышечных групп',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Подходы за последние 30 дней',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                ),
-                const SizedBox(height: 12),
-                _MuscleBalanceChart(balance: _muscleBalance),
-                if (_muscleFrequency.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Частота по группам мышц',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+        child: Column(
+          children: [
+            // ── Header ──────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Привет, $name!',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Среднее тренировок в неделю за 4 недели',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  const SizedBox(height: 6),
+                  GestureDetector(
+                    onTap: _changeGoal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Твоя цель: ${_goalDisplay(goal)}',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.edit_rounded,
+                            size: 13, color: AppColors.textSecondary),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _MuscleFrequencyChart(frequency: _muscleFrequency),
                 ],
-                const SizedBox(height: 32),
-                const Text(
-                  'Достижения',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _AchievementsGrid(achievements: _achievements),
-                const SizedBox(height: 32),
-                const Text(
-                  'Поделиться прогрессом',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                RepaintBoundary(
-                  key: _shareKey,
-                  child: _ShareCard(
-                    name: _profile?.fullName?.split(' ').first ?? 'Атлет',
-                    streak: _bestStreak,
+              ),
+            ),
+            const SizedBox(height: 12),
+            // ── Tab bar ─────────────────────────────────────────────────────
+            TabBar(
+              controller: _tabController,
+              indicatorColor: AppColors.accent,
+              labelColor: AppColors.accent,
+              unselectedLabelColor: AppColors.textSecondary,
+              dividerColor: AppColors.separator,
+              labelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              unselectedLabelStyle: const TextStyle(fontSize: 13),
+              tabs: const [
+                Tab(text: 'Обзор'),
+                Tab(text: 'Тренировки'),
+                Tab(text: 'Тело'),
+                Tab(text: 'Инсайты'),
+              ],
+            ),
+            // ── Tab views ───────────────────────────────────────────────────
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  // Tab 1: Обзор
+                  _OverviewTab(
+                    onRefresh: _load,
+                    profile: _profile,
+                    bestStreak: _bestStreak,
                     totalWorkouts: _totalWorkouts,
                     workoutsThisWeek: _workoutsThisWeek,
                     volumeThisWeek: _volumeThisWeek,
+                    weekComparison: _weekComparison,
+                    heatmapData: _heatmapData,
+                    achievements: _achievements,
                   ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _sharing ? null : _shareAsImage,
-                    icon: _sharing
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.ios_share_rounded),
-                    label: const Text('Поделиться картинкой'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
+                  // Tab 2: Тренировки
+                  _WorkoutsTab(
+                    onRefresh: _load,
+                    weeklyVolume: _weeklyVolume,
+                    communityAvgWeeklyVolume: _communityAvgWeeklyVolume,
+                    topExercises: _topExercises,
+                    trackedExercises: _trackedExercises,
+                    selectedExercise: _selectedExercise,
+                    exerciseProgress: _exerciseProgress,
+                    communityAvgExerciseWeight: _communityAvgExerciseWeight,
+                    loadingChart: _loadingChart,
+                    muscleBalance: _muscleBalance,
+                    muscleFrequency: _muscleFrequency,
+                    caloriesPerSession: _caloriesPerSession,
+                    onExerciseChanged: (ex) {
+                      setState(() {
+                        _selectedExercise = ex;
+                        _exerciseProgress = {};
+                      });
+                      if (ex != null) {
+                        _loadExerciseProgress(ex['id'] as String);
+                      }
+                    },
                   ),
-                ),
-              ],
+                  // Tab 3: Тело
+                  _BodyTab(
+                    onRefresh: _load,
+                    bodyHistory: _bodyHistory,
+                    bodyMetricOptions: _bodyMetricOptions,
+                    availableBodyMetrics: _availableBodyMetrics,
+                    selectedBodyMetric: _selectedBodyMetric,
+                    bodyMetricData: _bodyMetricData,
+                    wellnessHistory: _wellnessHistory,
+                    onMetricChanged: (k) {
+                      if (k != null) setState(() => _selectedBodyMetric = k);
+                    },
+                  ),
+                  // Tab 4: Инсайты
+                  _InsightsTab(
+                    onRefresh: _load,
+                    shareKey: _shareKey,
+                    profile: _profile,
+                    bestStreak: _bestStreak,
+                    totalWorkouts: _totalWorkouts,
+                    workoutsThisWeek: _workoutsThisWeek,
+                    volumeThisWeek: _volumeThisWeek,
+                    heatmapData: _heatmapData,
+                    weeklyVolume: _weeklyVolume,
+                    muscleBalance: _muscleBalance,
+                    wellnessHistory: _wellnessHistory,
+                    sharing: _sharing,
+                    onShare: _shareAsImage,
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tab 1: Обзор
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _OverviewTab extends StatelessWidget {
+  final Future<void> Function() onRefresh;
+  final Profile? profile;
+  final int bestStreak;
+  final int totalWorkouts;
+  final int workoutsThisWeek;
+  final double volumeThisWeek;
+  final ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek})? weekComparison;
+  final Map<DateTime, double> heatmapData;
+  final List<Achievement> achievements;
+
+  const _OverviewTab({
+    required this.onRefresh,
+    required this.profile,
+    required this.bestStreak,
+    required this.totalWorkouts,
+    required this.workoutsThisWeek,
+    required this.volumeThisWeek,
+    required this.weekComparison,
+    required this.heatmapData,
+    required this.achievements,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).padding.bottom + 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _StreakCard(
+              streak: bestStreak,
+              totalWorkouts: totalWorkouts,
+              freezeActive: StreakFreezeService.freezeIsActive,
+              hasFreeze: StreakFreezeService.hasFreeze,
+            ),
+            const SizedBox(height: 20),
+            // Monthly calendar heatmap
+            const Text(
+              'Активность в этом месяце',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _MonthCalendar(heatmapData: heatmapData),
+            const SizedBox(height: 20),
+            const Text(
+              'Статистика за неделю',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _StatBox(
+                    label: 'Тренировок',
+                    value: workoutsThisWeek.toDouble(),
+                    format: (v) => v.round().toString(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatBox(
+                    label: 'Объём (кг)',
+                    value: volumeThisWeek,
+                    format: (v) => v.toStringAsFixed(0),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (weekComparison != null)
+              _WeekComparisonCard(cmp: weekComparison!),
+            const SizedBox(height: 20),
+            _NavCard(
+              icon: Icons.history_rounded,
+              label: 'История тренировок',
+              onTap: () => context.push('/history'),
+            ),
+            const SizedBox(height: 8),
+            _NavCard(
+              icon: Icons.emoji_events_rounded,
+              label: 'Личные рекорды',
+              onTap: () => context.push('/records'),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Достижения',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _AchievementsGrid(achievements: achievements),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tab 2: Тренировки
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _WorkoutsTab extends StatelessWidget {
+  final Future<void> Function() onRefresh;
+  final List<Map<String, dynamic>> weeklyVolume;
+  final double? communityAvgWeeklyVolume;
+  final List<Map<String, dynamic>> topExercises;
+  final List<Map<String, dynamic>> trackedExercises;
+  final Map<String, dynamic>? selectedExercise;
+  final Map<String, double> exerciseProgress;
+  final double? communityAvgExerciseWeight;
+  final bool loadingChart;
+  final Map<String, int> muscleBalance;
+  final Map<String, double> muscleFrequency;
+  final List<Map<String, dynamic>> caloriesPerSession;
+  final void Function(Map<String, dynamic>?) onExerciseChanged;
+
+  const _WorkoutsTab({
+    required this.onRefresh,
+    required this.weeklyVolume,
+    required this.communityAvgWeeklyVolume,
+    required this.topExercises,
+    required this.trackedExercises,
+    required this.selectedExercise,
+    required this.exerciseProgress,
+    required this.communityAvgExerciseWeight,
+    required this.loadingChart,
+    required this.muscleBalance,
+    required this.muscleFrequency,
+    required this.caloriesPerSession,
+    required this.onExerciseChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).padding.bottom + 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Тренд объёма нагрузки',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Последние 8 недель (кг × повт.)',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            _VolumeBarChart(weeks: weeklyVolume, communityAvg: communityAvgWeeklyVolume),
+            const SizedBox(height: 28),
+            const Text(
+              'Топ-5 упражнений за месяц',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'По общему объёму (кг × повт.)',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            _TopExercisesCard(exercises: topExercises),
+            const SizedBox(height: 28),
+            const Text(
+              'Прогресс по упражнению',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (trackedExercises.isEmpty)
+              _emptyCard('Завершите тренировку с весом,\nчтобы увидеть прогресс')
+            else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButton<Map<String, dynamic>>(
+                  value: selectedExercise,
+                  hint: const Text('Выберите упражнение',
+                      style: TextStyle(color: AppColors.textSecondary)),
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  dropdownColor: AppColors.card,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  items: trackedExercises
+                      .map((ex) => DropdownMenuItem(
+                            value: ex,
+                            child: Text(ex['name'] as String),
+                          ))
+                      .toList(),
+                  onChanged: onExerciseChanged,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (selectedExercise != null)
+                loadingChart
+                    ? const SizedBox(
+                        height: 180,
+                        child: Center(child: CircularProgressIndicator()))
+                    : exerciseProgress.isEmpty
+                        ? Container(
+                            height: 80,
+                            alignment: Alignment.center,
+                            child: const Text('Нет данных',
+                                style: TextStyle(color: AppColors.textSecondary)),
+                          )
+                        : _ProgressChart(
+                            data: exerciseProgress,
+                            communityAvg: communityAvgExerciseWeight,
+                          ),
+            ],
+            const SizedBox(height: 28),
+            const Text(
+              'Баланс мышечных групп',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Подходы за последние 30 дней',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            _MuscleBalanceChart(balance: muscleBalance),
+            if (muscleFrequency.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              const Text(
+                'Частота по группам мышц',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Среднее тренировок в неделю за 4 недели',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              _MuscleFrequencyChart(frequency: muscleFrequency),
+            ],
+            const SizedBox(height: 28),
+            const Text(
+              'Калории',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Оценка затрат по тренировкам',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            if (caloriesPerSession.isEmpty)
+              _emptyCard('Завершите тренировку,\nчтобы увидеть данные о калориях')
+            else
+              _CaloriesChart(sessions: caloriesPerSession),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyCard(String msg) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Text(
+            msg,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tab 3: Тело
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _BodyTab extends StatefulWidget {
+  final Future<void> Function() onRefresh;
+  final List<Map<String, dynamic>> bodyHistory;
+  final Map<String, String> bodyMetricOptions;
+  final List<String> availableBodyMetrics;
+  final String selectedBodyMetric;
+  final Map<String, double> bodyMetricData;
+  final List<Map<String, dynamic>> wellnessHistory;
+  final void Function(String?) onMetricChanged;
+
+  const _BodyTab({
+    required this.onRefresh,
+    required this.bodyHistory,
+    required this.bodyMetricOptions,
+    required this.availableBodyMetrics,
+    required this.selectedBodyMetric,
+    required this.bodyMetricData,
+    required this.wellnessHistory,
+    required this.onMetricChanged,
+  });
+
+  @override
+  State<_BodyTab> createState() => _BodyTabState();
+}
+
+class _BodyTabState extends State<_BodyTab> {
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: widget.onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).padding.bottom + 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Динамика параметров тела',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (widget.bodyHistory.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Добавьте замеры в разделе\n«Параметры тела» в профиле',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              )
+            else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButton<String>(
+                  value: widget.availableBodyMetrics.contains(widget.selectedBodyMetric)
+                      ? widget.selectedBodyMetric
+                      : widget.availableBodyMetrics.first,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  dropdownColor: AppColors.card,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  items: widget.availableBodyMetrics.map((key) {
+                    return DropdownMenuItem<String>(
+                      value: key,
+                      child: Text(widget.bodyMetricOptions[key] ?? key),
+                    );
+                  }).toList(),
+                  onChanged: widget.onMetricChanged,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (widget.bodyMetricData.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Нет данных по этому параметру',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                  ),
+                )
+              else
+                _ProgressChart(data: widget.bodyMetricData),
+            ],
+            const SizedBox(height: 28),
+            const Text(
+              'Самочувствие',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Последние 30 дней',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            _WellnessTrendChart(history: widget.wellnessHistory),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tab 4: Инсайты
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _InsightsTab extends StatelessWidget {
+  final Future<void> Function() onRefresh;
+  final GlobalKey shareKey;
+  final Profile? profile;
+  final int bestStreak;
+  final int totalWorkouts;
+  final int workoutsThisWeek;
+  final double volumeThisWeek;
+  final Map<DateTime, double> heatmapData;
+  final List<Map<String, dynamic>> weeklyVolume;
+  final Map<String, int> muscleBalance;
+  final List<Map<String, dynamic>> wellnessHistory;
+  final bool sharing;
+  final VoidCallback onShare;
+
+  const _InsightsTab({
+    required this.onRefresh,
+    required this.shareKey,
+    required this.profile,
+    required this.bestStreak,
+    required this.totalWorkouts,
+    required this.workoutsThisWeek,
+    required this.volumeThisWeek,
+    required this.heatmapData,
+    required this.weeklyVolume,
+    required this.muscleBalance,
+    required this.wellnessHistory,
+    required this.sharing,
+    required this.onShare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).padding.bottom + 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Умные инсайты',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Основано на ваших данных',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            _InsightsSection(
+              heatmapData: heatmapData,
+              weeklyVolume: weeklyVolume,
+              muscleBalance: muscleBalance,
+              wellnessHistory: wellnessHistory,
+              bestStreak: bestStreak,
+              totalWorkouts: totalWorkouts,
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              'Поделиться прогрессом',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            RepaintBoundary(
+              key: shareKey,
+              child: _ShareCard(
+                name: profile?.fullName?.split(' ').first ?? 'Атлет',
+                streak: bestStreak,
+                totalWorkouts: totalWorkouts,
+                workoutsThisWeek: workoutsThisWeek,
+                volumeThisWeek: volumeThisWeek,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: sharing ? null : onShare,
+                icon: sharing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.ios_share_rounded),
+                label: const Text('Поделиться картинкой'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Monthly calendar heatmap
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _MonthCalendar extends StatelessWidget {
+  final Map<DateTime, double> heatmapData;
+
+  const _MonthCalendar({required this.heatmapData});
+
+  static const _months = [
+    '', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+  ];
+
+  static const _weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final firstDay = DateTime(now.year, now.month, 1);
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    // weekday: Mon=1 … Sun=7; offset = 0-based index on grid
+    final startOffset = firstDay.weekday - 1;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _months[now.month],
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Weekday header
+          Row(
+            children: _weekdays.map((d) => Expanded(
+              child: Center(
+                child: Text(
+                  d,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            )).toList(),
+          ),
+          const SizedBox(height: 6),
+          // Calendar grid — up to 6 rows of 7
+          Builder(builder: (context) {
+            final totalCells = startOffset + daysInMonth;
+            final rows = (totalCells / 7).ceil();
+            return Column(
+              children: List.generate(rows, (row) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: List.generate(7, (col) {
+                      final cellIndex = row * 7 + col;
+                      final day = cellIndex - startOffset + 1;
+                      if (day < 1 || day > daysInMonth) {
+                        return const Expanded(child: SizedBox());
+                      }
+                      final date = DateTime(now.year, now.month, day);
+                      final isFuture = date.isAfter(today);
+                      final volume = isFuture ? 0.0 : (heatmapData[date] ?? 0.0);
+                      final worked = volume > 0;
+                      final isToday = date == today;
+
+                      return Expanded(
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: Container(
+                            margin: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: isFuture
+                                  ? Colors.transparent
+                                  : worked
+                                      ? AppColors.accent
+                                      : AppColors.surface,
+                              shape: BoxShape.circle,
+                              border: isToday
+                                  ? Border.all(color: AppColors.accent, width: 1.5)
+                                  : null,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '$day',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                  color: worked
+                                      ? Colors.white
+                                      : isFuture
+                                          ? AppColors.textSecondary.withValues(alpha: 0.3)
+                                          : AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                );
+              }),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Top exercises card
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _TopExercisesCard extends StatelessWidget {
+  final List<Map<String, dynamic>> exercises;
+
+  const _TopExercisesCard({required this.exercises});
+
+  String _formatVolume(double v) {
+    if (v >= 1000) {
+      return '${(v / 1000).toStringAsFixed(1)} т';
+    }
+    return '${v.toStringAsFixed(0)} кг';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (exercises.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: Text(
+            'Завершите тренировки с весами,\nчтобы увидеть статистику',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+
+    final maxVol = (exercises.first['total_volume'] as num).toDouble();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: exercises.asMap().entries.map((entry) {
+          final i = entry.key;
+          final ex = entry.value;
+          final name = ex['name'] as String? ?? '—';
+          final vol = (ex['total_volume'] as num).toDouble();
+          final frac = maxVol > 0 ? vol / maxVol : 0.0;
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: i < exercises.length - 1 ? 14 : 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 22,
+                      child: Text(
+                        '${i + 1}.',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatVolume(vol),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const SizedBox(width: 22),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: frac.clamp(0.0, 1.0),
+                          minHeight: 4,
+                          backgroundColor: AppColors.surface,
+                          valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Wellness trend chart
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _WellnessTrendChart extends StatefulWidget {
+  final List<Map<String, dynamic>> history;
+
+  const _WellnessTrendChart({required this.history});
+
+  @override
+  State<_WellnessTrendChart> createState() => _WellnessTrendChartState();
+}
+
+class _WellnessTrendChartState extends State<_WellnessTrendChart> {
+  // 0 = Сон, 1 = Энергия, 2 = Стресс
+  int _selected = 0;
+
+  static const _tabs = ['Сон', 'Энергия', 'Стресс'];
+  static const _fields = ['sleep_hours', 'energy', 'stress'];
+  static const _colors = [
+    Color(0xFF30D158), // green for sleep
+    Color(0xFFFF9F0A), // orange for energy
+    Color(0xFFFF453A), // red for stress
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.history.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: Text(
+            'Добавьте данные о самочувствии на главном экране',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+
+    final field = _fields[_selected];
+    final color = _colors[_selected];
+
+    // Build data points — skip rows where the field is null
+    final points = <MapEntry<String, double>>[];
+    for (final row in widget.history) {
+      final v = row[field];
+      if (v == null) continue;
+      final date = row['date'] as String?;
+      if (date == null) continue;
+      points.add(MapEntry(date, (v as num).toDouble()));
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Toggle
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: List.generate(_tabs.length, (i) {
+                final active = _selected == i;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selected = i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: active ? AppColors.accent : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Center(
+                        child: Text(
+                          _tabs[i],
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: active ? Colors.white : AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (points.isEmpty)
+            const SizedBox(
+              height: 80,
+              child: Center(
+                child: Text(
+                  'Нет данных по этому показателю',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 160,
+              child: _WellnessLineChart(points: points, color: color),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WellnessLineChart extends StatelessWidget {
+  final List<MapEntry<String, double>> points;
+  final Color color;
+
+  const _WellnessLineChart({required this.points, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final spots = List.generate(
+      points.length,
+      (i) => FlSpot(i.toDouble(), points[i].value),
+    );
+    final values = points.map((e) => e.value);
+    final minY = values.reduce((a, b) => a < b ? a : b);
+    final maxY = values.reduce((a, b) => a > b ? a : b);
+    final pad = maxY == minY ? 1.0 : (maxY - minY) * 0.2;
+
+    return LineChart(
+      LineChartData(
+        minY: (minY - pad).clamp(0, double.infinity),
+        maxY: maxY + pad,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) => const FlLine(
+            color: AppColors.surface,
+            strokeWidth: 1,
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 28,
+              getTitlesWidget: (v, _) => Text(
+                v.toStringAsFixed(0),
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 24,
+              interval: points.length <= 6
+                  ? 1
+                  : (points.length / 4).ceilToDouble(),
+              getTitlesWidget: (value, _) {
+                final idx = value.toInt();
+                if (idx < 0 || idx >= points.length) return const SizedBox.shrink();
+                final parts = points[idx].key.split('-');
+                final label = parts.length >= 3 ? '${parts[2]}.${parts[1]}' : points[idx].key;
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                  ),
+                );
+              },
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: color,
+            barWidth: 2.5,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+                radius: 3,
+                color: color,
+                strokeWidth: 0,
+              ),
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withValues(alpha: 0.15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Insights section + card
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _InsightCard extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String body;
+
+  const _InsightCard({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InsightsSection extends StatelessWidget {
+  final Map<DateTime, double> heatmapData;
+  final List<Map<String, dynamic>> weeklyVolume;
+  final Map<String, int> muscleBalance;
+  final List<Map<String, dynamic>> wellnessHistory;
+  final int bestStreak;
+  final int totalWorkouts;
+
+  const _InsightsSection({
+    required this.heatmapData,
+    required this.weeklyVolume,
+    required this.muscleBalance,
+    required this.wellnessHistory,
+    required this.bestStreak,
+    required this.totalWorkouts,
+  });
+
+  static const _weekdayNames = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+  static const _muscleLabels = {
+    'chest': 'Грудь',
+    'back': 'Спина',
+    'shoulders': 'Плечи',
+    'arms': 'Руки',
+    'legs': 'Ноги',
+    'core': 'Пресс',
+    'cardio': 'Кардио',
+  };
+
+  List<_InsightCard> _buildInsights() {
+    final cards = <_InsightCard>[];
+
+    // 1. Best day of week
+    if (heatmapData.isNotEmpty) {
+      final weekdayCount = <int, int>{};
+      for (final entry in heatmapData.entries) {
+        if (entry.value > 0) {
+          final wd = entry.key.weekday; // 1=Mon, 7=Sun
+          weekdayCount[wd] = (weekdayCount[wd] ?? 0) + 1;
+        }
+      }
+      if (weekdayCount.isNotEmpty) {
+        final bestWd = weekdayCount.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+        final count = weekdayCount[bestWd]!;
+        cards.add(_InsightCard(
+          icon: Icons.calendar_today_rounded,
+          color: AppColors.accent,
+          title: 'Лучший день для тренировок',
+          body: '${_weekdayNames[bestWd]} — вы тренируетесь в этот день чаще всего ($count раз за последние 6 месяцев).',
+        ));
+      }
+    }
+
+    // 2. Volume trend: last 4 weeks vs previous 4 weeks
+    if (weeklyVolume.length >= 8) {
+      final recent = weeklyVolume.sublist(weeklyVolume.length - 4);
+      final older = weeklyVolume.sublist(weeklyVolume.length - 8, weeklyVolume.length - 4);
+      final recentAvg = recent.fold(0.0, (s, w) => s + (w['volume'] as double)) / 4;
+      final olderAvg = older.fold(0.0, (s, w) => s + (w['volume'] as double)) / 4;
+      if (olderAvg > 0) {
+        final pct = ((recentAvg - olderAvg) / olderAvg * 100).round();
+        final up = pct >= 0;
+        cards.add(_InsightCard(
+          icon: up ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+          color: up ? AppColors.success : AppColors.error,
+          title: 'Тренд объёма нагрузки',
+          body: up
+              ? 'За последние 4 недели ваш объём вырос на $pct% по сравнению с предыдущим периодом. Отлично!'
+              : 'За последние 4 недели объём снизился на ${pct.abs()}%. Попробуйте добавить нагрузку.',
+        ));
+      }
+    }
+
+    // 3. Most trained muscle group
+    if (muscleBalance.isNotEmpty) {
+      final top = muscleBalance.entries.reduce((a, b) => a.value >= b.value ? a : b);
+      final label = _muscleLabels[top.key] ?? top.key;
+      cards.add(_InsightCard(
+        icon: Icons.fitness_center_rounded,
+        color: const Color(0xFFBF5AF2),
+        title: 'Самая тренируемая группа',
+        body: '$label лидирует по объёму подходов за последние 30 дней (${top.value} подходов). Следите за балансом.',
+      ));
+    }
+
+    // 4. Consistency score this month
+    if (totalWorkouts > 0) {
+      final now = DateTime.now();
+      final firstDay = DateTime(now.year, now.month, 1);
+      final daysElapsed = now.difference(firstDay).inDays + 1;
+      int thisMonth = 0;
+      for (final entry in heatmapData.entries) {
+        if (entry.value > 0 &&
+            entry.key.year == now.year &&
+            entry.key.month == now.month) {
+          thisMonth++;
+        }
+      }
+      if (daysElapsed >= 7 && thisMonth > 0) {
+        final freqPerWeek = (thisMonth / (daysElapsed / 7)).toStringAsFixed(1);
+        cards.add(_InsightCard(
+          icon: Icons.repeat_rounded,
+          color: AppColors.warning,
+          title: 'Регулярность в этом месяце',
+          body: 'В этом месяце вы тренировались $thisMonth раз — в среднем $freqPerWeek тренировки в неделю.',
+        ));
+      }
+    }
+
+    // 5. Wellness correlation — sleep and workouts
+    if (wellnessHistory.isNotEmpty) {
+      final goodSleepDays = <String>{};
+      final allLoggedDays = <String>{};
+      for (final row in wellnessHistory) {
+        final date = row['date'] as String?;
+        if (date == null) continue;
+        final sleep = row['sleep_hours'];
+        if (sleep == null) continue;
+        allLoggedDays.add(date);
+        if ((sleep as num).toDouble() >= 7.0) {
+          goodSleepDays.add(date);
+        }
+      }
+      if (goodSleepDays.length >= 5 && allLoggedDays.isNotEmpty) {
+        // Count workout days that had good sleep logged
+        int workedWithGoodSleep = 0;
+        int workedWithPoorSleep = 0;
+        for (final entry in heatmapData.entries) {
+          if (entry.value <= 0) continue;
+          final dateStr = '${entry.key.year}-${entry.key.month.toString().padLeft(2, '0')}-${entry.key.day.toString().padLeft(2, '0')}';
+          if (!allLoggedDays.contains(dateStr)) continue;
+          if (goodSleepDays.contains(dateStr)) {
+            workedWithGoodSleep++;
+          } else {
+            workedWithPoorSleep++;
+          }
+        }
+        final total = workedWithGoodSleep + workedWithPoorSleep;
+        if (total >= 5) {
+          final pct = (workedWithGoodSleep / total * 100).round();
+          cards.add(_InsightCard(
+            icon: Icons.bedtime_rounded,
+            color: const Color(0xFF34C759),
+            title: 'Сон и тренировки',
+            body: '$pct% ваших тренировок приходится на дни с 7+ часами сна. Хороший сон помогает тренироваться стабильнее.',
+          ));
+        }
+      }
+    }
+
+    // 6. Streak insight
+    if (bestStreak > 0) {
+      cards.add(_InsightCard(
+        icon: Icons.local_fire_department_rounded,
+        color: AppColors.error,
+        title: 'Ваш рекорд стрика',
+        body: bestStreak >= 7
+            ? 'Ваш лучший стрик — $bestStreak дней подряд. Продолжайте в том же духе!'
+            : 'Лучший стрик пока $bestStreak дней. Попробуйте не пропускать тренировки несколько недель подряд!',
+      ));
+    }
+
+    return cards;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final insights = _buildInsights();
+    if (insights.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: Text(
+            'Завершите несколько тренировок,\nчтобы получить персональные инсайты',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: insights
+          .map((card) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: card,
+              ))
+          .toList(),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Existing widgets (unchanged)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 class _AnimatedCounter extends StatelessWidget {
   final double value;
@@ -844,7 +1903,6 @@ class _ProgressChart extends StatelessWidget {
       (i) => FlSpot(i.toDouble(), sorted[i].value),
     );
 
-    // Community average as flat second line across the x range
     final communitySpots = communityAvg == null || sorted.length < 2
         ? <FlSpot>[]
         : [
@@ -920,7 +1978,6 @@ class _ProgressChart extends StatelessWidget {
             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           lineBarsData: [
-            // Community average line (behind main line)
             if (communitySpots.length >= 2)
               LineChartBarData(
                 spots: communitySpots,
@@ -933,7 +1990,6 @@ class _ProgressChart extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.05),
                 ),
               ),
-            // Main user data line
             LineChartBarData(
               spots: spots,
               isCurved: true,
@@ -1074,7 +2130,6 @@ class _AchievementsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     if (achievements.isEmpty) return const SizedBox.shrink();
 
-    // Group by category preserving order of first appearance
     final categoryOrder = <String>[];
     final grouped = <String, List<Achievement>>{};
     for (final a in achievements) {
@@ -1138,21 +2193,16 @@ class _AchievementCell extends StatelessWidget {
           : a.description,
       child: Container(
         decoration: BoxDecoration(
-          color: locked
-              ? AppColors.surface
-              : AppColors.card,
+          color: locked ? AppColors.surface : AppColors.card,
           borderRadius: BorderRadius.circular(14),
           border: a.unlocked
-              ? Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.5), width: 1.5)
-              : Border.all(
-                  color: AppColors.surface, width: 1),
+              ? Border.all(color: AppColors.accent.withValues(alpha: 0.5), width: 1.5)
+              : Border.all(color: AppColors.surface, width: 1),
         ),
         padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Emoji (greyscale if locked)
             ColorFiltered(
               colorFilter: locked
                   ? const ColorFilter.matrix([
@@ -1161,8 +2211,7 @@ class _AchievementCell extends StatelessWidget {
                       0, 0, 0.25, 0, 0,
                       0, 0, 0, 0.6, 0,
                     ])
-                  : const ColorFilter.mode(
-                      Colors.transparent, BlendMode.dst),
+                  : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
               child: Text(a.emoji, style: const TextStyle(fontSize: 24)),
             ),
             const SizedBox(height: 5),
@@ -1181,7 +2230,6 @@ class _AchievementCell extends StatelessWidget {
             ),
             if (locked) ...[
               const SizedBox(height: 6),
-              // Progress bar
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
                 child: LinearProgressIndicator(
@@ -1209,16 +2257,12 @@ class _AchievementCell extends StatelessWidget {
   }
 
   String _progressLabel(Achievement a) {
-    if (a.category == 'Объём') {
-      return _kgShort(a.progress);
-    }
+    if (a.category == 'Объём') return _kgShort(a.progress);
     return a.progress.toInt().toString();
   }
 
   String _thresholdLabel(Achievement a) {
-    if (a.category == 'Объём') {
-      return _kgShort(a.threshold);
-    }
+    if (a.category == 'Объём') return _kgShort(a.threshold);
     return a.threshold.toInt().toString();
   }
 
@@ -1409,8 +2453,7 @@ class _NavCard extends StatelessWidget {
               Icon(icon, color: AppColors.accent),
               const SizedBox(width: 12),
               Text(label,
-                  style: const TextStyle(
-                      fontSize: 15, color: AppColors.textPrimary)),
+                  style: const TextStyle(fontSize: 15, color: AppColors.textPrimary)),
               const Spacer(),
               const Icon(Icons.chevron_right,
                   color: AppColors.textSecondary, size: 20),
@@ -1444,7 +2487,6 @@ class _VolumeBarChart extends StatelessWidget {
         : maxVol * 1.15;
     final n = weeks.length;
 
-    // Community average as flat line across all weeks
     final communitySpots = communityAvg == null || n < 2
         ? <FlSpot>[]
         : [FlSpot(0, communityAvg!), FlSpot((n - 1).toDouble(), communityAvg!)];
@@ -1457,7 +2499,6 @@ class _VolumeBarChart extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // ── Bars ────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
             child: BarChart(
@@ -1522,8 +2563,7 @@ class _VolumeBarChart extends StatelessWidget {
                             ? AppColors.accent
                             : AppColors.accent.withValues(alpha: 0.45),
                         width: 14,
-                        borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(4)),
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                       ),
                     ],
                   );
@@ -1531,7 +2571,6 @@ class _VolumeBarChart extends StatelessWidget {
               ),
             ),
           ),
-          // ── Community average overlay line ────────────────────────────────
           if (communitySpots.length >= 2)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
@@ -1582,8 +2621,7 @@ class _VolumeBarChart extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
             color: AppColors.card, borderRadius: BorderRadius.circular(16)),
-        child: Text(msg,
-            style: const TextStyle(color: AppColors.textSecondary)),
+        child: Text(msg, style: const TextStyle(color: AppColors.textSecondary)),
       );
 }
 
@@ -1726,7 +2764,7 @@ class _MuscleBalanceChart extends StatelessWidget {
   }
 }
 
-// ─── Сравнение недель ────────────────────────────────────────────────────────
+// ─── Week comparison ──────────────────────────────────────────────────────────
 
 class _WeekComparisonCard extends StatelessWidget {
   final ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek}) cmp;
@@ -1831,8 +2869,7 @@ class _CmpColumn extends StatelessWidget {
             const SizedBox(width: 2),
             Text(
               lastWeek,
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ],
         ),
@@ -1841,7 +2878,7 @@ class _CmpColumn extends StatelessWidget {
   }
 }
 
-// ─── Частота по группам мышц ────────────────────────────────────────────────
+// ─── Muscle frequency chart ───────────────────────────────────────────────────
 
 class _MuscleFrequencyChart extends StatelessWidget {
   final Map<String, double> frequency;
@@ -1889,8 +2926,7 @@ class _MuscleFrequencyChart extends StatelessWidget {
                 interval: 1,
                 getTitlesWidget: (v, _) => Text(
                   v.toInt().toString(),
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 10),
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
                 ),
               ),
             ),
@@ -1943,215 +2979,6 @@ class _MuscleFrequencyChart extends StatelessWidget {
       'cardio': 'Кардио',
     };
     return map[cat] ?? cat;
-  }
-}
-
-// ─── Workout heatmap ─────────────────────────────────────────────────────────
-
-class _WorkoutHeatmap extends StatelessWidget {
-  final Map<DateTime, double> data;
-
-  const _WorkoutHeatmap({required this.data});
-
-  static const _cellSize = 11.0;
-  static const _cellGap = 2.0;
-  static const _weeks = 26;
-
-  static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
-  Color _cellColor(double value, BuildContext context) {
-    if (value <= 0) return AppColors.surface;
-    // Max opacity cap — anything above 5000 kg·reps = full colour
-    final t = (value / 5000).clamp(0.15, 1.0);
-    return AppColors.accent.withValues(alpha: t);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    // Find the Sunday that ends the current week
-    // weekday: Mon=1 … Sun=7
-    final daysToSunday = 7 - today.weekday; // 0 on Sunday, 6 on Monday
-    final lastSunday = today.add(Duration(days: daysToSunday));
-
-    // Build columns from oldest (left) to newest (right)
-    // Each column = one week Mon…Sun
-    final columns = <List<DateTime>>[];
-    for (int w = _weeks - 1; w >= 0; w--) {
-      final weekSunday = lastSunday.subtract(Duration(days: w * 7));
-      final weekDays = List.generate(
-        7,
-        (d) => weekSunday.subtract(Duration(days: 6 - d)), // Mon…Sun
-      );
-      columns.add(weekDays);
-    }
-
-    // Month label positions (first column where a new month starts)
-    final monthLabels = <int, String>{};
-    for (int i = 0; i < columns.length; i++) {
-      final monday = columns[i].first;
-      if (i == 0 || monday.month != columns[i - 1].first.month) {
-        const months = [
-          '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
-          'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'
-        ];
-        monthLabels[i] = months[monday.month];
-      }
-    }
-
-    const totalWidth =
-        _weeks * (_cellSize + _cellGap) - _cellGap + 28; // 28 for day labels
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // If the grid fits without scrolling, center it; otherwise allow scroll.
-          final fits = totalWidth <= constraints.maxWidth;
-          Widget grid = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: _buildGridChildren(context, columns, monthLabels, totalWidth),
-          );
-          if (fits) return Center(child: grid);
-          // Scale down to fit the available width and center it
-          return FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.center,
-            child: grid,
-          );
-        },
-      ),
-    );
-  }
-
-  List<Widget> _buildGridChildren(
-    BuildContext context,
-    List<List<DateTime>> columns,
-    Map<int, String> monthLabels,
-    double totalWidth,
-  ) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return [
-            // Month labels row
-            SizedBox(
-              width: totalWidth,
-              height: 14,
-              child: Stack(
-                children: monthLabels.entries.map((e) {
-                  final x = 28.0 + e.key * (_cellSize + _cellGap);
-                  return Positioned(
-                    left: x,
-                    child: Text(
-                      e.value,
-                      style: const TextStyle(
-                        fontSize: 9,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 4),
-            // Day rows + cells
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Day-of-week labels (Mon, Wed, Fri only to save space)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(7, (d) {
-                    final show = d == 0 || d == 2 || d == 4 || d == 6;
-                    return SizedBox(
-                      height: _cellSize + _cellGap,
-                      child: show
-                          ? Text(
-                              _dayLabels[d],
-                              style: const TextStyle(
-                                fontSize: 8,
-                                color: AppColors.textSecondary,
-                                height: 1.3,
-                              ),
-                            )
-                          : null,
-                    );
-                  }),
-                ),
-                const SizedBox(width: 4),
-                // Columns of cells
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: columns.map((weekDays) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: _cellGap),
-                      child: Column(
-                        children: weekDays.map((day) {
-                          final isFuture = day.isAfter(today);
-                          final volume = isFuture ? 0.0 : (data[day] ?? 0.0);
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: _cellGap),
-                            child: Tooltip(
-                              message: isFuture
-                                  ? ''
-                                  : volume > 0
-                                      ? '${day.day}.${day.month}: ${volume.toStringAsFixed(0)} кг·повт.'
-                                      : '${day.day}.${day.month}: нет тренировки',
-                              child: Container(
-                                width: _cellSize,
-                                height: _cellSize,
-                                decoration: BoxDecoration(
-                                  color: isFuture
-                                      ? Colors.transparent
-                                      : _cellColor(volume, context),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Legend
-            Row(
-              children: [
-                const Text(
-                  'Меньше',
-                  style: TextStyle(fontSize: 9, color: AppColors.textSecondary),
-                ),
-                const SizedBox(width: 4),
-                ...List.generate(5, (i) {
-                  final t = i == 0 ? 0.0 : 0.15 + (i - 1) * 0.2125;
-                  return Container(
-                    width: _cellSize,
-                    height: _cellSize,
-                    margin: const EdgeInsets.only(right: _cellGap),
-                    decoration: BoxDecoration(
-                      color: i == 0
-                          ? AppColors.surface
-                          : AppColors.accent.withValues(alpha: t),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  );
-                }),
-                const Text(
-                  'Больше',
-                  style: TextStyle(fontSize: 9, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-        ];
   }
 }
 
