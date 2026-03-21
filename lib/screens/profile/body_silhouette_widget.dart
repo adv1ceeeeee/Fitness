@@ -467,7 +467,7 @@ class _BodyPainter extends CustomPainter {
       double waistHW, double armpitY, double waistY, double crotchY, Paint p) {
     final absTop = armpitY + h * 0.118;
     final absBot = crotchY - h * 0.038;
-    final rows   = 4;
+    const rows   = 4;
     final rowH   = (absBot - absTop) / rows;
 
     // Vertical center line
