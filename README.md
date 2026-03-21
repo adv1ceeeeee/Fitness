@@ -15,15 +15,22 @@
 
 ## Ключевые функции
 
-- **873 упражнения** из free-exercise-db с русскими названиями и GIF-анимацией
-- Создание программ тренировок с drag-and-drop, суперсетами, разминкой
-- Активная сессия: вес/повторения/RPE, таймер отдыха, личные рекорды
+- **873 упражнения** из free-exercise-db с русскими названиями, описаниями и GIF-анимацией
+- **14 стандартных программ** с метаданными goal/level — онбординг подбирает программу под цель и опыт
+- Создание программ тренировок с drag-and-drop, суперсетами, drop-сетами, разминкой
+- Активная сессия: вес/повторения/RPE, таймер отдыха, автопрогрессия весов, deload
 - История по упражнению: графики веса/объёма/1RM (Эпли), персональный рекорд
 - Калькуляторы: 1ПМ (7 формул), блины (4 варианта + схема разминки NSCA/IPF), состав тела (BMI/LBM/FFMI)
-- Аналитика: стрик, объём за неделю, достижения, баланс мышц, экспорт JSON/CSV
-- Замеры тела: анимированный силуэт, динамика параметров
-- Уведомления: еженедельные напоминания по расписанию + разовые сессии
-- Офлайн-режим: кеш тренировок, очередь событий
+- **Аналитика (4 таба):** Обзор · Тренировки · Тело · Инсайты
+  - Месячный календарь активности, топ-5 упражнений по объёму, баланс мышц
+  - Тренды самочувствия (сон, энергия, стресс), динамика замеров тела
+  - Умные инсайты: лучший день для тренировки, тренд объёма, consistency score
+- Замеры тела: анатомический силуэт, динамика 15 параметров
+- Wellness-дневник: сон, стресс, энергия, качество сна, крепатура
+- Фидбек-система: NPS, micro-survey, thumbs up/down, форма обратной связи
+- Уведомления: напоминания по расписанию, inactivity reminder, итог недели
+- Офлайн-режим: кеш тренировок, очередь сетов (OfflineQueueService)
+- Экспорт данных: JSON / CSV
 
 ## Начало работы
 
@@ -42,14 +49,7 @@ flutter pub get
    - `SUPABASE_ANON_KEY` — anon key
    - `SENTRY_DSN` — DSN Sentry (опционально)
 
-### 3. Edge Function
-
-```bash
-supabase functions deploy suggest-city
-supabase secrets set DADATA_API_KEY=<ваш_ключ>
-```
-
-### 4. Запуск
+### 3. Запуск
 
 ```bash
 flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
@@ -68,33 +68,44 @@ flutter test
 ```
 lib/
 ├── config/         # Тема, роутер, конфиг (env vars)
-├── data/           # Стандартные программы (4 шаблона)
+├── data/           # Стандартные программы (14 шаблонов с goal/level)
 ├── models/         # Dart-модели с fromJson/toJson
 ├── providers/      # Riverpod providers (session, settings, connectivity)
 ├── screens/        # Экраны
 │   ├── auth/           # Вход, регистрация, PIN
-│   ├── onboarding/     # Онбординг (3 страницы)
-│   ├── home/           # Главная, чек-ин, советы
+│   ├── onboarding/     # Онбординг с персонализацией программы
+│   ├── home/           # Главная, wellness чек-ин
 │   ├── workouts/       # Программы, каталог упражнений
 │   ├── workout_session/# Активная сессия, итоги
 │   ├── calendar/       # Планирование
-│   ├── analytics/      # Статистика, история упражнений
+│   ├── analytics/      # Статистика (4 таба + инсайты)
 │   ├── profile/        # Профиль, замеры тела
 │   └── tools/          # Калькуляторы
 └── services/       # Слой данных (Supabase + устройство)
 supabase/
-├── migrations/     # 42 SQL-миграции
-├── functions/      # Edge Functions (suggest-city)
+├── migrations/     # 46 SQL-миграций
+├── schema.sql      # Consolidated schema snapshot (таблицы, RLS, триггеры)
+├── functions/      # Edge Functions
 └── tests/          # RLS тесты (pgTAP)
+docs/
+├── FEATURES.md     # Полное описание функционала
+├── DATABASE.md     # Справочник по схеме БД
+├── ANALYTICS.md    # Аналитические возможности и ML
+├── MONETIZATION.md # Стратегия монетизации
+└── CHANGELOG.md    # История изменений
 ```
 
 ## База данных
 
-42 миграции. Ключевые таблицы: `profiles`, `workouts`, `workout_exercises`, `exercises`, `training_sessions`, `sets`, `body_metrics`, `wellness_logs`, `personal_records`, `user_events`, `app_config`. Подробнее — в [FEATURES.md](FEATURES.md).
+46 миграций. Ключевые таблицы: `profiles`, `workouts`, `workout_exercises`, `exercises`, `training_sessions`, `sets`, `body_metrics`, `wellness_logs`, `personal_records`, `user_events`, `feedback`, `app_config`.
+
+Подробнее — в [docs/DATABASE.md](docs/DATABASE.md) и [supabase/schema.sql](supabase/schema.sql).
 
 ## Документация
 
-- [FEATURES.md](FEATURES.md) — полное описание функционала
-- [MONETIZATION.md](MONETIZATION.md) — стратегия монетизации
-- [CHANGELOG.md](CHANGELOG.md) — история изменений
-- [releases/](releases/) — тексты для App Store / Google Play
+- [docs/FEATURES.md](docs/FEATURES.md) — полное описание функционала
+- [docs/DATABASE.md](docs/DATABASE.md) — справочник по схеме БД для аналитиков
+- [docs/ANALYTICS.md](docs/ANALYTICS.md) — аналитические возможности и ML
+- [docs/MONETIZATION.md](docs/MONETIZATION.md) — стратегия монетизации
+- [docs/CHANGELOG.md](docs/CHANGELOG.md) — история изменений
+- [releases/](releases/) — тексты для App Store / Google Play / RuStore
