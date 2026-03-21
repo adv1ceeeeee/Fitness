@@ -50,3 +50,6 @@ scripts/exercisedb_mapping.csv
 
 # Sentry native crash data
 .sentry-native/
+
+# Claude Code local settings
+.claude/settings.local.json
