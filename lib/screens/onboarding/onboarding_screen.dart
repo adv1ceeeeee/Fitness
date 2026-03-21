@@ -104,63 +104,89 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     if (!mounted) return;
 
+    final program = _recommendedProgram(level);
     final shouldAdd = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: AppColors.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => _RecommendationSheet(
-        program: standardPrograms[_recommendedIndex()],
-      ),
+      builder: (ctx) => _RecommendationSheet(program: program),
     );
 
     if (shouldAdd == true && mounted) {
-      await _addProgram(standardPrograms[_recommendedIndex()]);
+      await _addProgram(program);
     }
 
     if (mounted) context.go('/home');
   }
 
-  int _recommendedIndex() {
-    switch (_goal) {
-      case 'strength':
-        return 3;
-      case 'weight_loss':
-        return 1;
-      case 'mass_gain':
-        return 2;
-      case 'endurance':
-        return 1;
-      default:
-        return 0;
-    }
+  Map<String, dynamic> _recommendedProgram(String level) {
+    final name = recommendedProgramName(goal: _goal, level: level);
+    return standardPrograms.firstWhere(
+      (p) => p['name'] == name,
+      orElse: () => standardPrograms.first,
+    );
   }
 
   Future<void> _addProgram(Map<String, dynamic> program) async {
     try {
       final exercises = await ExerciseService.getExercises();
-      final workout = await WorkoutService.createWorkout(
-        program['name'] as String,
-        (program['days'] as List).cast<int>(),
-      );
-      for (final ex in program['exercises'] as List) {
-        final name = ex['name'] as String;
-        Exercise? found;
+
+      Exercise? findExercise(String name) {
         try {
-          found = exercises.firstWhere(
+          return exercises.firstWhere(
             (e) => e.name.toLowerCase().contains(name.toLowerCase()),
           );
-        } catch (_) {}
-        if (found != null) {
-          await WorkoutService.addExerciseToWorkout(
-            workout.id,
-            found.id,
-            sets: ex['sets'] as int? ?? 3,
-            repsRange: ex['reps'] as String? ?? '8-12',
-            restSeconds: ex['rest'] as int? ?? 90,
-          );
+        } catch (_) {
+          return null;
         }
+      }
+
+      Future<void> addExercises(String workoutId, List exList) async {
+        for (final ex in exList) {
+          final found = findExercise(ex['name'] as String);
+          if (found != null) {
+            await WorkoutService.addExerciseToWorkout(
+              workoutId,
+              found.id,
+              sets: ex['sets'] as int? ?? 3,
+              repsRange: ex['reps'] as String? ?? '8-12',
+              restSeconds: ex['rest'] as int? ?? 90,
+            );
+          }
+        }
+      }
+
+      final sections = program['sections'] as List?;
+      if (sections != null && sections.isNotEmpty) {
+        // Multi-section program (PPL, Upper-Lower, etc.)
+        final firstSection = sections.first as Map<String, dynamic>;
+        final firstWorkout = await WorkoutService.createWorkout(
+          firstSection['name'] as String,
+          (firstSection['days'] as List).cast<int>(),
+        );
+        final groupId = firstWorkout.id;
+        if (sections.length > 1) {
+          await WorkoutService.setGroupId(firstWorkout.id, groupId);
+        }
+        await addExercises(firstWorkout.id, firstSection['exercises'] as List);
+        for (final s in sections.skip(1)) {
+          final sec = s as Map<String, dynamic>;
+          final w = await WorkoutService.createWorkout(
+            sec['name'] as String,
+            (sec['days'] as List).cast<int>(),
+            groupId: groupId,
+          );
+          await addExercises(w.id, sec['exercises'] as List);
+        }
+      } else {
+        // Single workout program
+        final workout = await WorkoutService.createWorkout(
+          program['name'] as String,
+          (program['days'] as List).cast<int>(),
+        );
+        await addExercises(workout.id, program['exercises'] as List);
       }
     } catch (_) {}
   }
