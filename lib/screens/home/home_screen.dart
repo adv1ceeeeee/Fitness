@@ -529,7 +529,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = _profile?.fullName?.split(' ').first ?? 'Атлет';
+    final rawName = _profile?.fullName?.split(' ').first ?? 'Атлет';
+    final name = rawName.isNotEmpty
+        ? '${rawName[0].toUpperCase()}${rawName.substring(1)}'
+        : 'Атлет';
 
     return Scaffold(
       body: SafeArea(

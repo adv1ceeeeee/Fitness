@@ -26,6 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _weightController = TextEditingController();
   String? _goal;
   DateTime _trainingStart = DateTime(DateTime.now().year - 1, DateTime.now().month);
+  bool _loading = false;
 
   @override
   void dispose() {
@@ -36,8 +37,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _finish() async {
+    setState(() => _loading = true);
+    try {
     final userId = AuthService.currentUser?.id;
-    if (userId == null) return;
+    if (userId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Сессия истекла. Войди снова.')),
+        );
+      }
+      return;
+    }
 
     // Validate numeric fields
     final ageText = _ageController.text.trim();
@@ -90,7 +100,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       'gender': _gender,
       if (birthDate != null) 'birth_date': birthDate,
       if (weightText.isNotEmpty && double.tryParse(weightText) != null)
-        'weight_kg': double.parse(weightText),
+        'weight': double.parse(weightText),
       'goal': _goal,
       'level': level,
       'training_start_date': startDateStr,
@@ -119,6 +129,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
 
     if (mounted) context.go('/home');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сохранения: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Map<String, dynamic> _recommendedProgram(String level) {
@@ -257,17 +276,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: () {
-                    if (_currentPage < 2) {
-                      _pageController.nextPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    } else {
-                      _finish();
-                    }
-                  },
-                  child: Text(_currentPage < 2 ? 'Далее' : 'Начать'),
+                  onPressed: _loading
+                      ? null
+                      : () {
+                          if (_currentPage < 2) {
+                            _pageController.nextPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                            );
+                          } else {
+                            _finish();
+                          }
+                        },
+                  child: _loading && _currentPage == 2
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(_currentPage < 2 ? 'Далее' : 'Начать'),
                 ),
               ),
             ),
@@ -293,7 +323,7 @@ class _Page1 extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +399,7 @@ class _Page2 extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -462,7 +492,7 @@ class _Page3State extends State<_Page3> {
       experience = m == 0 ? 'Стаж: $y л.' : 'Стаж: $y л. $m мес.';
     }
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

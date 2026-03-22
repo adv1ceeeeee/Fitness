@@ -8,7 +8,7 @@ Future<void> showOnboardingIfNeeded(BuildContext context) async {
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
-    isDismissible: false,
+    isDismissible: true,
     enableDrag: false,
     backgroundColor: Colors.transparent,
     builder: (_) => const _OnboardingSheet(),
@@ -60,7 +60,13 @@ class _OnboardingSheetState extends State<_OnboardingSheet> {
         curve: Curves.easeInOut,
       );
     } else {
-      Navigator.of(context).pop();
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    if ((details.primaryVelocity ?? 0) > 150) {
+      Navigator.of(context, rootNavigator: true).pop();
     }
   }
 
@@ -76,13 +82,20 @@ class _OnboardingSheetState extends State<_OnboardingSheet> {
       height: 420 + bottom,
       child: Column(
         children: [
-          // Drag handle
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.separator,
-              borderRadius: BorderRadius.circular(2),
+          // Drag handle — swipe down here to close
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragEnd: _handleDragEnd,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.separator,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 24),
