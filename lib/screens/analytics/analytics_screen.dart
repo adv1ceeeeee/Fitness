@@ -747,6 +747,53 @@ bool _afterCutoff(String dateStr, DateTime? cutoff) {
   }
 }
 
+/// Computes average volume per weekday (1=Mon…7=Sun) from a map of
+/// [DateTime → volume] entries. Only positive-volume days are counted.
+Map<int, double> weekdayVolumeFrom(Map<DateTime, double> data) {
+  final sums = <int, double>{};
+  final counts = <int, int>{};
+  for (final entry in data.entries) {
+    if (entry.value <= 0) continue;
+    final wd = entry.key.weekday;
+    sums[wd] = (sums[wd] ?? 0) + entry.value;
+    counts[wd] = (counts[wd] ?? 0) + 1;
+  }
+  return {
+    for (final wd in sums.keys) wd: sums[wd]! / counts[wd]!,
+  };
+}
+
+/// Computes the delta of [metricData] between the current period (after
+/// [cutoff]) and the previous same-length window before [cutoff].
+/// Returns null if there is not enough data or [cutoff] is null.
+({double delta, String unit})? bodyPeriodDelta({
+  required Map<String, double> metricData,
+  required DateTime? cutoff,
+  required String unit,
+}) {
+  if (cutoff == null) return null;
+  final all = Map.fromEntries(
+    metricData.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+  );
+  final curEntries = all.entries.where((e) => _afterCutoff(e.key, cutoff)).toList();
+  if (curEntries.length < 2) return null;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final windowDays = today.difference(cutoff).inDays;
+  final prevStart = cutoff.subtract(Duration(days: windowDays));
+  final prevEntries = all.entries
+      .where((e) {
+        final d = DateTime.tryParse(e.key);
+        if (d == null) return false;
+        return !d.isBefore(prevStart) && d.isBefore(cutoff);
+      })
+      .toList();
+  if (prevEntries.isEmpty) return null;
+  final curVal = curEntries.last.value;
+  final prevVal = prevEntries.last.value;
+  return (delta: curVal - prevVal, unit: unit);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tab 2: Тренировки
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -834,19 +881,7 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
   }
 
   /// Average volume per weekday (1=Mon…7=Sun) from heatmap data.
-  Map<int, double> get _weekdayVolume {
-    final sums = <int, double>{};
-    final counts = <int, int>{};
-    for (final entry in widget.heatmapData.entries) {
-      if (entry.value <= 0) continue;
-      final wd = entry.key.weekday;
-      sums[wd] = (sums[wd] ?? 0) + entry.value;
-      counts[wd] = (counts[wd] ?? 0) + 1;
-    }
-    return {
-      for (final wd in sums.keys) wd: sums[wd]! / counts[wd]!,
-    };
-  }
+  Map<int, double> get _weekdayVolume => weekdayVolumeFrom(widget.heatmapData);
 
   /// Previous period: same number of weeks immediately before _filteredVolume.
   ({double volume, int sessions})? get _periodComparison {
@@ -1248,6 +1283,7 @@ class _BodyTabState extends State<_BodyTab> {
       final file = File('${dir.path}/sportwai_body_chart.png');
       await file.writeAsBytes(bytes);
       await Share.shareXFiles([XFile(file.path)], subject: 'Мой прогресс');
+      EventLogger.exportTriggered(format: 'body_chart');
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
@@ -1264,26 +1300,12 @@ class _BodyTabState extends State<_BodyTab> {
   /// Returns (delta, unit) or null if not enough data.
   ({double delta, String unit})? get _bodyPeriodDelta {
     if (_range == _DateRange.all) return null;
-    final all = Map.fromEntries(
-      widget.bodyMetricData.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
-    );
-    final cutoff = _range.cutoff!;
-    final curEntries = all.entries.where((e) => _afterCutoff(e.key, cutoff)).toList();
-    if (curEntries.length < 2) return null;
-    final prevCutoff = cutoff.subtract(cutoff.difference(DateTime.parse(curEntries.first.key)));
-    final prevEntries = all.entries
-        .where((e) {
-          final d = DateTime.tryParse(e.key);
-          if (d == null) return false;
-          return d.isAfter(prevCutoff) && !d.isAfter(cutoff);
-        })
-        .toList();
-    if (prevEntries.isEmpty) return null;
-    final curVal = curEntries.last.value;
-    final prevVal = prevEntries.last.value;
     final isBodyFat = widget.selectedBodyMetric == 'body_fat_pct';
-    final unit = isBodyFat ? '%' : ' кг';
-    return (delta: curVal - prevVal, unit: unit);
+    return bodyPeriodDelta(
+      metricData: widget.bodyMetricData,
+      cutoff: _range.cutoff,
+      unit: isBodyFat ? '%' : ' кг',
+    );
   }
 
   /// Linear extrapolation on the HP trend: returns forecast value [stepsAhead]
