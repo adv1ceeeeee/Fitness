@@ -15,13 +15,11 @@ import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/version_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
-  final String location;
-  final Widget child;
+  final StatefulNavigationShell navigationShell;
 
   const MainShell({
     super.key,
-    required this.location,
-    required this.child,
+    required this.navigationShell,
   });
 
   @override
@@ -29,39 +27,25 @@ class MainShell extends ConsumerStatefulWidget {
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
-  int _currentIndex = 0;
-
-  final _routes = ['/home', '/workouts', '/analytics', '/profile'];
+  static const _routes = ['/home', '/workouts', '/analytics', '/profile'];
 
   @override
   void initState() {
     super.initState();
-    _syncIndex(widget.location);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) VersionService.checkAndPrompt(context);
     });
   }
 
-  @override
-  void didUpdateWidget(MainShell oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.location != widget.location) {
-      _syncIndex(widget.location);
-    }
-  }
-
-  void _syncIndex(String location) {
-    final idx = _routes.indexOf(location);
-    if (idx >= 0 && idx != _currentIndex) {
-      setState(() => _currentIndex = idx);
-    }
-  }
-
   void _onTap(int index) {
     HapticFeedback.selectionClick();
-    // Always go to the root of the tab — handles both switching tabs
-    // and popping back to root when the same tab is tapped again.
-    context.go(_routes[index]);
+    if (index == widget.navigationShell.currentIndex) {
+      // Same tab tapped — pop to branch root
+      context.go(_routes[index]);
+    } else {
+      // Switch tab — preserve branch navigation stack
+      widget.navigationShell.goBranch(index);
+    }
   }
 
   @override
@@ -93,13 +77,13 @@ class _MainShellState extends ConsumerState<MainShell> {
                     ],
                   ),
           ),
-          Expanded(child: widget.child),
+          Expanded(child: widget.navigationShell),
         ],
       ),
-      floatingActionButton: _PlayStopFab(location: widget.location),
+      floatingActionButton: const _PlayStopFab(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: _GlassNavBar(
-        currentIndex: _currentIndex,
+        currentIndex: widget.navigationShell.currentIndex,
         onTap: _onTap,
       ),
     );
@@ -179,9 +163,7 @@ class _GlassNavBar extends StatelessWidget {
 // ─── Play / Stop FAB ─────────────────────────────────────────────────────────
 
 class _PlayStopFab extends ConsumerStatefulWidget {
-  final String location;
-
-  const _PlayStopFab({required this.location});
+  const _PlayStopFab();
 
   @override
   ConsumerState<_PlayStopFab> createState() => _PlayStopFabState();

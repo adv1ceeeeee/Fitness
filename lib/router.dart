@@ -113,7 +113,10 @@ class _ScreenViewObserver extends NavigatorObserver {
 
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
-  static final _shellNavigatorKey = GlobalKey<NavigatorState>();
+  static final _homeKey = GlobalKey<NavigatorState>(debugLabel: 'home');
+  static final _workoutsKey = GlobalKey<NavigatorState>(debugLabel: 'workouts');
+  static final _analyticsKey = GlobalKey<NavigatorState>(debugLabel: 'analytics');
+  static final _profileKey = GlobalKey<NavigatorState>(debugLabel: 'profile');
 
   static final router = GoRouter(
     navigatorKey: _rootNavigatorKey,
@@ -164,126 +167,149 @@ class AppRouter {
         pageBuilder: (context, state) => _fadePage(state, const PinLoginScreen()),
       ),
 
-      // ── All post-auth screens wrapped in MainShell (bottom nav always visible)
-      ShellRoute(
-        navigatorKey: _shellNavigatorKey,
-        builder: (context, state, child) => MainShell(
-          location: state.matchedLocation,
-          child: child,
+      // ── All post-auth screens wrapped in MainShell (persistent tabs via StatefulShellRoute)
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => MainShell(
+          navigationShell: navigationShell,
         ),
-        routes: [
-          // Tab roots
-          GoRoute(
-            path: '/home',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: HomeScreen(),
-            ),
-          ),
-          GoRoute(
-            path: '/workouts',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: WorkoutsScreen(),
-            ),
-          ),
-          GoRoute(
-            path: '/analytics',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: AnalyticsScreen(),
-            ),
-          ),
-          GoRoute(
-            path: '/profile',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ProfileScreen(),
-            ),
+        branches: [
+          // ── Tab 0: Главная
+          StatefulShellBranch(
+            navigatorKey: _homeKey,
+            routes: [
+              GoRoute(
+                path: '/home',
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: HomeScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/calendar',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const CalendarScreen()),
+              ),
+              GoRoute(
+                path: '/today',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const TodayScreen()),
+              ),
+            ],
           ),
 
-          // Secondary screens — bottom nav stays visible
-          GoRoute(
-            path: '/calendar',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const CalendarScreen()),
-          ),
-          GoRoute(
-            path: '/today',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const TodayScreen()),
-          ),
-          GoRoute(
-            path: '/session/:sessionId',
-            pageBuilder: (context, state) {
-              final sessionId = state.pathParameters['sessionId']!;
-              return _slideUpPage(
-                  state, WorkoutSessionScreen(sessionId: sessionId));
-            },
-          ),
-          GoRoute(
-            path: '/session-summary',
-            pageBuilder: (context, state) {
-              final extra = state.extra as Map<String, dynamic>;
-              return _slideUpPage(
-                state,
-                SessionSummaryScreen(
-                  sessionId: extra['sessionId'] as String,
-                  workoutId: extra['workoutId'] as String,
-                  durationSeconds: extra['durationSeconds'] as int,
+          // ── Tab 1: Программы
+          StatefulShellBranch(
+            navigatorKey: _workoutsKey,
+            routes: [
+              GoRoute(
+                path: '/workouts',
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: WorkoutsScreen(),
                 ),
-              );
-            },
+              ),
+              GoRoute(
+                path: '/workouts/create',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const CreateWorkoutScreen()),
+              ),
+              GoRoute(
+                path: '/workouts/:id/exercises',
+                pageBuilder: (context, state) {
+                  final id = state.pathParameters['id']!;
+                  final extra = state.extra as Map<String, dynamic>?;
+                  return _slideUpPage(
+                    state,
+                    AddExercisesScreen(
+                      workoutId: id,
+                      pendingSectionIds:
+                          (extra?['pendingIds'] as List?)?.cast<String>() ?? [],
+                      sectionIndex: extra?['sectionIndex'] as int? ?? 0,
+                      totalSections: extra?['totalSections'] as int? ?? 1,
+                    ),
+                  );
+                },
+              ),
+              GoRoute(
+                path: '/session/:sessionId',
+                pageBuilder: (context, state) {
+                  final sessionId = state.pathParameters['sessionId']!;
+                  return _slideUpPage(
+                      state, WorkoutSessionScreen(sessionId: sessionId));
+                },
+              ),
+              GoRoute(
+                path: '/session-summary',
+                pageBuilder: (context, state) {
+                  final extra = state.extra as Map<String, dynamic>;
+                  return _slideUpPage(
+                    state,
+                    SessionSummaryScreen(
+                      sessionId: extra['sessionId'] as String,
+                      workoutId: extra['workoutId'] as String,
+                      durationSeconds: extra['durationSeconds'] as int,
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/workouts/create',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const CreateWorkoutScreen()),
-          ),
-          GoRoute(
-            path: '/workouts/:id/exercises',
-            pageBuilder: (context, state) {
-              final id = state.pathParameters['id']!;
-              final extra = state.extra as Map<String, dynamic>?;
-              return _slideUpPage(
-                state,
-                AddExercisesScreen(
-                  workoutId: id,
-                  pendingSectionIds:
-                      (extra?['pendingIds'] as List?)?.cast<String>() ?? [],
-                  sectionIndex: extra?['sectionIndex'] as int? ?? 0,
-                  totalSections: extra?['totalSections'] as int? ?? 1,
+
+          // ── Tab 2: Аналитика
+          StatefulShellBranch(
+            navigatorKey: _analyticsKey,
+            routes: [
+              GoRoute(
+                path: '/analytics',
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: AnalyticsScreen(),
                 ),
-              );
-            },
+              ),
+              GoRoute(
+                path: '/body-metrics',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const BodyMetricsScreen()),
+              ),
+              GoRoute(
+                path: '/history',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const HistoryScreen()),
+              ),
+              GoRoute(
+                path: '/records',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const PersonalRecordsScreen()),
+              ),
+              GoRoute(
+                path: '/calculators',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const CalculatorsScreen()),
+              ),
+              GoRoute(
+                path: '/exercise/:id/history',
+                pageBuilder: (context, state) {
+                  final exercise = state.extra as Exercise;
+                  return _slideUpPage(
+                      state, ExerciseHistoryScreen(exercise: exercise));
+                },
+              ),
+            ],
           ),
-          GoRoute(
-            path: '/body-metrics',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const BodyMetricsScreen()),
-          ),
-          GoRoute(
-            path: '/history',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const HistoryScreen()),
-          ),
-          GoRoute(
-            path: '/records',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const PersonalRecordsScreen()),
-          ),
-          GoRoute(
-            path: '/calculators',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const CalculatorsScreen()),
-          ),
-          GoRoute(
-            path: '/exercise/:id/history',
-            pageBuilder: (context, state) {
-              final exercise = state.extra as Exercise;
-              return _slideUpPage(state, ExerciseHistoryScreen(exercise: exercise));
-            },
-          ),
-          GoRoute(
-            path: '/feedback',
-            pageBuilder: (context, state) =>
-                _slideUpPage(state, const FeedbackScreen()),
+
+          // ── Tab 3: Профиль
+          StatefulShellBranch(
+            navigatorKey: _profileKey,
+            routes: [
+              GoRoute(
+                path: '/profile',
+                pageBuilder: (context, state) => const NoTransitionPage(
+                  child: ProfileScreen(),
+                ),
+              ),
+              GoRoute(
+                path: '/feedback',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const FeedbackScreen()),
+              ),
+            ],
           ),
         ],
       ),
