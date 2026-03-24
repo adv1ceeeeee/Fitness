@@ -443,6 +443,82 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
   }
 
+  void _showRpeInfo(BuildContext context) {
+    const levels = [
+      ('1–2', 'Очень легко', 'Можно говорить полными предложениями'),
+      ('3–4', 'Легко', 'Небольшое усилие, дыхание свободное'),
+      ('5–6', 'Умеренно', 'Заметное усилие, но можно продолжать'),
+      ('7–8', 'Тяжело', 'Трудно говорить, ещё 1–2 повтора в запасе'),
+      ('9', 'Очень тяжело', 'Почти максимум, 1 повтор в запасе'),
+      ('10', 'Максимум', 'Больше невозможно — полный отказ'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Шкала RPE (Rate of Perceived Exertion)',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Субъективная оценка нагрузки от 1 до 10',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            ...levels.map((l) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 34,
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(l.$1,
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.accent)),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(l.$2,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary)),
+                      Text(l.$3,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showPlateCalc(double weightKg, {required bool useKg}) {
     showModalBottomSheet(
       context: context,
@@ -515,6 +591,18 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
   }
 
+  void _previousExercise() {
+    final prevIndex = _currentExerciseIndex - 1;
+    if (prevIndex >= 0) {
+      HapticFeedback.mediumImpact();
+      setState(() {
+        _completedSetsBefore = (_completedSetsBefore - _exercises[prevIndex].sets).clamp(0, _totalExpectedSets);
+        _currentExerciseIndex = prevIndex;
+        _initExercise(_exercises[prevIndex]);
+      });
+    }
+  }
+
   void _addSet() {
     HapticFeedback.selectionClick();
     final defaultReps = _parseDefaultReps(_currentExercise!.repsRange);
@@ -543,40 +631,78 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         expand: false,
         initialChildSize: 0.7,
         maxChildSize: 0.95,
-        builder: (_, sc) => Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Заменить упражнение',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                controller: sc,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: exercises.length,
-                itemBuilder: (_, i) {
-                  final ex = exercises[i];
-                  return ListTile(
-                    title: Text(ex.displayName,
-                        style: const TextStyle(color: AppColors.textPrimary)),
-                    subtitle: Text(
-                      Exercise.categoryDisplayName(ex.category),
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        builder: (_, sc) {
+          var replaceQuery = '';
+          return StatefulBuilder(
+            builder: (ctx2, setInner) {
+              final filtered = replaceQuery.isEmpty
+                  ? exercises
+                  : exercises.where((e) {
+                      final q = replaceQuery.toLowerCase();
+                      return e.name.toLowerCase().contains(q) ||
+                          (e.nameRu?.toLowerCase().contains(q) ?? false);
+                    }).toList();
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Заменить упражнение',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          autofocus: false,
+                          onChanged: (v) => setInner(() => replaceQuery = v.trim()),
+                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'Поиск упражнения...',
+                            hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                            prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+                            isDense: true,
+                            filled: true,
+                            fillColor: AppColors.surface,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    onTap: () => Navigator.pop(ctx, ex),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: sc,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: filtered.length,
+                      itemBuilder: (_, i) {
+                        final ex = filtered[i];
+                        return ListTile(
+                          title: Text(ex.displayName,
+                              style: const TextStyle(color: AppColors.textPrimary)),
+                          subtitle: Text(
+                            Exercise.categoryDisplayName(ex.category),
+                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                          ),
+                          onTap: () => Navigator.pop(ctx, ex),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       ),
     );
     if (picked == null || !mounted) return;
@@ -739,14 +865,19 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       );
     }
     if (_resting) {
+      final nextEx = _goToNextAfterRest && _currentExerciseIndex + 1 < _exercises.length
+          ? _exercises[_currentExerciseIndex + 1].exercise
+          : null;
       return _RestScreen(
         seconds: _restSeconds,
         targetSeconds: _targetRestSeconds,
         onSkip: _skipRest,
         onExit: _confirmExit,
-        nextExerciseName: _goToNextAfterRest && _currentExerciseIndex + 1 < _exercises.length
-            ? _exercises[_currentExerciseIndex + 1].exercise?.displayName
-            : null,
+        onAdjust: (delta) => setState(() {
+          _targetRestSeconds = (_targetRestSeconds + delta).clamp(0, 600);
+        }),
+        nextExerciseName: nextEx?.displayName,
+        nextExerciseGifUrl: nextEx?.gifUrl,
       );
     }
 
@@ -1060,13 +1191,24 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                     letterSpacing: 0.5)),
                           ),
                           const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text('RPE',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                    letterSpacing: 0.5)),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => _showRpeInfo(context),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text('RPE',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.textSecondary,
+                                          letterSpacing: 0.5)),
+                                  SizedBox(width: 2),
+                                  Icon(Icons.info_outline,
+                                      size: 11, color: AppColors.textSecondary),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -1113,29 +1255,48 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
                     // Блоки подходов
                     ...List.generate(_sets.length, (i) {
+                      final canComplete = !_sets[i].completed && i == activeIndex;
                       return Column(
                         children: [
                           if (we.isDropSet && i > 0)
                             const _DropSetDivider(),
                           Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: _SetBlock(
-                              index: i,
-                              data: _sets[i],
-                              isActive: i == activeIndex && !_sets[i].completed,
-                              weightController: _weightControllers[i],
-                              comparison: _setComparisons[i],
-                              onRepsChanged: (v) => setState(
-                                  () => _sets[i] = _sets[i].copyWith(reps: v)),
-                              onRpeChanged: (v) =>
-                                  setState(() => _sets[i].rpe = v),
-                              onComplete: (!_sets[i].completed && i == activeIndex)
-                                  ? () => _completeSet(i)
-                                  : null,
-                              onWarmupToggle: !_sets[i].completed
-                                  ? () => setState(() => _sets[i] =
-                                      _sets[i].copyWith(isWarmup: !_sets[i].isWarmup))
-                                  : null,
+                            child: Dismissible(
+                              key: ValueKey('set_$i'),
+                              direction: canComplete
+                                  ? DismissDirection.startToEnd
+                                  : DismissDirection.none,
+                              confirmDismiss: (_) async {
+                                _completeSet(i);
+                                return false; // не удалять из списка
+                              },
+                              background: Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.success.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                padding: const EdgeInsets.only(left: 20),
+                                child: const Icon(Icons.check_circle_outline,
+                                    color: AppColors.success, size: 28),
+                              ),
+                              child: _SetBlock(
+                                index: i,
+                                data: _sets[i],
+                                isActive: i == activeIndex && !_sets[i].completed,
+                                weightController: _weightControllers[i],
+                                comparison: _setComparisons[i],
+                                onRepsChanged: (v) => setState(
+                                    () => _sets[i] = _sets[i].copyWith(reps: v)),
+                                onRpeChanged: (v) =>
+                                    setState(() => _sets[i].rpe = v),
+                                onComplete: canComplete ? () => _completeSet(i) : null,
+                                onWarmupToggle: !_sets[i].completed
+                                    ? () => setState(() => _sets[i] =
+                                        _sets[i].copyWith(isWarmup: !_sets[i].isWarmup))
+                                    : null,
+                              ),
                             ),
                           ),
                         ],
@@ -1151,16 +1312,40 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
               ),
             ),
 
-            // Кнопка следующего упражнения
-            if (_allSetsCompleted &&
-                _currentExerciseIndex < _exercises.length - 1)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                child: ElevatedButton(
-                  onPressed: _advanceExercise,
-                  child: const Text('Следующее упражнение'),
-                ),
+            // Навигация между упражнениями
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: Row(
+                children: [
+                  if (_currentExerciseIndex > 0)
+                    Expanded(
+                      flex: 1,
+                      child: OutlinedButton.icon(
+                        onPressed: _previousExercise,
+                        icon: const Icon(Icons.chevron_left, size: 18),
+                        label: const Text('Назад'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.textSecondary,
+                          side: const BorderSide(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ),
+                  if (_currentExerciseIndex > 0 &&
+                      _allSetsCompleted &&
+                      _currentExerciseIndex < _exercises.length - 1)
+                    const SizedBox(width: 12),
+                  if (_allSetsCompleted &&
+                      _currentExerciseIndex < _exercises.length - 1)
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: _advanceExercise,
+                        child: const Text('Следующее упражнение'),
+                      ),
+                    ),
+                ],
               ),
+            ),
           ],
         ),
         ),
@@ -1882,14 +2067,18 @@ class _RestScreen extends StatelessWidget {
   final int targetSeconds;
   final VoidCallback onSkip;
   final VoidCallback onExit;
+  final ValueChanged<int> onAdjust;
   final String? nextExerciseName;
+  final String? nextExerciseGifUrl;
 
   const _RestScreen({
     required this.seconds,
     required this.targetSeconds,
     required this.onSkip,
     required this.onExit,
+    required this.onAdjust,
     this.nextExerciseName,
+    this.nextExerciseGifUrl,
   });
 
   @override
@@ -1957,17 +2146,26 @@ class _RestScreen extends StatelessWidget {
                 'Отдых',
                 style: TextStyle(fontSize: 20, color: AppColors.textSecondary),
               ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: 200,
-              height: 52,
-              child: ElevatedButton(
-                onPressed: onSkip,
-                child: const Text(
-                  'Готов',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _AdjustRestButton(label: '−30с', onTap: () => onAdjust(-30)),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 160,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: onSkip,
+                    child: const Text(
+                      'Готов',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 16),
+                _AdjustRestButton(label: '+30с', onTap: () => onAdjust(30)),
+              ],
             ),
             if (nextExerciseName != null) ...[
               const SizedBox(height: 32),
@@ -1975,14 +2173,65 @@ class _RestScreen extends StatelessWidget {
                 'Следующее',
                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 nextExerciseName!,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                 textAlign: TextAlign.center,
               ),
+              if (nextExerciseGifUrl != null) ...[
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: nextExerciseGifUrl!,
+                    height: 140,
+                    width: 220,
+                    fit: BoxFit.contain,
+                    placeholder: (_, __) => const SizedBox(
+                      height: 140, width: 220,
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+              ],
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Кнопка регулировки таймера отдыха ───────────────────────────────────────
+
+class _AdjustRestButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _AdjustRestButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 60,
+        height: 52,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: AppColors.accent,
+          ),
         ),
       ),
     );

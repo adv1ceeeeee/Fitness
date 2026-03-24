@@ -371,13 +371,49 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   void _onStopTap() {
     final state = ref.read(activeSessionProvider);
     if (!state.isActive) return;
+    // Обычный тап — диалог подтверждения
+    showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        title: const Text('Завершить тренировку?',
+            style: TextStyle(color: Colors.white, fontSize: 17)),
+        content: Text(
+          'Прошло ${state.elapsedFormatted}. Данные будут сохранены.',
+          style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Продолжить',
+                style: TextStyle(color: Color(0xFF30D158))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Завершить',
+                style: TextStyle(color: Color(0xFFFF453A))),
+          ),
+        ],
+      ),
+    ).then((confirmed) {
+      if (confirmed == true) _doStop();
+    });
+  }
+
+  void _onStopLongPress() {
+    HapticFeedback.heavyImpact();
+    _doStop();
+  }
+
+  void _doStop() {
+    final state = ref.read(activeSessionProvider);
+    if (!state.isActive) return;
 
     final durationSeconds = state.elapsed.inSeconds;
     final sessionId = state.sessionId!;
     final workoutId = state.workoutId!;
 
     _stopTicker();
-    // Stop provider immediately so a second tap cannot push another summary screen.
     ref.read(activeSessionProvider.notifier).stop();
 
     context.push(
@@ -401,27 +437,30 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: 60,
-          height: 60,
-          child: FloatingActionButton(
-            heroTag: 'playStopFab',
-            onPressed: isActive ? _onStopTap : _onPlayTap,
-            backgroundColor:
-                isActive ? AppColors.error : AppColors.accent,
-            elevation: 0,
-            shape: const CircleBorder(),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Transform.translate(
-                offset: Offset(isActive ? 0 : 2, 0),
-                child: Icon(
-                  isActive
-                      ? CupertinoIcons.stop_fill
-                      : CupertinoIcons.play_fill,
-                  key: ValueKey(isActive),
-                  color: Colors.white,
-                  size: 26,
+        GestureDetector(
+          onLongPress: isActive ? _onStopLongPress : null,
+          child: SizedBox(
+            width: 60,
+            height: 60,
+            child: FloatingActionButton(
+              heroTag: 'playStopFab',
+              onPressed: isActive ? _onStopTap : _onPlayTap,
+              backgroundColor:
+                  isActive ? AppColors.error : AppColors.accent,
+              elevation: 0,
+              shape: const CircleBorder(),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Transform.translate(
+                  offset: Offset(isActive ? 0 : 2, 0),
+                  child: Icon(
+                    isActive
+                        ? CupertinoIcons.stop_fill
+                        : CupertinoIcons.play_fill,
+                    key: ValueKey(isActive),
+                    color: Colors.white,
+                    size: 26,
+                  ),
                 ),
               ),
             ),

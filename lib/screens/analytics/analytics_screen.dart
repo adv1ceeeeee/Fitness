@@ -2013,7 +2013,7 @@ class _WeeklyHeatmap extends StatelessWidget {
                         final date = weekStart.add(Duration(days: dayIdx));
                         final isFuture = date.isAfter(today);
                         final vol = isFuture ? 0.0 : (data[date] ?? 0.0);
-                        return Container(
+                        final cell = Container(
                           width: cellSize,
                           height: cellSize,
                           margin: const EdgeInsets.only(bottom: gap, right: gap),
@@ -2021,6 +2021,37 @@ class _WeeklyHeatmap extends StatelessWidget {
                             color: _cellColor(vol, maxVol, isFuture),
                             borderRadius: BorderRadius.circular(2),
                           ),
+                        );
+                        if (isFuture) return cell;
+                        final dateLabel =
+                            '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+                        return GestureDetector(
+                          onTap: () => showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              backgroundColor: AppColors.card,
+                              title: Text(dateLabel,
+                                  style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
+                              content: Text(
+                                vol > 0
+                                    ? 'Объём: ${vol.toStringAsFixed(0)} кг×повт.'
+                                    : 'Тренировок не было',
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('OK'),
+                                ),
+                              ],
+                            ),
+                          ),
+                          child: cell,
                         );
                       }),
                     );

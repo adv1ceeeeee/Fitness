@@ -249,6 +249,151 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     }
   }
 
+  // ─── Templates ─────────────────────────────────────────────────────────────
+
+  static const _templates = [
+    (
+      name: 'Фулбоди 3×/нед',
+      description: 'Всё тело каждую тренировку',
+      icon: Icons.fitness_center,
+      sections: <({String name, List<int> days, List<int> rest})>[
+        (name: 'Фулбоди', days: [1, 3, 5], rest: [2, 4, 6, 7]),
+      ],
+      cycleWeeks: 8,
+    ),
+    (
+      name: 'Верх / Низ 4×/нед',
+      description: 'Чередование верха и низа тела',
+      icon: Icons.swap_vert,
+      sections: <({String name, List<int> days, List<int> rest})>[
+        (name: 'Верх тела', days: [1, 4], rest: <int>[]),
+        (name: 'Низ тела', days: [2, 5], rest: [3, 6, 7]),
+      ],
+      cycleWeeks: 8,
+    ),
+    (
+      name: 'PPL 6×/нед',
+      description: 'Толчок / Тяга / Ноги',
+      icon: Icons.repeat,
+      sections: <({String name, List<int> days, List<int> rest})>[
+        (name: 'Толчок', days: [1, 4], rest: <int>[]),
+        (name: 'Тяга', days: [2, 5], rest: <int>[]),
+        (name: 'Ноги', days: [3, 6], rest: [7]),
+      ],
+      cycleWeeks: 12,
+    ),
+    (
+      name: 'Сплит А/Б 4×/нед',
+      description: 'Две чередующиеся тренировки',
+      icon: Icons.compare_arrows,
+      sections: <({String name, List<int> days, List<int> rest})>[
+        (name: 'Тренировка А', days: [1, 3], rest: <int>[]),
+        (name: 'Тренировка Б', days: [2, 4], rest: [5, 6, 7]),
+      ],
+      cycleWeeks: 8,
+    ),
+  ];
+
+  void _applyTemplate(int index) {
+    final t = _templates[index];
+    for (final s in _sections) s.dispose();
+    final newSections = t.sections.map((ts) {
+      final s = _SectionData();
+      s.nameController.text = ts.name;
+      for (final d in ts.days) { s.selectDay(d); }
+      for (final d in ts.rest) { s.restDays.add(d); }
+      return s;
+    }).toList();
+    setState(() {
+      _sections.clear();
+      _sections.addAll(newSections);
+      _cycleWeeks = t.cycleWeeks;
+      _error = null;
+    });
+  }
+
+  void _showTemplates() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Шаблоны программ',
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary)),
+            const SizedBox(height: 4),
+            const Text('Выберите шаблон — заполним расписание за вас',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+            const SizedBox(height: 16),
+            ..._templates.asMap().entries.map((e) {
+              final i = e.key;
+              final t = e.value;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Material(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _applyTemplate(i);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(t.icon,
+                                size: 20, color: AppColors.accent),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(t.name,
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary)),
+                                Text(t.description,
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right,
+                              size: 18, color: AppColors.textSecondary),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ─── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -268,6 +413,39 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Template shortcut
+            GestureDetector(
+              onTap: _showTemplates,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.accent.withValues(alpha: 0.25)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.auto_awesome,
+                        size: 18, color: AppColors.accent),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Начать с шаблона',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.accent),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right,
+                        size: 18, color: AppColors.accent),
+                  ],
+                ),
+              ),
+            ),
             // Sections
             for (int i = 0; i < _sections.length; i++) ...[
               _buildSection(i, isMulti: isMulti),
