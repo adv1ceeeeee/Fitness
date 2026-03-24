@@ -11,6 +11,7 @@ import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/providers/connectivity_provider.dart';
 import 'package:sportwai/screens/workout_session/free_workout_screen.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/version_service.dart';
 
@@ -269,6 +270,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
             workoutName: workoutName,
             sessionId: sessionId,
           );
+          NotificationService.cancelInactivityReminder();
           _startTicker();
           context.push('/session/$sessionId');
         },
@@ -350,6 +352,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       workoutName: choice.workoutName,
       sessionId: finalSessionId,
     );
+    NotificationService.cancelInactivityReminder();
     _startTicker();
     context.push('/session/$finalSessionId');
   }
