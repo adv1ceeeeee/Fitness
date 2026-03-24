@@ -1220,6 +1220,54 @@ class _BodyProgressCard extends StatelessWidget {
     );
   }
 
+  /// Linear regression over historical data → estimated time to reach goal.
+  /// Returns null when: < 3 points, flat trend, wrong direction, or > 2 years.
+  String? _forecastText(double current) {
+    if (target == null) return null;
+    final diff = target! - current; // signed: positive = need to grow
+    if (diff.abs() < 0.05) return null; // already at goal
+
+    // Build (days_offset, value) series for the active metric
+    final points = <(double, double)>[];
+    DateTime? first;
+    for (final m in metricsHistory) {
+      final raw = m[metric];
+      if (raw == null) continue;
+      final dateStr = m['date'] as String?;
+      if (dateStr == null || dateStr.length < 10) continue;
+      final dt = DateTime.tryParse(dateStr);
+      if (dt == null) continue;
+      first ??= dt;
+      final x = dt.difference(first).inHours / 24.0;
+      points.add((x, (raw as num).toDouble()));
+    }
+    if (points.length < 3) return null;
+
+    // OLS slope (value-change per day)
+    final n = points.length.toDouble();
+    double sx = 0, sy = 0, sxy = 0, sx2 = 0;
+    for (final p in points) {
+      sx += p.$1; sy += p.$2; sxy += p.$1 * p.$2; sx2 += p.$1 * p.$1;
+    }
+    final det = n * sx2 - sx * sx;
+    if (det.abs() < 1e-9) return null; // all measurements on same day
+    final slope = (n * sxy - sx * sy) / det;
+
+    if (slope.abs() < 0.001) return null; // essentially flat
+    if (diff > 0 && slope <= 0) return null; // need to grow, but declining
+    if (diff < 0 && slope >= 0) return null; // need to shrink, but growing
+
+    final daysToGoal = diff / slope;
+    if (daysToGoal <= 0 || daysToGoal > 730) return null;
+
+    final weeks = (daysToGoal / 7).round();
+    if (weeks < 1) {
+      final d = daysToGoal.round().clamp(1, 6);
+      return '~$d дн.';
+    }
+    return '~$weeks нед.';
+  }
+
   String _remainingText(double current) {
     if (target == null) return 'Нажмите на «Цель» для установки';
     final diff = (target! - current).abs();
@@ -1230,7 +1278,9 @@ class _BodyProgressCard extends StatelessWidget {
       return 'Цель достигнута!';
     }
     final sign = target! < current ? '−' : '+';
-    return 'До цели: $sign${fmtMetricValue(diff)} $_unit';
+    final base = 'До цели: $sign${fmtMetricValue(diff)} $_unit';
+    final forecast = _forecastText(current);
+    return forecast != null ? '$base  ($forecast)' : base;
   }
 
   Color _remainingColor(double current) {
