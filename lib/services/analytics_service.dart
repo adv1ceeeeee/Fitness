@@ -1615,4 +1615,129 @@ class AnalyticsService {
 
     return (res as List).cast<Map<String, dynamic>>();
   }
+
+  /// Session duration history: last [limit] completed sessions with duration > 0.
+  /// Returns [{date, duration_minutes}], sorted ascending by date.
+  static Future<List<Map<String, dynamic>>> getSessionDurationHistory(
+      {int limit = 60}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'session_durations:$userId:$limit',
+      ttl: const Duration(minutes: 15),
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select('date, duration_seconds')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .not('duration_seconds', 'is', null)
+            .gt('duration_seconds', 0)
+            .order('date', ascending: false)
+            .limit(limit);
+        return (res as List)
+            .cast<Map<String, dynamic>>()
+            .reversed
+            .map((s) => {
+                  'date': s['date'] as String,
+                  'duration_minutes':
+                      ((s['duration_seconds'] as num) / 60).roundToDouble(),
+                })
+            .toList();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) =>
+          s == null ? [] : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
+
+  /// Session RPE history: last [limit] completed sessions with RPE logged.
+  /// Returns [{date, rpe}], sorted ascending by date.
+  static Future<List<Map<String, dynamic>>> getSessionRpeHistory(
+      {int limit = 60}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'session_rpe:$userId:$limit',
+      ttl: const Duration(minutes: 15),
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select('date, session_rpe')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .not('session_rpe', 'is', null)
+            .order('date', ascending: false)
+            .limit(limit);
+        return (res as List)
+            .cast<Map<String, dynamic>>()
+            .reversed
+            .map((s) => {
+                  'date': s['date'] as String,
+                  'rpe': (s['session_rpe'] as num).toInt(),
+                })
+            .toList();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) =>
+          s == null ? [] : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
+
+  /// Top exercises by weight progress over the last [weeks] weeks.
+  /// Returns up to 5 entries [{name, start_weight, end_weight, pct_change}],
+  /// sorted by pct_change descending (improvements only).
+  static Future<List<Map<String, dynamic>>> getTopExercisesByProgress(
+      {int weeks = 12}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'exercise_progress:$userId:$weeks',
+      ttl: const Duration(minutes: 30),
+      fetch: () async {
+        final startStr = DateTime.now()
+            .subtract(Duration(days: weeks * 7))
+            .toIso8601String()
+            .split('T')[0];
+        final res = await _client
+            .from('personal_records')
+            .select('exercise_id, weight_kg, achieved_at, exercises(name, name_ru)')
+            .eq('user_id', userId)
+            .gte('achieved_at', startStr)
+            .order('achieved_at', ascending: true);
+        final byExercise = <String, List<double>>{};
+        final names = <String, String>{};
+        for (final r in res as List) {
+          final exId = r['exercise_id'] as String;
+          final weight = (r['weight_kg'] as num).toDouble();
+          final ex = r['exercises'] as Map<String, dynamic>?;
+          if (ex != null) {
+            names[exId] = ex['name_ru'] as String? ??
+                ex['name'] as String? ??
+                exId;
+          }
+          byExercise.putIfAbsent(exId, () => []).add(weight);
+        }
+        final result = <Map<String, dynamic>>[];
+        for (final entry in byExercise.entries) {
+          if (entry.value.length < 2) continue;
+          final start = entry.value.first;
+          final end = entry.value.last;
+          if (start <= 0 || end <= start) continue;
+          result.add({
+            'name': names[entry.key] ?? entry.key,
+            'start_weight': start,
+            'end_weight': end,
+            'pct_change': (end - start) / start * 100,
+          });
+        }
+        result.sort((a, b) =>
+            (b['pct_change'] as double).compareTo(a['pct_change'] as double));
+        return result.take(5).toList();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) =>
+          s == null ? [] : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
 }

@@ -93,6 +93,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   // New state variables
   List<Map<String, dynamic>> _topExercises = [];
   List<Map<String, dynamic>> _wellnessHistory = [];
+  List<Map<String, dynamic>> _sessionDurations = [];
+  List<Map<String, dynamic>> _sessionRpes = [];
+  List<Map<String, dynamic>> _exerciseProgressList = [];
 
   late final TabController _tabController;
 
@@ -176,6 +179,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         key: 'workout_heatmap:$userId',
         decode: (s) => jsonDecode(s) as Map<String, dynamic>,
       ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'session_durations:$userId:60',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'session_rpe:$userId:60',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'exercise_progress:$userId:12',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
     ]);
 
     // Check if ANY value was found in cache
@@ -216,6 +231,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           (k, v) => MapEntry(DateTime.parse(k), (v as num).toDouble()),
         );
       }
+      _sessionDurations = (results[13] as List<Map<String, dynamic>>?) ?? _sessionDurations;
+      _sessionRpes = (results[14] as List<Map<String, dynamic>>?) ?? _sessionRpes;
+      _exerciseProgressList = (results[15] as List<Map<String, dynamic>>?) ?? _exerciseProgressList;
       _loading = false;
     });
   }
@@ -241,6 +259,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         final heatmap = await AnalyticsService.getWorkoutHeatmap();
         final topExercises = await AnalyticsService.getTopExercisesByVolume();
         final wellnessHistory = await AnalyticsService.getWellnessHistory();
+        final sessionDurations = await AnalyticsService.getSessionDurationHistory();
+        final sessionRpes = await AnalyticsService.getSessionRpeHistory();
+        final exerciseProgressList = await AnalyticsService.getTopExercisesByProgress();
 
         if (mounted) {
           setState(() {
@@ -261,6 +282,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             _heatmapData = heatmap;
             _topExercises = topExercises;
             _wellnessHistory = wellnessHistory;
+            _sessionDurations = sessionDurations;
+            _sessionRpes = sessionRpes;
+            _exerciseProgressList = exerciseProgressList;
             _loading = false;
           });
         }
@@ -484,6 +508,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     muscleBalance: _muscleBalance,
                     muscleFrequency: _muscleFrequency,
                     caloriesPerSession: _caloriesPerSession,
+                    heatmapData: _heatmapData,
+                    sessionDurations: _sessionDurations,
+                    sessionRpes: _sessionRpes,
+                    exerciseProgressList: _exerciseProgressList,
                     onExerciseChanged: (ex) {
                       setState(() {
                         _selectedExercise = ex;
@@ -737,6 +765,10 @@ class _WorkoutsTab extends StatefulWidget {
   final Map<String, double> muscleFrequency;
   final List<Map<String, dynamic>> caloriesPerSession;
   final void Function(Map<String, dynamic>?) onExerciseChanged;
+  final Map<DateTime, double> heatmapData;
+  final List<Map<String, dynamic>> sessionDurations;
+  final List<Map<String, dynamic>> sessionRpes;
+  final List<Map<String, dynamic>> exerciseProgressList;
 
   const _WorkoutsTab({
     required this.onRefresh,
@@ -752,6 +784,10 @@ class _WorkoutsTab extends StatefulWidget {
     required this.muscleFrequency,
     required this.caloriesPerSession,
     required this.onExerciseChanged,
+    required this.heatmapData,
+    required this.sessionDurations,
+    required this.sessionRpes,
+    required this.exerciseProgressList,
   });
 
   @override
@@ -781,6 +817,35 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
     return widget.caloriesPerSession
         .where((s) => _afterCutoff(s['date'] as String? ?? '', cutoff))
         .toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredDurations {
+    final cutoff = _range.cutoff;
+    return widget.sessionDurations
+        .where((s) => _afterCutoff(s['date'] as String? ?? '', cutoff))
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredRpes {
+    final cutoff = _range.cutoff;
+    return widget.sessionRpes
+        .where((s) => _afterCutoff(s['date'] as String? ?? '', cutoff))
+        .toList();
+  }
+
+  /// Average volume per weekday (1=Mon…7=Sun) from heatmap data.
+  Map<int, double> get _weekdayVolume {
+    final sums = <int, double>{};
+    final counts = <int, int>{};
+    for (final entry in widget.heatmapData.entries) {
+      if (entry.value <= 0) continue;
+      final wd = entry.key.weekday;
+      sums[wd] = (sums[wd] ?? 0) + entry.value;
+      counts[wd] = (counts[wd] ?? 0) + 1;
+    }
+    return {
+      for (final wd in sums.keys) wd: sums[wd]! / counts[wd]!,
+    };
   }
 
   /// Previous period: same number of weeks immediately before _filteredVolume.
@@ -818,6 +883,29 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
           children: [
             _RangeChips(selected: _range, onChanged: (r) => setState(() => _range = r)),
             const SizedBox(height: 20),
+            const Text(
+              'Активность',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Последние 26 недель',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: _WeeklyHeatmap(data: widget.heatmapData),
+            ),
+            const SizedBox(height: 28),
             const Text(
               'Тренд объёма нагрузки',
               style: TextStyle(
@@ -898,6 +986,24 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
             ),
             const SizedBox(height: 12),
             _TopExercisesCard(exercises: widget.topExercises),
+            if (widget.exerciseProgressList.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              const Text(
+                'Наибольший прогресс за 12 нед.',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Рост максимального веса по ЛР',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              _ExerciseProgressCard(exercises: widget.exerciseProgressList),
+            ],
             const SizedBox(height: 28),
             const Text(
               'Прогресс по упражнению',
@@ -1005,6 +1111,72 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
               _emptyCard('Завершите тренировку,\nчтобы увидеть данные о калориях')
             else
               _CaloriesChart(sessions: _filteredCalories),
+            if (_weekdayVolume.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              const Text(
+                'Объём по дням недели',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Средний объём за 26 недель (кг × повт.)',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              _WeekdayVolumeChart(weekdayVolume: _weekdayVolume),
+            ],
+            if (_filteredDurations.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              const Text(
+                'Длительность тренировок',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Минуты за сессию',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              _SessionLineChart(
+                sessions: _filteredDurations,
+                field: 'duration_minutes',
+                color: const Color(0xFF30D158),
+                unit: 'мин',
+              ),
+            ],
+            if (_filteredRpes.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              const Text(
+                'Сложность тренировок (RPE)',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Субъективная нагрузка 1–10 по сессиям',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              _SessionLineChart(
+                sessions: _filteredRpes,
+                field: 'rpe',
+                color: const Color(0xFFFF9F0A),
+                unit: 'RPE',
+                minY: 1,
+                maxY: 10,
+              ),
+            ],
           ],
         ),
       ),
@@ -1064,6 +1236,32 @@ class _BodyTabState extends State<_BodyTab> {
     return Map.fromEntries(
       widget.bodyMetricData.entries.where((e) => _afterCutoff(e.key, cutoff)),
     );
+  }
+
+  /// Change in the selected metric over the current period vs the previous same-length window.
+  /// Returns (delta, unit) or null if not enough data.
+  ({double delta, String unit})? get _bodyPeriodDelta {
+    if (_range == _DateRange.all) return null;
+    final all = Map.fromEntries(
+      widget.bodyMetricData.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
+    final cutoff = _range.cutoff!;
+    final curEntries = all.entries.where((e) => _afterCutoff(e.key, cutoff)).toList();
+    if (curEntries.length < 2) return null;
+    final prevCutoff = cutoff.subtract(cutoff.difference(DateTime.parse(curEntries.first.key)));
+    final prevEntries = all.entries
+        .where((e) {
+          final d = DateTime.tryParse(e.key);
+          if (d == null) return false;
+          return d.isAfter(prevCutoff) && !d.isAfter(cutoff);
+        })
+        .toList();
+    if (prevEntries.isEmpty) return null;
+    final curVal = curEntries.last.value;
+    final prevVal = prevEntries.last.value;
+    final isBodyFat = widget.selectedBodyMetric == 'body_fat_pct';
+    final unit = isBodyFat ? '%' : ' кг';
+    return (delta: curVal - prevVal, unit: unit);
   }
 
   /// Linear extrapolation on the HP trend: returns forecast value [stepsAhead]
@@ -1172,6 +1370,47 @@ class _BodyTabState extends State<_BodyTab> {
                 )
               else ...[
                 _ProgressChart(data: _filteredBodyData),
+                () {
+                  final delta = _bodyPeriodDelta;
+                  if (delta == null) return const SizedBox.shrink();
+                  final d = delta.delta;
+                  final sign = d >= 0 ? '+' : '';
+                  final isWeight = widget.selectedBodyMetric == 'weight_kg';
+                  final isBodyFat = widget.selectedBodyMetric == 'body_fat_pct';
+                  final Color color;
+                  if (d.abs() < 0.1) {
+                    color = AppColors.textSecondary;
+                  } else if (isWeight || isBodyFat) {
+                    color = d < 0 ? AppColors.success : AppColors.error;
+                  } else {
+                    color = d > 0 ? AppColors.success : AppColors.error;
+                  }
+                  return Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'vs предыдущий период',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                        Text(
+                          '$sign${d.toStringAsFixed(1)}${delta.unit}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }(),
                 () {
                   final fc = _forecast(_filteredBodyData);
                   if (fc == null) return const SizedBox.shrink();
@@ -1592,6 +1831,442 @@ class _TopExercisesCard extends StatelessWidget {
             ),
           );
         }).toList(),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Weekly activity heatmap (GitHub-style, 26 weeks)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _WeeklyHeatmap extends StatelessWidget {
+  final Map<DateTime, double> data;
+
+  const _WeeklyHeatmap({required this.data});
+
+  static const _dayLabels = ['', 'Пн', '', 'Ср', '', 'Пт', ''];
+  static const _monthNames = [
+    '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+  ];
+
+  Color _cellColor(double vol, double maxVol, bool isFuture) {
+    if (isFuture) return Colors.transparent;
+    if (vol == 0) return AppColors.surface;
+    if (maxVol == 0) return AppColors.accent.withValues(alpha: 0.5);
+    final t = vol / maxVol;
+    if (t < 0.25) return AppColors.accent.withValues(alpha: 0.28);
+    if (t < 0.5)  return AppColors.accent.withValues(alpha: 0.52);
+    if (t < 0.75) return AppColors.accent.withValues(alpha: 0.76);
+    return AppColors.accent;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const weeks = 26;
+    const dayLabelW = 22.0;
+    const gap = 2.0;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final latestMon = today.subtract(Duration(days: today.weekday - 1));
+
+    final weekStarts = List.generate(
+      weeks,
+      (i) => latestMon.subtract(Duration(days: 7 * (weeks - 1 - i))),
+    );
+
+    final maxVol = data.values.fold<double>(0, (a, b) => a > b ? a : b);
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final cellSize = ((constraints.maxWidth - dayLabelW - gap * (weeks + 1)) / weeks)
+          .clamp(8.0, 18.0);
+
+      // Build month label positions
+      final monthLabels = <Widget>[];
+      int? lastMonth;
+      for (int wi = 0; wi < weekStarts.length; wi++) {
+        final m = weekStarts[wi].month;
+        if (m != lastMonth) {
+          lastMonth = m;
+          monthLabels.add(Positioned(
+            left: dayLabelW + wi * (cellSize + gap),
+            top: 0,
+            child: Text(
+              _monthNames[m],
+              style: const TextStyle(fontSize: 9, color: AppColors.textSecondary),
+            ),
+          ));
+        }
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Month labels
+          SizedBox(
+            height: 14,
+            child: Stack(children: monthLabels),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Day-of-week labels
+              SizedBox(
+                width: dayLabelW,
+                child: Column(
+                  children: List.generate(7, (d) => SizedBox(
+                    height: cellSize + gap,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          _dayLabels[d],
+                          style: const TextStyle(
+                            fontSize: 8,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )),
+                ),
+              ),
+              // Week columns
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: weekStarts.map((weekStart) {
+                    return Column(
+                      children: List.generate(7, (dayIdx) {
+                        final date = weekStart.add(Duration(days: dayIdx));
+                        final isFuture = date.isAfter(today);
+                        final vol = isFuture ? 0.0 : (data[date] ?? 0.0);
+                        return Container(
+                          width: cellSize,
+                          height: cellSize,
+                          margin: const EdgeInsets.only(bottom: gap, right: gap),
+                          decoration: BoxDecoration(
+                            color: _cellColor(vol, maxVol, isFuture),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        );
+                      }),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Top exercises by progress card
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _ExerciseProgressCard extends StatelessWidget {
+  final List<Map<String, dynamic>> exercises;
+
+  const _ExerciseProgressCard({required this.exercises});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: exercises.asMap().entries.map((entry) {
+          final i = entry.key;
+          final ex = entry.value;
+          final name = ex['name'] as String? ?? '—';
+          final start = (ex['start_weight'] as num).toDouble();
+          final end = (ex['end_weight'] as num).toDouble();
+          final pct = (ex['pct_change'] as num).toDouble();
+          final isLast = i == exercises.length - 1;
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: Text(
+                    '${i + 1}.',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${start.toStringAsFixed(1)} → ${end.toStringAsFixed(1)} кг',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF30D158).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '+${pct.toStringAsFixed(0)}%',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF30D158),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Volume by weekday bar chart
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _WeekdayVolumeChart extends StatelessWidget {
+  final Map<int, double> weekdayVolume; // 1=Mon … 7=Sun
+
+  const _WeekdayVolumeChart({required this.weekdayVolume});
+
+  static const _labels = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+  String _fmt(double v) =>
+      v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}т' : v.toStringAsFixed(0);
+
+  @override
+  Widget build(BuildContext context) {
+    final maxVal = weekdayVolume.values.fold<double>(0, (a, b) => a > b ? a : b);
+    final barGroups = List.generate(7, (i) {
+      final wd = i + 1;
+      final val = weekdayVolume[wd] ?? 0.0;
+      return BarChartGroupData(x: i, barRods: [
+        BarChartRodData(
+          toY: val,
+          color: val == maxVal && val > 0
+              ? AppColors.accent
+              : AppColors.accent.withValues(alpha: 0.45),
+          width: 20,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+        ),
+      ]);
+    });
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SizedBox(
+        height: 140,
+        child: BarChart(
+          BarChartData(
+            maxY: maxVal * 1.2,
+            gridData: const FlGridData(show: false),
+            borderData: FlBorderData(show: false),
+            barTouchData: BarTouchData(enabled: false),
+            titlesData: FlTitlesData(
+              leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 22,
+                  getTitlesWidget: (v, _) {
+                    final wd = v.toInt() + 1;
+                    final val = weekdayVolume[wd] ?? 0.0;
+                    if (val == 0) return const SizedBox.shrink();
+                    return Text(
+                      _fmt(val),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.textSecondary,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 20,
+                  getTitlesWidget: (v, _) => Text(
+                    _labels[v.toInt() + 1],
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            barGroups: barGroups,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEW: Reusable session line chart (duration & RPE)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class _SessionLineChart extends StatelessWidget {
+  final List<Map<String, dynamic>> sessions; // [{date, <field>}]
+  final String field;
+  final Color color;
+  final String unit;
+  final double? minY;
+  final double? maxY;
+
+  const _SessionLineChart({
+    required this.sessions,
+    required this.field,
+    required this.color,
+    required this.unit,
+    this.minY,
+    this.maxY,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final spots = <FlSpot>[];
+    for (int i = 0; i < sessions.length; i++) {
+      final v = sessions[i][field];
+      if (v == null) continue;
+      spots.add(FlSpot(i.toDouble(), (v as num).toDouble()));
+    }
+    if (spots.isEmpty) return const SizedBox.shrink();
+
+    final vals = spots.map((s) => s.y);
+    final dataMin = vals.reduce((a, b) => a < b ? a : b);
+    final dataMax = vals.reduce((a, b) => a > b ? a : b);
+    final pad = dataMax == dataMin ? 2.0 : (dataMax - dataMin) * 0.2;
+    final chartMin = minY ?? (dataMin - pad).clamp(0, double.infinity);
+    final chartMax = maxY ?? (dataMax + pad);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(4, 12, 16, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SizedBox(
+        height: 140,
+        child: LineChart(
+          LineChartData(
+            minY: chartMin,
+            maxY: chartMax,
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              getDrawingHorizontalLine: (_) =>
+                  const FlLine(color: AppColors.surface, strokeWidth: 1),
+            ),
+            borderData: FlBorderData(show: false),
+            titlesData: FlTitlesData(
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 30,
+                  getTitlesWidget: (v, _) => Text(
+                    v.toStringAsFixed(0),
+                    style: const TextStyle(
+                        fontSize: 9, color: AppColors.textSecondary),
+                  ),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 22,
+                  interval: sessions.length <= 6
+                      ? 1
+                      : (sessions.length / 4).ceilToDouble(),
+                  getTitlesWidget: (value, _) {
+                    final idx = value.toInt();
+                    if (idx < 0 || idx >= sessions.length) {
+                      return const SizedBox.shrink();
+                    }
+                    final parts = (sessions[idx]['date'] as String).split('-');
+                    final label = parts.length >= 3
+                        ? '${parts[2]}.${parts[1]}'
+                        : sessions[idx]['date'] as String;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                            fontSize: 9, color: AppColors.textSecondary),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            ),
+            lineBarsData: [
+              LineChartBarData(
+                spots: spots,
+                isCurved: true,
+                color: color,
+                barWidth: 2.5,
+                dotData: FlDotData(
+                  show: spots.length <= 20,
+                  getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+                    radius: 3,
+                    color: color,
+                    strokeWidth: 0,
+                  ),
+                ),
+                belowBarData: BarAreaData(
+                  show: true,
+                  color: color.withValues(alpha: 0.12),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
