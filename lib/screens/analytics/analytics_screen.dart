@@ -1230,6 +1230,28 @@ class _BodyTab extends StatefulWidget {
 
 class _BodyTabState extends State<_BodyTab> {
   _DateRange _range = _DateRange.month3;
+  final _chartKey = GlobalKey();
+  bool _sharing = false;
+
+  Future<void> _shareChart() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      final boundary =
+          _chartKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+      final bytes = byteData.buffer.asUint8List();
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/sportwai_body_chart.png');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles([XFile(file.path)], subject: 'Мой прогресс');
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
 
   Map<String, double> get _filteredBodyData {
     final cutoff = _range.cutoff;
@@ -1303,13 +1325,34 @@ class _BodyTabState extends State<_BodyTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Динамика параметров тела',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Динамика параметров тела',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                if (widget.bodyHistory.isNotEmpty)
+                  IconButton(
+                    onPressed: _sharing ? null : _shareChart,
+                    icon: _sharing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.ios_share_rounded,
+                            size: 20, color: AppColors.textSecondary),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Поделиться графиком',
+                  ),
+              ],
             ),
             const SizedBox(height: 12),
             if (widget.bodyHistory.isEmpty)
@@ -1369,7 +1412,10 @@ class _BodyTabState extends State<_BodyTab> {
                   ),
                 )
               else ...[
-                _ProgressChart(data: _filteredBodyData),
+                RepaintBoundary(
+                  key: _chartKey,
+                  child: _ProgressChart(data: _filteredBodyData),
+                ),
                 () {
                   final delta = _bodyPeriodDelta;
                   if (delta == null) return const SizedBox.shrink();
@@ -3885,11 +3931,16 @@ class _VolumeBarChart extends StatelessWidget {
 
 // ─── Muscle balance chart ─────────────────────────────────────────────────────
 
-class _MuscleBalanceChart extends StatelessWidget {
+class _MuscleBalanceChart extends StatefulWidget {
   final Map<String, int> balance;
 
   const _MuscleBalanceChart({required this.balance});
 
+  @override
+  State<_MuscleBalanceChart> createState() => _MuscleBalanceChartState();
+}
+
+class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
   static const _labels = {
     'chest': 'Грудь',
     'back': 'Спина',
@@ -3909,9 +3960,29 @@ class _MuscleBalanceChart extends StatelessWidget {
     Color(0xFF30D158),
   ];
 
+  String? _selectedCategory;
+  Map<String, List<Map<String, dynamic>>>? _breakdown;
+  bool _loadingBreakdown = false;
+
+  Future<void> _loadBreakdown() async {
+    if (_breakdown != null || _loadingBreakdown) return;
+    setState(() => _loadingBreakdown = true);
+    final data = await AnalyticsService.getMuscleGroupExerciseBreakdown();
+    if (mounted) setState(() { _breakdown = data; _loadingBreakdown = false; });
+  }
+
+  void _tapCategory(String cat) {
+    if (_selectedCategory == cat) {
+      setState(() => _selectedCategory = null);
+      return;
+    }
+    setState(() => _selectedCategory = cat);
+    _loadBreakdown();
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (balance.isEmpty) {
+    if (widget.balance.isEmpty) {
       return Container(
         height: 80,
         alignment: Alignment.center,
@@ -3922,8 +3993,8 @@ class _MuscleBalanceChart extends StatelessWidget {
       );
     }
 
-    final total = balance.values.fold(0, (s, v) => s + v);
-    final entries = balance.entries.toList()
+    final total = widget.balance.values.fold(0, (s, v) => s + v);
+    final entries = widget.balance.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
     final sections = entries.asMap().entries.map((e) {
@@ -3931,6 +4002,7 @@ class _MuscleBalanceChart extends StatelessWidget {
       final count = e.value.value;
       final pct = count / total;
       final color = _colors[colorIndex];
+      final isSelected = _selectedCategory == e.value.key;
       return PieChartSectionData(
         value: count.toDouble(),
         color: color,
@@ -3940,10 +4012,14 @@ class _MuscleBalanceChart extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
-        radius: 21,
+        radius: isSelected ? 28 : 21,
         titlePositionPercentageOffset: 0.65,
       );
     }).toList();
+
+    final exercises = _selectedCategory != null
+        ? (_breakdown?[_selectedCategory] ?? [])
+        : <Map<String, dynamic>>[];
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -3951,72 +4027,193 @@ class _MuscleBalanceChart extends StatelessWidget {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 140,
-              height: 140,
-              child: PieChart(
-                PieChartData(
-                  sections: sections,
-                  centerSpaceRadius: 52,
-                  sectionsSpace: 2,
-                  startDegreeOffset: -90,
-                ),
-              ),
-            ),
-            const SizedBox(width: 20),
-            SizedBox(
-              width: 160,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: entries.asMap().entries.map((e) {
-                  final colorIndex = e.key % _colors.length;
-                  final cat = e.value.key;
-                  final count = e.value.value;
-                  final pct = count / total;
-                  final label = _labels[cat] ?? cat;
-                  final color = _colors[colorIndex];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            label,
-                            style: const TextStyle(
-                                color: AppColors.textPrimary, fontSize: 13),
-                          ),
-                        ),
-                        Text(
-                          '${(pct * 100).round()}%',
-                          style: TextStyle(
-                            color: color,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+      child: Column(
+        children: [
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 140,
+                  height: 140,
+                  child: PieChart(
+                    PieChartData(
+                      sections: sections,
+                      centerSpaceRadius: 52,
+                      sectionsSpace: 2,
+                      startDegreeOffset: -90,
+                      pieTouchData: PieTouchData(
+                        touchCallback: (event, response) {
+                          if (!event.isInterestedForInteractions) return;
+                          final idx = response?.touchedSection?.touchedSectionIndex;
+                          if (idx != null && idx >= 0 && idx < entries.length) {
+                            _tapCategory(entries[idx].key);
+                          }
+                        },
+                      ),
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                SizedBox(
+                  width: 160,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: entries.asMap().entries.map((e) {
+                      final colorIndex = e.key % _colors.length;
+                      final cat = e.value.key;
+                      final count = e.value.value;
+                      final pct = count / total;
+                      final label = _labels[cat] ?? cat;
+                      final color = _colors[colorIndex];
+                      final isSelected = _selectedCategory == cat;
+                      return GestureDetector(
+                        onTap: () => _tapCategory(cat),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 7),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? AppColors.textPrimary
+                                        : AppColors.textSecondary,
+                                    fontSize: 13,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${(pct * 100).round()}%',
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: _selectedCategory == null
+                ? const SizedBox.shrink()
+                : _loadingBreakdown
+                    ? const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: SizedBox(
+                          height: 32,
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      )
+                    : exercises.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.only(top: 12),
+                            child: Text(
+                              'Нет данных по упражнениям',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Divider(color: AppColors.separator, height: 1),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _labels[_selectedCategory] ?? _selectedCategory!,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ...exercises.map((ex) {
+                                  final name = ex['name'] as String;
+                                  final sets = ex['sets'] as int;
+                                  final maxSets = (exercises.first['sets'] as int).toDouble();
+                                  final frac = maxSets > 0 ? sets / maxSets : 0.0;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      name,
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: AppColors.textPrimary,
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    '$sets пд.',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      color: AppColors.textSecondary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(3),
+                                                child: LinearProgressIndicator(
+                                                  value: frac.clamp(0.0, 1.0),
+                                                  minHeight: 3,
+                                                  backgroundColor: AppColors.surface,
+                                                  valueColor: const AlwaysStoppedAnimation<Color>(
+                                                      AppColors.accent),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+          ),
+        ],
       ),
     );
   }

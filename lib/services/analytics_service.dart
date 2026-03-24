@@ -1684,6 +1684,84 @@ class AnalyticsService {
     );
   }
 
+  /// Exercise breakdown per muscle group for the last 30 days.
+  /// Returns { category: [{name, sets}] }, sorted by sets desc (top 5 per group).
+  static Future<Map<String, List<Map<String, dynamic>>>> getMuscleGroupExerciseBreakdown() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+    return AppCache.get<Map<String, List<Map<String, dynamic>>>>(
+      key: 'muscle_breakdown:$userId',
+      ttl: const Duration(minutes: 30),
+      fetch: () async {
+        final startStr = DateTime.now()
+            .subtract(const Duration(days: 30))
+            .toIso8601String()
+            .split('T')[0];
+        final sessRes = await _client
+            .from('training_sessions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .gte('date', startStr);
+        final sessionIds =
+            (sessRes as List).map((e) => e['id'] as String).toList();
+        if (sessionIds.isEmpty) return {};
+
+        final setsRes = await _client
+            .from('sets')
+            .select('workout_exercise_id')
+            .inFilter('training_session_id', sessionIds)
+            .eq('completed', true)
+            .not('workout_exercise_id', 'is', null);
+
+        final weCount = <String, int>{};
+        for (final s in setsRes as List) {
+          final id = s['workout_exercise_id'] as String;
+          weCount[id] = (weCount[id] ?? 0) + 1;
+        }
+        if (weCount.isEmpty) return {};
+
+        final weRes = await _client
+            .from('workout_exercises')
+            .select('id, exercises(name, name_ru, category)')
+            .inFilter('id', weCount.keys.toList());
+
+        final catExSets = <String, Map<String, int>>{};
+        for (final we in weRes as List) {
+          final ex = we['exercises'] as Map<String, dynamic>?;
+          if (ex == null) continue;
+          final cat = ex['category'] as String? ?? 'other';
+          final name = ex['name_ru'] as String? ??
+              ex['name'] as String? ?? '—';
+          final count = weCount[we['id'] as String] ?? 0;
+          catExSets.putIfAbsent(cat, () => {})[name] =
+              (catExSets[cat]![name] ?? 0) + count;
+        }
+
+        return catExSets.map((cat, exMap) {
+          final sorted = exMap.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
+          return MapEntry(
+            cat,
+            sorted
+                .take(5)
+                .map((e) => {'name': e.key, 'sets': e.value})
+                .toList(),
+          );
+        });
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) {
+        if (s == null) return {};
+        final raw = jsonDecode(s) as Map<String, dynamic>;
+        return raw.map((k, v) => MapEntry(
+              k,
+              (v as List).cast<Map<String, dynamic>>(),
+            ));
+      },
+    );
+  }
+
   /// Top exercises by weight progress over the last [weeks] weeks.
   /// Returns up to 5 entries [{name, start_weight, end_weight, pct_change}],
   /// sorted by pct_change descending (improvements only).
