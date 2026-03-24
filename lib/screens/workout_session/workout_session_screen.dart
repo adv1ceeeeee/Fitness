@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -210,6 +211,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         }
       });
       if (_warmupMinutes > 0) _startPhaseTimer();
+      if (ex.isNotEmpty) await _maybeRestoreDraft(ex[0]);
 
       // Log auto-progress suggestions shown to user
       for (final exerciseId in autoProgress) {
@@ -251,7 +253,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       c.dispose();
     }
     _weightControllers = List.generate(
-        we.sets, (_) => TextEditingController(text: lastWeightText));
+        we.sets, (_) => TextEditingController(text: lastWeightText)..addListener(_saveDraft));
     _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps, repsTarget: defaultReps));
     _setComparisons.clear();
   }
@@ -584,11 +586,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final nextIndex = _currentExerciseIndex + 1;
     if (nextIndex < _exercises.length) {
       HapticFeedback.mediumImpact();
+      final next = _exercises[nextIndex];
       setState(() {
         _completedSetsBefore += _sets.length;
         _currentExerciseIndex = nextIndex;
-        _initExercise(_exercises[nextIndex]);
+        _initExercise(next);
       });
+      _maybeRestoreDraft(next);
     }
   }
 
@@ -596,11 +600,63 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final prevIndex = _currentExerciseIndex - 1;
     if (prevIndex >= 0) {
       HapticFeedback.mediumImpact();
+      final prev = _exercises[prevIndex];
       setState(() {
-        _completedSetsBefore = (_completedSetsBefore - _exercises[prevIndex].sets).clamp(0, _totalExpectedSets);
+        _completedSetsBefore = (_completedSetsBefore - prev.sets).clamp(0, _totalExpectedSets);
         _currentExerciseIndex = prevIndex;
-        _initExercise(_exercises[prevIndex]);
+        _initExercise(prev);
       });
+      _maybeRestoreDraft(prev);
+    }
+  }
+
+  // ─── Draft persistence (survives process kill) ───────────────────────────
+
+  String _draftKey(String weId) => 'set_draft_${widget.sessionId}_$weId';
+
+  /// Persist current weights + reps for the active exercise to SharedPreferences.
+  Future<void> _saveDraft() async {
+    final we = _currentExercise;
+    if (we == null) return;
+    final data = List.generate(_sets.length, (i) => {
+      'w': i < _weightControllers.length ? _weightControllers[i].text : '',
+      'r': _sets[i].reps,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_draftKey(we.id), jsonEncode(data));
+  }
+
+  /// Restore a saved draft into the already-initialised controllers/_sets.
+  /// Triggers setState only when something actually changed.
+  Future<void> _maybeRestoreDraft(WorkoutExercise we) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_draftKey(we.id));
+    if (raw == null || !mounted) return;
+    try {
+      final data = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      if (data.length != _sets.length) return;
+      var changed = false;
+      for (var i = 0; i < data.length; i++) {
+        final w = (data[i]['w'] as String?) ?? '';
+        final r = (data[i]['r'] as int?) ?? _sets[i].reps;
+        if (w.isNotEmpty && _weightControllers[i].text != w) {
+          _weightControllers[i].text = w;
+          changed = true;
+        }
+        if (_sets[i].reps != r) {
+          _sets[i] = _sets[i].copyWith(reps: r);
+          changed = true;
+        }
+      }
+      if (changed && mounted) setState(() {});
+    } catch (_) {}
+  }
+
+  /// Remove all draft keys for this session (call on normal completion).
+  Future<void> _clearAllDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final we in _exercises) {
+      await prefs.remove(_draftKey(we.id));
     }
   }
 
@@ -609,7 +665,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final defaultReps = _parseDefaultReps(_currentExercise!.repsRange);
     setState(() {
       _sets.add(_SetData(reps: defaultReps, repsTarget: defaultReps));
-      _weightControllers.add(TextEditingController());
+      _weightControllers.add(TextEditingController()..addListener(_saveDraft));
     });
     EventLogger.setAdded(
       sessionId: widget.sessionId,
@@ -776,6 +832,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
   Future<void> _goToSummary() async {
     HapticFeedback.heavyImpact();
+    await _clearAllDrafts();
     final sessionState = ref.read(activeSessionProvider);
     final durationSeconds = sessionState.isActive
         ? sessionState.elapsed.inSeconds
@@ -1288,8 +1345,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                 isActive: i == activeIndex && !_sets[i].completed,
                                 weightController: _weightControllers[i],
                                 comparison: _setComparisons[i],
-                                onRepsChanged: (v) => setState(
-                                    () => _sets[i] = _sets[i].copyWith(reps: v)),
+                                onRepsChanged: (v) {
+                                  setState(() => _sets[i] = _sets[i].copyWith(reps: v));
+                                  _saveDraft();
+                                },
                                 onRpeChanged: (v) =>
                                     setState(() => _sets[i].rpe = v),
                                 onComplete: canComplete ? () => _completeSet(i) : null,
