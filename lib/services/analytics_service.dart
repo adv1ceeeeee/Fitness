@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -384,47 +385,57 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
-    final sessRes = await _client
-        .from('training_sessions')
-        .select('id')
-        .eq('user_id', userId);
-    final sessIds = (sessRes as List).map((e) => e['id'] as String).toList();
-    if (sessIds.isEmpty) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'tracked_exercises:$userId',
+      ttl: const Duration(minutes: 10),
+      fetch: () async {
+        final sessRes = await _client
+            .from('training_sessions')
+            .select('id')
+            .eq('user_id', userId);
+        final sessIds = (sessRes as List).map((e) => e['id'] as String).toList();
+        if (sessIds.isEmpty) return [];
 
-    final setsRes = await _client
-        .from('sets')
-        .select('workout_exercise_id')
-        .inFilter('training_session_id', sessIds)
-        .eq('completed', true)
-        .not('weight', 'is', null)
-        .not('workout_exercise_id', 'is', null);
+        final setsRes = await _client
+            .from('sets')
+            .select('workout_exercise_id')
+            .inFilter('training_session_id', sessIds)
+            .eq('completed', true)
+            .not('weight', 'is', null)
+            .not('workout_exercise_id', 'is', null);
 
-    final weIds = (setsRes as List)
-        .map((e) => e['workout_exercise_id'] as String?)
-        .whereType<String>()
-        .toSet()
-        .toList();
-    if (weIds.isEmpty) return [];
+        final weIds = (setsRes as List)
+            .map((e) => e['workout_exercise_id'] as String?)
+            .whereType<String>()
+            .toSet()
+            .toList();
+        if (weIds.isEmpty) return [];
 
-    final weRes = await _client
-        .from('workout_exercises')
-        .select('exercise_id, exercises(id, name)')
-        .inFilter('id', weIds);
+        final weRes = await _client
+            .from('workout_exercises')
+            .select('exercise_id, exercises(id, name)')
+            .inFilter('id', weIds);
 
-    final seen = <String>{};
-    final result = <Map<String, dynamic>>[];
-    for (final we in weRes as List) {
-      final ex = we['exercises'] as Map<String, dynamic>?;
-      if (ex != null) {
-        final id = ex['id'] as String;
-        if (seen.add(id)) {
-          result.add({'id': id, 'name': ex['name'] as String});
+        final seen = <String>{};
+        final result = <Map<String, dynamic>>[];
+        for (final we in weRes as List) {
+          final ex = we['exercises'] as Map<String, dynamic>?;
+          if (ex != null) {
+            final id = ex['id'] as String;
+            if (seen.add(id)) {
+              result.add({'id': id, 'name': ex['name'] as String});
+            }
+          }
         }
-      }
-    }
-    result.sort((a, b) =>
-        (a['name'] as String).compareTo(b['name'] as String));
-    return result;
+        result.sort((a, b) =>
+            (a['name'] as String).compareTo(b['name'] as String));
+        return result;
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
   }
 
   /// Returns the most recent completed weighted set for each exercise in the list.
@@ -736,61 +747,77 @@ class AnalyticsService {
       return (volumeThisWeek: 0.0, volumeLastWeek: 0.0, sessionsThisWeek: 0, sessionsLastWeek: 0);
     }
 
-    final now = DateTime.now();
-    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
-    final lastMonday = thisMonday.subtract(const Duration(days: 7));
-    final thisMondayStr = thisMonday.toIso8601String().split('T')[0];
-    final lastMondayStr = lastMonday.toIso8601String().split('T')[0];
+    final record = await AppCache.get<Map<String, dynamic>>(
+      key: 'week_comparison:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () async {
+        final now = DateTime.now();
+        final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+        final lastMonday = thisMonday.subtract(const Duration(days: 7));
+        final thisMondayStr = thisMonday.toIso8601String().split('T')[0];
+        final lastMondayStr = lastMonday.toIso8601String().split('T')[0];
 
-    // Fetch both weeks' sessions in one query
-    final sessionsRes = await _client
-        .from('training_sessions')
-        .select('id, date')
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .gte('date', lastMondayStr);
+        final sessionsRes = await _client
+            .from('training_sessions')
+            .select('id, date')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .gte('date', lastMondayStr);
 
-    final sessions = (sessionsRes as List).cast<Map<String, dynamic>>();
-    final thisWeekIds = <String>[];
-    final lastWeekIds = <String>[];
-    for (final s in sessions) {
-      final date = s['date'] as String;
-      if (date.compareTo(thisMondayStr) >= 0) {
-        thisWeekIds.add(s['id'] as String);
-      } else {
-        lastWeekIds.add(s['id'] as String);
-      }
-    }
-
-    final allIds = [...thisWeekIds, ...lastWeekIds];
-    double volumeThis = 0;
-    double volumeLast = 0;
-
-    if (allIds.isNotEmpty) {
-      final setsRes = await _client
-          .from('sets')
-          .select('training_session_id, weight, reps')
-          .inFilter('training_session_id', allIds)
-          .eq('completed', true)
-          .eq('is_warmup', false);
-
-      for (final s in setsRes as List) {
-        final sid = s['training_session_id'] as String;
-        final w = (s['weight'] as num?)?.toDouble() ?? 0;
-        final r = (s['reps'] as num?)?.toInt() ?? 0;
-        if (thisWeekIds.contains(sid)) {
-          volumeThis += w * r;
-        } else {
-          volumeLast += w * r;
+        final sessions = (sessionsRes as List).cast<Map<String, dynamic>>();
+        final thisWeekIds = <String>[];
+        final lastWeekIds = <String>[];
+        for (final s in sessions) {
+          final date = s['date'] as String;
+          if (date.compareTo(thisMondayStr) >= 0) {
+            thisWeekIds.add(s['id'] as String);
+          } else {
+            lastWeekIds.add(s['id'] as String);
+          }
         }
-      }
-    }
+
+        final allIds = [...thisWeekIds, ...lastWeekIds];
+        double volumeThis = 0;
+        double volumeLast = 0;
+
+        if (allIds.isNotEmpty) {
+          final setsRes = await _client
+              .from('sets')
+              .select('training_session_id, weight, reps')
+              .inFilter('training_session_id', allIds)
+              .eq('completed', true)
+              .eq('is_warmup', false);
+
+          for (final s in setsRes as List) {
+            final sid = s['training_session_id'] as String;
+            final w = (s['weight'] as num?)?.toDouble() ?? 0;
+            final r = (s['reps'] as num?)?.toInt() ?? 0;
+            if (thisWeekIds.contains(sid)) {
+              volumeThis += w * r;
+            } else {
+              volumeLast += w * r;
+            }
+          }
+        }
+
+        return {
+          'volumeThisWeek': volumeThis,
+          'volumeLastWeek': volumeLast,
+          'sessionsThisWeek': thisWeekIds.length,
+          'sessionsLastWeek': lastWeekIds.length,
+        };
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {'volumeThisWeek': 0.0, 'volumeLastWeek': 0.0, 'sessionsThisWeek': 0, 'sessionsLastWeek': 0}
+          : (jsonDecode(s) as Map<String, dynamic>),
+    );
 
     return (
-      volumeThisWeek: volumeThis,
-      volumeLastWeek: volumeLast,
-      sessionsThisWeek: thisWeekIds.length,
-      sessionsLastWeek: lastWeekIds.length,
+      volumeThisWeek: (record['volumeThisWeek'] as num).toDouble(),
+      volumeLastWeek: (record['volumeLastWeek'] as num).toDouble(),
+      sessionsThisWeek: (record['sessionsThisWeek'] as num).toInt(),
+      sessionsLastWeek: (record['sessionsLastWeek'] as num).toInt(),
     );
   }
 
@@ -801,6 +828,20 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
 
+    return AppCache.get<Map<String, double>>(
+      key: 'muscle_freq:$userId',
+      ttl: const Duration(minutes: 10),
+      fetch: () => _fetchMuscleGroupFrequency(userId, weeks),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {}
+          : (jsonDecode(s) as Map<String, dynamic>).map(
+              (k, v) => MapEntry(k, (v as num).toDouble())),
+    );
+  }
+
+  static Future<Map<String, double>> _fetchMuscleGroupFrequency(
+      String userId, int weeks) async {
     final now = DateTime.now();
     final startDate = now.subtract(Duration(days: 7 * weeks));
     final startStr = startDate.toIso8601String().split('T')[0];
@@ -950,6 +991,19 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'weekly_volume:$userId',
+      ttl: const Duration(minutes: 10),
+      fetch: () => _fetchWeeklyVolumeHistory(userId, weeks),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchWeeklyVolumeHistory(
+      String userId, int weeks) async {
     final now = DateTime.now();
     // Snap to start of current week (Monday)
     final thisMonday =
@@ -1019,6 +1073,20 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
 
+    return AppCache.get<Map<String, int>>(
+      key: 'muscle_balance:$userId',
+      ttl: const Duration(minutes: 10),
+      fetch: () => _fetchMuscleGroupBalance(userId, days),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {}
+          : (jsonDecode(s) as Map<String, dynamic>).map(
+              (k, v) => MapEntry(k, (v as num).toInt())),
+    );
+  }
+
+  static Future<Map<String, int>> _fetchMuscleGroupBalance(
+      String userId, int days) async {
     final startStr = DateTime.now()
         .subtract(Duration(days: days))
         .toIso8601String()
@@ -1158,19 +1226,29 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
-    final res = await _client
-        .from('training_sessions')
-        .select('date, kcal_total')
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .not('kcal_total', 'is', null)
-        .order('date', ascending: false)
-        .limit(limit);
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'calories_sessions:$userId',
+      ttl: const Duration(minutes: 10),
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select('date, kcal_total')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .not('kcal_total', 'is', null)
+            .order('date', ascending: false)
+            .limit(limit);
 
-    return (res as List)
-        .cast<Map<String, dynamic>>()
-        .reversed
-        .toList();
+        return (res as List)
+            .cast<Map<String, dynamic>>()
+            .reversed
+            .toList();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
   }
 
   /// Community average max weight for an exercise over the last 7 days (across all users).
@@ -1194,13 +1272,21 @@ class AnalyticsService {
   /// Returns null if no data or RPC unavailable.
   static Future<double?> getCommunityAvgWeeklyVolume() async {
     if (AuthService.currentUser == null) return null;
-    try {
-      final res = await _client.rpc('get_community_avg_weekly_volume');
-      if (res == null) return null;
-      return (res as num).toDouble();
-    } catch (e) {
-      return null;
-    }
+    return AppCache.get<double?>(
+      key: 'community_avg_vol',
+      ttl: const Duration(minutes: 30),
+      fetch: () async {
+        try {
+          final res = await _client.rpc('get_community_avg_weekly_volume');
+          if (res == null) return null;
+          return (res as num).toDouble();
+        } catch (e) {
+          return null;
+        }
+      },
+      encode: (v) => v == null ? null : '$v',
+      decode: (s) => s == null ? null : double.tryParse(s),
+    );
   }
 
   /// Returns kcal burned per session for a specific exercise.
@@ -1260,6 +1346,20 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
 
+    final rawMap = await AppCache.get<Map<String, dynamic>>(
+      key: 'workout_heatmap:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () => _fetchWorkoutHeatmap(userId, weeks),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null ? {} : (jsonDecode(s) as Map<String, dynamic>),
+    );
+
+    return rawMap.map((k, v) =>
+        MapEntry(DateTime.parse(k), (v as num).toDouble()));
+  }
+
+  static Future<Map<String, dynamic>> _fetchWorkoutHeatmap(
+      String userId, int weeks) async {
     final now = DateTime.now();
     final from = now.subtract(Duration(days: weeks * 7));
     final fromStr = '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
@@ -1291,12 +1391,13 @@ class AnalyticsService {
       volumeBySession[sid] = (volumeBySession[sid] ?? 0) + w * r;
     }
 
-    final result = <DateTime, double>{};
+    final result = <String, dynamic>{};
     for (final row in res) {
       final date = DateTime.parse(row['date'] as String);
       final norm = DateTime(date.year, date.month, date.day);
+      final key = norm.toIso8601String().split('T')[0];
       final vol = volumeBySession[row['id'] as String] ?? 1.0;
-      result[norm] = (result[norm] ?? 0) + vol;
+      result[key] = (result[key] as double? ?? 0.0) + vol;
     }
     return result;
   }

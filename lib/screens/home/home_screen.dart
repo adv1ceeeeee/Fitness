@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -12,6 +13,8 @@ import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/screens/onboarding/onboarding_overlay.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/app_cache.dart';
+import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
@@ -259,7 +262,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Load local prefs first — independent of network, must never be lost.
     await _loadGoalPrefs();
     if (!mounted) return;
+    // Phase 1: show cached data immediately (no skeleton if cache exists)
+    await _loadCached();
+    // Phase 2: refresh from network silently in background
+    _refreshFresh();
+  }
 
+  Future<void> _loadCached() async {
+    if (!mounted) return;
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+
+    final results = await Future.wait([
+      AppCache.peek<int>(
+        key: 'workouts_week:$userId',
+        decode: (s) => int.tryParse(s) ?? 0,
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'body_metrics:$userId',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+    ]);
+
+    final cachedWorkoutsThisWeek = results[0] as int?;
+    final cachedBodyMetrics = results[1] as List<Map<String, dynamic>>?;
+
+    if (cachedWorkoutsThisWeek == null && cachedBodyMetrics == null) return;
+    if (!mounted) return;
+
+    setState(() {
+      if (cachedWorkoutsThisWeek != null) {
+        _workoutsThisWeek = cachedWorkoutsThisWeek;
+      }
+      if (cachedBodyMetrics != null) {
+        _bodyMetricsHistory = cachedBodyMetrics;
+        if (cachedBodyMetrics.isEmpty) {
+          _showMeasurementReminder = true;
+        } else {
+          final lastDateStr = cachedBodyMetrics.last['date'] as String?;
+          if (lastDateStr != null) {
+            final lastDate = DateTime.tryParse(lastDateStr);
+            if (lastDate != null &&
+                DateTime.now().difference(lastDate).inDays > 28) {
+              _showMeasurementReminder = true;
+            }
+          }
+        }
+      }
+      _loadingWorkout = false;
+    });
+  }
+
+  Future<void> _refreshFresh() async {
+    if (!mounted) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final weeklyGoal = prefs.getInt('weekly_workout_goal') ?? 0;
@@ -302,6 +357,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // Load planned time for today's session (for countdown)
       final plannedTime = await TrainingService.getTodayPlannedTime();
 
+      if (!mounted) return;
       setState(() {
         _profile = results[0] as Profile?;
         _todayWorkout = results[1] as Workout?;

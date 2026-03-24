@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -11,6 +12,8 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/app_cache.dart';
+import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
@@ -108,7 +111,117 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   Future<void> _load() async {
     if (!mounted) return;
-    setState(() => _loading = true);
+    // Phase 1: load from cache (fast — no skeleton if cache exists)
+    await _loadCached();
+    // Phase 2: refresh from network in background (silent update)
+    _refreshFresh();
+  }
+
+  Future<void> _loadCached() async {
+    if (!mounted) return;
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+
+    // Peek all keys in parallel
+    final results = await Future.wait([
+      AppCache.peek<int>(
+        key: 'total_workouts:$userId',
+        decode: (s) => int.tryParse(s) ?? 0,
+      ),
+      AppCache.peek<int>(
+        key: 'best_streak:$userId',
+        decode: (s) => int.tryParse(s) ?? 0,
+      ),
+      AppCache.peek<int>(
+        key: 'workouts_week:$userId',
+        decode: (s) => int.tryParse(s) ?? 0,
+      ),
+      AppCache.peek<double>(
+        key: 'volume_week:$userId',
+        decode: (s) => double.tryParse(s) ?? 0.0,
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'tracked_exercises:$userId',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'body_metrics:$userId',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'weekly_volume:$userId',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+      AppCache.peek<Map<String, dynamic>>(
+        key: 'muscle_balance:$userId',
+        decode: (s) => jsonDecode(s) as Map<String, dynamic>,
+      ),
+      AppCache.peek<Map<String, dynamic>>(
+        key: 'muscle_freq:$userId',
+        decode: (s) => jsonDecode(s) as Map<String, dynamic>,
+      ),
+      AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'calories_sessions:$userId',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      ),
+      AppCache.peek<double>(
+        key: 'community_avg_vol',
+        decode: (s) => double.tryParse(s) ?? 0.0,
+      ),
+      AppCache.peek<Map<String, dynamic>>(
+        key: 'week_comparison:$userId',
+        decode: (s) => jsonDecode(s) as Map<String, dynamic>,
+      ),
+      AppCache.peek<Map<String, dynamic>>(
+        key: 'workout_heatmap:$userId',
+        decode: (s) => jsonDecode(s) as Map<String, dynamic>,
+      ),
+    ]);
+
+    // Check if ANY value was found in cache
+    final anyFound = results.any((r) => r != null);
+    if (!anyFound || !mounted) return;
+
+    final muscleBalanceRaw = results[7] as Map<String, dynamic>?;
+    final muscleFreqRaw = results[8] as Map<String, dynamic>?;
+    final weekCmpRaw = results[11] as Map<String, dynamic>?;
+    final heatmapRaw = results[12] as Map<String, dynamic>?;
+
+    setState(() {
+      _totalWorkouts = (results[0] as int?) ?? _totalWorkouts;
+      _bestStreak = (results[1] as int?) ?? _bestStreak;
+      _workoutsThisWeek = (results[2] as int?) ?? _workoutsThisWeek;
+      _volumeThisWeek = (results[3] as double?) ?? _volumeThisWeek;
+      _trackedExercises = (results[4] as List<Map<String, dynamic>>?) ?? _trackedExercises;
+      _bodyHistory = (results[5] as List<Map<String, dynamic>>?) ?? _bodyHistory;
+      _weeklyVolume = (results[6] as List<Map<String, dynamic>>?) ?? _weeklyVolume;
+      if (muscleBalanceRaw != null) {
+        _muscleBalance = muscleBalanceRaw.map((k, v) => MapEntry(k, (v as num).toInt()));
+      }
+      if (muscleFreqRaw != null) {
+        _muscleFrequency = muscleFreqRaw.map((k, v) => MapEntry(k, (v as num).toDouble()));
+      }
+      _caloriesPerSession = (results[9] as List<Map<String, dynamic>>?) ?? _caloriesPerSession;
+      _communityAvgWeeklyVolume = (results[10] as double?) ?? _communityAvgWeeklyVolume;
+      if (weekCmpRaw != null) {
+        _weekComparison = (
+          volumeThisWeek: (weekCmpRaw['volumeThisWeek'] as num).toDouble(),
+          volumeLastWeek: (weekCmpRaw['volumeLastWeek'] as num).toDouble(),
+          sessionsThisWeek: (weekCmpRaw['sessionsThisWeek'] as num).toInt(),
+          sessionsLastWeek: (weekCmpRaw['sessionsLastWeek'] as num).toInt(),
+        );
+      }
+      if (heatmapRaw != null) {
+        _heatmapData = heatmapRaw.map(
+          (k, v) => MapEntry(DateTime.parse(k), (v as num).toDouble()),
+        );
+      }
+      _loading = false;
+    });
+  }
+
+  Future<void> _refreshFresh() async {
+    if (!mounted) return;
     try {
       await Future(() async {
         final profile = await ProfileService.getProfile();
@@ -1893,6 +2006,55 @@ class _ProgressChart extends StatelessWidget {
 
   const _ProgressChart({required this.data, this.communityAvg});
 
+  /// Hodrick-Prescott filter: returns smoothed trend τ for a series y.
+  /// Solves (I + λ·D₂'D₂)·τ = y via Gaussian elimination.
+  /// λ=100 works well for irregularly logged body metrics.
+  static List<double> _hpFilter(List<double> y, {double lambda = 100}) {
+    final n = y.length;
+    if (n < 3) return List.of(y);
+
+    // Build full n×n matrix A = I + λ·D₂'D₂
+    final a = List.generate(n, (_) => List<double>.filled(n, 0.0));
+    for (int i = 0; i < n; i++) a[i][i] = 1.0;
+    for (int k = 0; k < n - 2; k++) {
+      const idx = [0, 1, 2];
+      const coeff = [1.0, -2.0, 1.0];
+      for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) {
+          a[k + idx[r]][k + idx[c]] += lambda * coeff[r] * coeff[c];
+        }
+      }
+    }
+
+    // Gaussian elimination with partial pivoting
+    final b = List<double>.of(y);
+    for (int col = 0; col < n; col++) {
+      int maxRow = col;
+      for (int row = col + 1; row < n; row++) {
+        if (a[row][col].abs() > a[maxRow][col].abs()) maxRow = row;
+      }
+      final tmpRow = a[col]; a[col] = a[maxRow]; a[maxRow] = tmpRow;
+      final tmpB = b[col]; b[col] = b[maxRow]; b[maxRow] = tmpB;
+      if (a[col][col].abs() < 1e-12) continue;
+      for (int row = col + 1; row < n; row++) {
+        final f = a[row][col] / a[col][col];
+        b[row] -= f * b[col];
+        for (int c = col; c < n; c++) {
+          a[row][c] -= f * a[col][c];
+        }
+      }
+    }
+
+    // Back substitution
+    final tau = List<double>.filled(n, 0.0);
+    for (int i = n - 1; i >= 0; i--) {
+      tau[i] = b[i];
+      for (int j = i + 1; j < n; j++) tau[i] -= a[i][j] * tau[j];
+      tau[i] /= a[i][i];
+    }
+    return tau;
+  }
+
   @override
   Widget build(BuildContext context) {
     final sorted = data.entries.toList()
@@ -1910,6 +2072,14 @@ class _ProgressChart extends StatelessWidget {
             FlSpot((sorted.length - 1).toDouble(), communityAvg!),
           ];
 
+    // HP trend line (needs ≥3 points to be meaningful)
+    final hpSpots = sorted.length >= 3
+        ? () {
+            final tau = _hpFilter(sorted.map((e) => e.value).toList());
+            return List.generate(tau.length, (i) => FlSpot(i.toDouble(), tau[i]));
+          }()
+        : <FlSpot>[];
+
     final dataMin = sorted.map((e) => e.value).reduce((a, b) => a < b ? a : b);
     final dataMax = sorted.map((e) => e.value).reduce((a, b) => a > b ? a : b);
     final allValues = [dataMin, dataMax, if (communityAvg != null) communityAvg!];
@@ -1917,102 +2087,165 @@ class _ProgressChart extends StatelessWidget {
     final maxY = allValues.reduce((a, b) => a > b ? a : b);
     final yPad = maxY == minY ? 5.0 : (maxY - minY) * 0.2;
 
-    return Container(
-      height: 200,
-      padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: LineChart(
-        LineChartData(
-          minY: minY - yPad,
-          maxY: maxY + yPad,
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) => const FlLine(
-              color: Color(0xFF2C2C2E),
-              strokeWidth: 1,
-            ),
+    const hpColor = Color(0xFFFFA040);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 200,
+          padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(16),
           ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 40,
-                getTitlesWidget: (value, meta) => Text(
-                  value.toStringAsFixed(0),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
+          child: LineChart(
+            LineChartData(
+              minY: minY - yPad,
+              maxY: maxY + yPad,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (_) => const FlLine(
+                  color: Color(0xFF2C2C2E),
+                  strokeWidth: 1,
                 ),
               ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 28,
-                interval: sorted.length <= 6 ? 1 : (sorted.length / 4).ceilToDouble(),
-                getTitlesWidget: (value, meta) {
-                  final idx = value.toInt();
-                  if (idx < 0 || idx >= sorted.length) return const SizedBox.shrink();
-                  final parts = sorted[idx].key.split('-');
-                  final label = parts.length >= 3 ? '${parts[2]}.${parts[1]}' : sorted[idx].key;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      label,
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 40,
+                    getTitlesWidget: (value, meta) => Text(
+                      value.toStringAsFixed(0),
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.textSecondary,
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          lineBarsData: [
-            if (communitySpots.length >= 2)
-              LineChartBarData(
-                spots: communitySpots,
-                isCurved: false,
-                color: Colors.white.withValues(alpha: 0.28),
-                barWidth: 1.5,
-                dotData: const FlDotData(show: false),
-                belowBarData: BarAreaData(
-                  show: true,
-                  color: Colors.white.withValues(alpha: 0.05),
+                  ),
                 ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    interval: sorted.length <= 6 ? 1 : (sorted.length / 4).ceilToDouble(),
+                    getTitlesWidget: (value, meta) {
+                      final idx = value.toInt();
+                      if (idx < 0 || idx >= sorted.length) return const SizedBox.shrink();
+                      final parts = sorted[idx].key.split('-');
+                      final label = parts.length >= 3 ? '${parts[2]}.${parts[1]}' : sorted[idx].key;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
               ),
-            LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              color: AppColors.accent,
-              barWidth: 2.5,
-              dotData: FlDotData(
-                show: true,
-                getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
-                  radius: 4,
+              lineBarsData: [
+                if (communitySpots.length >= 2)
+                  LineChartBarData(
+                    spots: communitySpots,
+                    isCurved: false,
+                    color: Colors.white.withValues(alpha: 0.28),
+                    barWidth: 1.5,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  ),
+                LineChartBarData(
+                  spots: spots,
+                  isCurved: true,
                   color: AppColors.accent,
-                  strokeWidth: 0,
+                  barWidth: 2.5,
+                  dotData: FlDotData(
+                    show: true,
+                    getDotPainter: (spot, _, __, ___) => FlDotCirclePainter(
+                      radius: 4,
+                      color: AppColors.accent,
+                      strokeWidth: 0,
+                    ),
+                  ),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    color: AppColors.accent.withValues(alpha: 0.15),
+                  ),
                 ),
-              ),
-              belowBarData: BarAreaData(
-                show: true,
-                color: AppColors.accent.withValues(alpha: 0.15),
-              ),
+                if (hpSpots.length >= 3)
+                  LineChartBarData(
+                    spots: hpSpots,
+                    isCurved: true,
+                    color: hpColor,
+                    barWidth: 2,
+                    dotData: const FlDotData(show: false),
+                    dashArray: [6, 4],
+                    belowBarData: BarAreaData(show: false),
+                  ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        if (hpSpots.length >= 3) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(width: 18, height: 2, color: AppColors.accent),
+              const SizedBox(width: 6),
+              const Text('Факт', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              const SizedBox(width: 16),
+              _DashedLine(color: hpColor),
+              const SizedBox(width: 6),
+              const Text('Тренд (HP)', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            ],
+          ),
+        ],
+      ],
     );
   }
+}
+
+class _DashedLine extends StatelessWidget {
+  final Color color;
+  const _DashedLine({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 18,
+      height: 2,
+      child: CustomPaint(painter: _DashedPainter(color)),
+    );
+  }
+}
+
+class _DashedPainter extends CustomPainter {
+  final Color color;
+  _DashedPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..strokeWidth = 2;
+    double x = 0;
+    while (x < size.width) {
+      canvas.drawLine(Offset(x, size.height / 2), Offset((x + 4).clamp(0, size.width), size.height / 2), paint);
+      x += 8;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedPainter old) => old.color != color;
 }
 
 class _CaloriesChart extends StatelessWidget {

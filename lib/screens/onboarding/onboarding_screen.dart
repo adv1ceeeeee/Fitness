@@ -24,6 +24,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String? _gender;
   final _ageController = TextEditingController();
   final _weightController = TextEditingController();
+  final _heightController = TextEditingController();
   String? _goal;
   DateTime _trainingStart = DateTime(DateTime.now().year - 1, DateTime.now().month);
   bool _loading = false;
@@ -33,6 +34,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _pageController.dispose();
     _ageController.dispose();
     _weightController.dispose();
+    _heightController.dispose();
     super.dispose();
   }
 
@@ -101,6 +103,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (birthDate != null) 'birth_date': birthDate,
       if (weightText.isNotEmpty && double.tryParse(weightText) != null)
         'weight': double.parse(weightText),
+      if (_heightController.text.trim().isNotEmpty &&
+          double.tryParse(_heightController.text.trim()) != null)
+        'height_cm': double.parse(_heightController.text.trim()),
       'goal': _goal,
       'level': level,
       'training_start_date': startDateStr,
@@ -239,6 +244,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     onGenderChanged: (v) => setState(() => _gender = v),
                     ageController: _ageController,
                     weightController: _weightController,
+                    heightController: _heightController,
                   ),
                   _Page2(
                     goal: _goal,
@@ -313,12 +319,14 @@ class _Page1 extends StatelessWidget {
   final ValueChanged<String?> onGenderChanged;
   final TextEditingController ageController;
   final TextEditingController weightController;
+  final TextEditingController heightController;
 
   const _Page1({
     required this.gender,
     required this.onGenderChanged,
     required this.ageController,
     required this.weightController,
+    required this.heightController,
   });
 
   @override
@@ -329,7 +337,7 @@ class _Page1 extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Твой пол, возраст, вес',
+            'Твой пол, возраст, вес и рост',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
@@ -374,9 +382,15 @@ class _Page1 extends StatelessWidget {
           TextField(
             controller: weightController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              hintText: '75',
-            ),
+            decoration: const InputDecoration(hintText: '75'),
+          ),
+          const SizedBox(height: 24),
+          const Text('Рост (см)', style: TextStyle(color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: heightController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(hintText: '175'),
           ),
         ],
       ),

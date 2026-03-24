@@ -8,6 +8,7 @@ class Profile {
   final String? nickname;
   final String? gender;
   final double? weight;
+  final double? heightCm;
   final String? goal;
   final String? level;
   final String? avatarUrl;
@@ -27,6 +28,7 @@ class Profile {
     this.nickname,
     this.gender,
     this.weight,
+    this.heightCm,
     this.goal,
     this.level,
     this.avatarUrl,
@@ -62,6 +64,7 @@ class Profile {
       nickname: json['nickname'] as String?,
       gender: json['gender'] as String?,
       weight: (json['weight'] as num?)?.toDouble(),
+      heightCm: (json['height_cm'] as num?)?.toDouble(),
       goal: json['goal'] as String?,
       level: json['level'] as String?,
       avatarUrl: json['avatar_url'] as String?,
@@ -83,6 +86,7 @@ class Profile {
         'nickname': nickname,
         'gender': gender,
         'weight': weight,
+        'height_cm': heightCm,
         'goal': goal,
         'level': level,
         'avatar_url': avatarUrl,
@@ -102,6 +106,7 @@ class Profile {
     String? nickname,
     String? gender,
     double? weight,
+    double? heightCm,
     String? goal,
     String? level,
     String? avatarUrl,
@@ -119,6 +124,7 @@ class Profile {
       nickname: nickname ?? this.nickname,
       gender: gender ?? this.gender,
       weight: weight ?? this.weight,
+      heightCm: heightCm ?? this.heightCm,
       goal: goal ?? this.goal,
       level: level ?? this.level,
       avatarUrl: avatarUrl ?? this.avatarUrl,

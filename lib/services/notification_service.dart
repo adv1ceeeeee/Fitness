@@ -91,6 +91,7 @@ class NotificationService {
 
   /// Returns true if permission was granted (or already granted).
   static Future<bool> requestPermission() async {
+    if (!_isSupportedPlatform) return true; // desktop: no permission needed
     if (!_initialized) return false;
     final android = _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();

@@ -41,6 +41,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _notifMinutesBefore = 30;
   int _weeklyWorkoutGoal = 0; // 0 = not set
   bool _deloadActive = false;
+  DateTime? _deloadWeekStart; // null = current week
   bool _weighInEnabled = false;
   Set<int> _weighInWeekdays = {0}; // 0=Пн…6=Вс, multi-select
   int _weighInHour = 9;
@@ -78,6 +79,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       setState(() {
         _weeklyWorkoutGoal = prefs.getInt('weekly_workout_goal') ?? 0;
         _deloadActive = prefs.getBool('deload_active') ?? false;
+        final deloadTs = prefs.getInt('deload_week_start');
+        _deloadWeekStart = deloadTs != null
+            ? DateTime.fromMillisecondsSinceEpoch(deloadTs)
+            : null;
         _weighInEnabled = prefs.getBool('weigh_in_notif_enabled') ?? false;
         _weeklySummaryEnabled = AppStorage.weeklySummaryEnabled;
         // Migrate: old single-day key → new list key
@@ -104,10 +109,63 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) setState(() => _weeklyWorkoutGoal = goal);
   }
 
+  static DateTime _weekMonday([DateTime? from]) {
+    final d = from ?? DateTime.now();
+    return DateTime(d.year, d.month, d.day)
+        .subtract(Duration(days: d.weekday - 1));
+  }
+
+  String _deloadWeekLabel() {
+    final mon = _deloadWeekStart ?? _weekMonday();
+    final sun = mon.add(const Duration(days: 6));
+    const months = ['янв','фев','мар','апр','май','июн',
+                    'июл','авг','сен','окт','ноя','дек'];
+    if (mon.month == sun.month) {
+      return '${mon.day}–${sun.day} ${months[mon.month - 1]}';
+    }
+    return '${mon.day} ${months[mon.month - 1]} – ${sun.day} ${months[sun.month - 1]}';
+  }
+
+  Future<void> _pickDeloadWeek() async {
+    final initial = _deloadWeekStart ?? _weekMonday();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 28)),
+      lastDate: DateTime.now().add(const Duration(days: 28)),
+      helpText: 'Выберите любой день недели',
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: AppColors.accent,
+            surface: AppColors.card,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final mon = _weekMonday(picked);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('deload_week_start', mon.millisecondsSinceEpoch);
+    setState(() => _deloadWeekStart = mon);
+  }
+
   Future<void> _toggleDeload(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('deload_active', value);
-    if (mounted) setState(() => _deloadActive = value);
+    if (value && _deloadWeekStart == null) {
+      final mon = _weekMonday();
+      await prefs.setInt('deload_week_start', mon.millisecondsSinceEpoch);
+      if (mounted) setState(() { _deloadActive = value; _deloadWeekStart = mon; });
+    } else {
+      if (!value) {
+        await prefs.remove('deload_week_start');
+        if (mounted) setState(() { _deloadActive = value; _deloadWeekStart = null; });
+      } else {
+        if (mounted) setState(() => _deloadActive = value);
+      }
+    }
     EventLogger.deloadToggled(enabled: value);
   }
 
@@ -667,13 +725,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                     ),
                   ),
-                  _SettingsRow(
-                    label: 'Деload-неделя (−40% веса)',
-                    last: true,
-                    trailing: Switch(
-                      value: _deloadActive,
-                      onChanged: _toggleDeload,
-                    ),
+                  // Deload row with week selector
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: SizedBox(
+                          height: 56,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Деload-неделя (−40% веса)',
+                                        style: TextStyle(color: AppColors.textPrimary)),
+                                    if (_deloadActive)
+                                      GestureDetector(
+                                        onTap: _pickDeloadWeek,
+                                        child: Text(
+                                          'Неделя: ${_deloadWeekLabel()} · изменить',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.accent,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Switch(
+                                value: _deloadActive,
+                                onChanged: _toggleDeload,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

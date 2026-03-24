@@ -80,7 +80,11 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   List<Exercise> get _filteredFlat {
     var list = _favoritesOnly ? _allExercises.where((e) => e.isFavorite).toList() : _allExercises;
     if (_searchQuery.isNotEmpty) {
-      list = list.where((e) => e.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+      final q = _searchQuery.toLowerCase();
+      list = list.where((e) =>
+        e.name.toLowerCase().contains(q) ||
+        (e.nameRu?.toLowerCase().contains(q) ?? false)
+      ).toList();
     }
     return list;
   }
@@ -500,39 +504,30 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     ),
                   ),
                   if (gifUrl != null || (description != null && description.isNotEmpty)) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (gifUrl != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: CachedNetworkImage(
-                              imageUrl: gifUrl,
-                              height: 112,
-                              width: 112,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => const SizedBox(width: 112, height: 112),
-                              errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                            ),
-                          ),
-                        if (gifUrl != null && description != null && description.isNotEmpty)
-                          const SizedBox(width: 12),
-                        if (description != null && description.isNotEmpty)
-                          Expanded(
-                            child: Text(
-                              description,
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 13,
-                                height: 1.45,
-                              ),
-                              maxLines: 7,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                    ),
+                    const SizedBox(height: 16),
+                    if (gifUrl != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: gifUrl,
+                          width: double.infinity,
+                          height: 260,
+                          fit: BoxFit.contain,
+                          placeholder: (_, __) => const SizedBox(height: 260),
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    if (description != null && description.isNotEmpty) ...[
+                      if (gifUrl != null) const SizedBox(height: 12),
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
                   ],
                   const SizedBox(height: 20),
 
@@ -719,13 +714,22 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Center(
-                      child: Text(
-                        'Дважды нажмите для ручного ввода',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary.withValues(alpha: 0.6)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.touch_app_outlined,
+                              size: 13,
+                              color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Дважды нажмите на слайдер для ввода вручную',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -846,7 +850,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 onPressed: () => _showExerciseSettingsSheet(
                   title: ex.displayName,
                   gifUrl: ex.gifUrl,
-                  description: ex.descriptionRu,
+                  description: ex.descriptionRu ?? ex.description,
                   isCardio: ex.category == 'cardio',
                   initialSets: 3,
                   initialRepsRange: '8-12',
@@ -1123,7 +1127,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         onEdit: () => _showExerciseSettingsSheet(
                           title: we.exercise?.displayName ?? '?',
                           gifUrl: we.exercise?.gifUrl,
-                          description: we.exercise?.descriptionRu,
+                          description: we.exercise?.descriptionRu ?? we.exercise?.description,
                           isCardio: we.exercise?.category == 'cardio',
                           initialSets: we.sets,
                           initialRepsRange: we.repsRange,

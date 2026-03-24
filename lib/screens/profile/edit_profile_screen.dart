@@ -28,6 +28,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _cityCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
+  late final TextEditingController _heightCtrl;
 
   String? _gender;
   String? _avatarUrl;
@@ -48,6 +49,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _cityCtrl = TextEditingController(text: p.city ?? '');
     _emailCtrl = TextEditingController(text: p.email ?? '');
     _phoneCtrl = TextEditingController(text: p.phone ?? '');
+    _heightCtrl = TextEditingController(
+      text: p.heightCm != null ? p.heightCm!.toInt().toString() : '',
+    );
     _gender = p.gender;
     _avatarUrl = p.avatarUrl;
   }
@@ -62,6 +66,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _cityCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _heightCtrl.dispose();
     super.dispose();
   }
 
@@ -255,6 +260,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _cityCtrl.text.trim().isEmpty ? null : _cityCtrl.text.trim(),
         'phone':
             _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+        'height_cm': double.tryParse(_heightCtrl.text.trim()),
       };
 
       final newEmail = _emailCtrl.text.trim();
@@ -522,6 +528,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   icon: Icons.phone_outlined,
                   keyboard: TextInputType.phone,
                   hint: '+7 999 123-45-67',
+                ),
+                const SizedBox(height: 12),
+                _field(
+                  controller: _heightCtrl,
+                  label: 'Рост (см)',
+                  icon: Icons.height_rounded,
+                  keyboard: TextInputType.number,
+                  hint: '175',
                 ),
                 const SizedBox(height: 32),
 

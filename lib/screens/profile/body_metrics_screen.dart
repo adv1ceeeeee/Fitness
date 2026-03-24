@@ -5,6 +5,7 @@ import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/screens/profile/body_silhouette_widget.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/profile_service.dart';
 
 class BodyMetricsScreen extends ConsumerStatefulWidget {
   const BodyMetricsScreen({super.key});
@@ -15,6 +16,7 @@ class BodyMetricsScreen extends ConsumerStatefulWidget {
 
 class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
   List<Map<String, dynamic>> _history = [];
+  double? _profileHeight;
   bool _loading = true;
 
   @override
@@ -24,8 +26,17 @@ class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
   }
 
   Future<void> _load() async {
-    final h = await BodyMetricsService.getHistory();
-    if (mounted) setState(() { _history = h; _loading = false; });
+    final results = await Future.wait([
+      BodyMetricsService.getHistory(),
+      ProfileService.getProfile(),
+    ]);
+    if (mounted) {
+      setState(() {
+        _history = results[0] as List<Map<String, dynamic>>;
+        _profileHeight = (results[1] as dynamic)?.heightCm as double?;
+        _loading = false;
+      });
+    }
   }
 
   void _openLogSheet() {
@@ -115,20 +126,33 @@ class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  if (_profileHeight != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.card,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.height_rounded, size: 16, color: AppColors.textSecondary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Рост: ${_profileHeight!.toInt()} см',
+                            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                          ),
+                          const Spacer(),
+                          const Text('из профиля', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
                   if (_history.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: AppColors.card,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'Нет записей.\nНажмите + чтобы добавить первую.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
+                      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(16)),
+                      child: const Center(child: Text('Нет записей.\nНажмите + чтобы добавить первую.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary))),
                     )
                   else
                     ..._history.reversed.take(30).map((row) {
@@ -220,6 +244,7 @@ class _LogMetricsSheet extends ConsumerStatefulWidget {
 }
 
 class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
+  final _heightCtrl     = TextEditingController();
   final _weightCtrl     = TextEditingController();
   final _fatCtrl        = TextEditingController();
   final _neckCtrl       = TextEditingController();
@@ -240,6 +265,7 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
 
   @override
   void dispose() {
+    _heightCtrl.dispose();
     _weightCtrl.dispose();
     _fatCtrl.dispose();
     _neckCtrl.dispose();
@@ -292,6 +318,12 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
     final lThigh  = _parseCm(_leftThighCtrl, useCm);
     final rCalf   = _parseCm(_rightCalfCtrl, useCm);
     final lCalf   = _parseCm(_leftCalfCtrl, useCm);
+
+    final height = _parse(_heightCtrl);
+
+    if (height != null) {
+      await ProfileService.updateProfile({'height_cm': height});
+    }
 
     if ([weight, fat, neck, shoulders, chest, waist, hips,
          rArm, lArm, rForearm, lForearm, rThigh, lThigh, rCalf, lCalf]
@@ -376,6 +408,12 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
 
                   // ── Основные ──
                   const _SectionHeader('Основные'),
+                  _Field(
+                    ctrl: _heightCtrl,
+                    label: 'Рост',
+                    suffix: 'см',
+                    hint: '175',
+                  ),
                   _Field(
                     ctrl: _weightCtrl,
                     label: 'Вес',

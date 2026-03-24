@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class BodyMetricsService {
@@ -112,18 +114,28 @@ class BodyMetricsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
-    final fromStr = DateTime.now()
-        .subtract(const Duration(days: 90))
-        .toIso8601String()
-        .split('T')[0];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'body_metrics:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () async {
+        final fromStr = DateTime.now()
+            .subtract(const Duration(days: 90))
+            .toIso8601String()
+            .split('T')[0];
 
-    final res = await _client
-        .from('body_metrics')
-        .select()
-        .eq('user_id', userId)
-        .gte('date', fromStr)
-        .order('date', ascending: true);
+        final res = await _client
+            .from('body_metrics')
+            .select()
+            .eq('user_id', userId)
+            .gte('date', fromStr)
+            .order('date', ascending: true);
 
-    return (res as List).cast<Map<String, dynamic>>();
+        return (res as List).cast<Map<String, dynamic>>();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
   }
 }

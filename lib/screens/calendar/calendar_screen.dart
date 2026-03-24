@@ -1059,6 +1059,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
   // exerciseId → params
   final Map<String, _ExerciseParams> _selected = {};
   final Set<String> _expandedIds = {};
+  final Set<String> _expandedCategories = {};
   bool _loading = true;
   bool _saving = false;
   String _search = '';
@@ -1077,7 +1078,10 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
   List<Exercise> get _filtered {
     if (_search.isEmpty) return _exercises;
     final q = _search.toLowerCase();
-    return _exercises.where((e) => e.name.toLowerCase().contains(q)).toList();
+    return _exercises.where((e) =>
+      e.name.toLowerCase().contains(q) ||
+      (e.nameRu?.toLowerCase().contains(q) ?? false)
+    ).toList();
   }
 
   void _toggleExercise(String id) {
@@ -1215,41 +1219,70 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                           itemBuilder: (_, i) {
                             final cat = categories[i];
                             final items = byCategory[cat]!;
+                            final label = Exercise.categoryDisplayName(cat);
+                            final expanded = _expandedCategories.contains(cat);
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 8),
-                                  child: Text(
-                                    Exercise.categoryDisplayName(cat),
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.textSecondary,
-                                      letterSpacing: 0.5,
+                                InkWell(
+                                  onTap: () => setState(() {
+                                    if (expanded) {
+                                      _expandedCategories.remove(cat);
+                                    } else {
+                                      _expandedCategories.add(cat);
+                                    }
+                                  }),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          label,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.accent,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '${items.length}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary.withValues(alpha: 0.6),
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        Icon(
+                                          expanded ? Icons.expand_less : Icons.expand_more,
+                                          size: 18,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
-                                ...items.map((ex) {
-                                  final params = _selected[ex.id];
-                                  final isSelected = params != null;
-                                  final isExpanded = _expandedIds.contains(ex.id);
-                                  return _ExerciseItem(
-                                    exercise: ex,
-                                    isSelected: isSelected,
-                                    isExpanded: isExpanded,
-                                    params: params ?? _ExerciseParams(),
-                                    onTap: () => _toggleExercise(ex.id),
-                                    onExpandTap: isSelected
-                                        ? () => _toggleExpand(ex.id)
-                                        : null,
-                                    onParamsChanged: isSelected
-                                        ? (p) => setState(
-                                            () => _selected[ex.id] = p)
-                                        : null,
-                                  );
-                                }),
+                                if (expanded)
+                                  ...items.map((ex) {
+                                    final params = _selected[ex.id];
+                                    final isSelected = params != null;
+                                    final isExpanded = _expandedIds.contains(ex.id);
+                                    return _ExerciseItem(
+                                      exercise: ex,
+                                      isSelected: isSelected,
+                                      isExpanded: isExpanded,
+                                      params: params ?? _ExerciseParams(),
+                                      onTap: () => _toggleExercise(ex.id),
+                                      onExpandTap: isSelected
+                                          ? () => _toggleExpand(ex.id)
+                                          : null,
+                                      onParamsChanged: isSelected
+                                          ? (p) => setState(() => _selected[ex.id] = p)
+                                          : null,
+                                    );
+                                  }),
                               ],
                             );
                           },

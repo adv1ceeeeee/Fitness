@@ -69,6 +69,18 @@ class AppCache {
     return value;
   }
 
+  /// Returns cached value if exists (even stale), or null on cache miss.
+  /// Never triggers a network fetch.
+  static Future<T?> peek<T>({
+    required String key,
+    required T Function(String cached) decode,
+  }) async {
+    final prefs = await _p;
+    final cachedStr = prefs.getString('cache:$key');
+    if (cachedStr == null) return null;
+    return decode(cachedStr);
+  }
+
   /// Invalidate a cached key (forces fresh fetch on next [get] call).
   static Future<void> invalidate(String key) async {
     final prefs = await _p;

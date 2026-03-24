@@ -521,6 +521,12 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.of(context).padding.bottom + 100),
           buildDefaultDragHandles: false,
           onReorder: _onReorder,
+          proxyDecorator: (child, index, animation) => Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            clipBehavior: Clip.antiAlias,
+            child: child,
+          ),
           header: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -796,13 +802,16 @@ class _SwipeableCardState extends State<_SwipeableCard>
                   Positioned.fill(
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: _ActionPanel(
-                        width: _actionWidth,
-                        isHidden: widget.isHidden,
-                        onToggleHide: widget.onToggleHide,
-                        onDelete: widget.onDelete,
-                        onCopy: widget.onCopy,
-                        onArchive: widget.onArchive,
+                      child: Opacity(
+                        opacity: _anim.value.clamp(0.0, 1.0),
+                        child: _ActionPanel(
+                          width: _actionWidth,
+                          isHidden: widget.isHidden,
+                          onToggleHide: widget.onToggleHide,
+                          onDelete: widget.onDelete,
+                          onCopy: widget.onCopy,
+                          onArchive: widget.onArchive,
+                        ),
                       ),
                     ),
                   ),
