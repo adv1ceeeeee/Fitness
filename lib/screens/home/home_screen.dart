@@ -21,7 +21,6 @@ import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
-import 'package:sportwai/services/version_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/workout_service.dart';
@@ -137,9 +136,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _load();
     _showOnboardingOnce();
     _checkCrashRecovery();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) VersionService.checkAndPrompt(context);
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       if (await FeedbackService.shouldShowMicroSurvey()) {

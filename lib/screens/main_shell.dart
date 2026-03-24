@@ -12,6 +12,7 @@ import 'package:sportwai/providers/connectivity_provider.dart';
 import 'package:sportwai/screens/workout_session/free_workout_screen.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/training_service.dart';
+import 'package:sportwai/services/version_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
   final String location;
@@ -36,6 +37,9 @@ class _MainShellState extends ConsumerState<MainShell> {
   void initState() {
     super.initState();
     _syncIndex(widget.location);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) VersionService.checkAndPrompt(context);
+    });
   }
 
   @override
