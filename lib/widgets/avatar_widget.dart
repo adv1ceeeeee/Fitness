@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/avatar_config.dart';
 import 'package:sportwai/config/theme.dart';
@@ -36,14 +37,33 @@ class AvatarWidget extends StatelessWidget {
       );
     }
 
-    // Network image (custom photo)
+    // Network image (custom photo) — cached on disk
     if (url.startsWith('http')) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundImage: NetworkImage(url),
-        backgroundColor: AppColors.card,
-        onBackgroundImageError: (_, __) {},
-        child: null,
+      return CachedNetworkImage(
+        imageUrl: url,
+        imageBuilder: (_, image) => CircleAvatar(
+          radius: radius,
+          backgroundImage: image,
+          backgroundColor: AppColors.card,
+        ),
+        placeholder: (_, __) => CircleAvatar(
+          radius: radius,
+          backgroundColor: AppColors.surface,
+        ),
+        errorWidget: (_, __, ___) => CircleAvatar(
+          radius: radius,
+          backgroundColor: AppColors.accent.withValues(alpha: 0.3),
+          child: Text(
+            fallbackLetter?.isNotEmpty == true
+                ? fallbackLetter![0].toUpperCase()
+                : '?',
+            style: TextStyle(
+              fontSize: radius * 0.7,
+              color: AppColors.accent,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
       );
     }
 
