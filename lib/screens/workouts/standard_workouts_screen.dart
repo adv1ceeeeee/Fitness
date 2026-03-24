@@ -259,7 +259,12 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                           onPressed: () {
                             Navigator.pop(ctx);
                             if (isPremium) {
-                              _showPaymentModal(program);
+                              // Wait for the bottom-sheet pop animation to
+                              // finish before pushing a new full-screen route.
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted) return;
+                                _showPaymentModal(program);
+                              });
                             } else {
                               _useProgram(program);
                             }
