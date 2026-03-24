@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class OnboardingCheckScreen extends StatefulWidget {
@@ -26,6 +27,15 @@ class _OnboardingCheckScreenState extends State<OnboardingCheckScreen> {
         if (mounted) context.go('/');
         return;
       }
+
+      // Если флаг уже выставлен — онбординг уже был пройден
+      final prefs = await SharedPreferences.getInstance();
+      final done = prefs.getBool('onboarding_done') ?? false;
+      if (done) {
+        if (mounted) context.go('/home');
+        return;
+      }
+
       final profile = await Supabase.instance.client
           .from('profiles')
           .select('goal')
@@ -35,7 +45,9 @@ class _OnboardingCheckScreenState extends State<OnboardingCheckScreen> {
 
       if (!mounted) return;
       if (profile != null && profile['goal'] != null) {
-        context.go('/home');
+        // Профиль уже заполнен — выставляем флаг и идём домой
+        await prefs.setBool('onboarding_done', true);
+        if (mounted) context.go('/home');
       } else {
         context.go('/onboarding');
       }

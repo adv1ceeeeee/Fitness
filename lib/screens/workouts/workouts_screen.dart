@@ -31,11 +31,20 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _loadWorkouts();
+  }
+
+  void _onTabChanged() {
+    // Refresh when switching back to "Мои программы" tab
+    if (_tabController.index == 0 && !_tabController.indexIsChanging) {
+      _loadWorkouts();
+    }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -119,8 +128,16 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                     loading: _loading,
                     onRefresh: _loadWorkouts,
                     onDelete: (id) async {
-                      await WorkoutService.deleteWorkout(id);
-                      await _loadWorkouts();
+                      try {
+                        await WorkoutService.deleteWorkout(id);
+                        await _loadWorkouts();
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Ошибка удаления: $e')),
+                          );
+                        }
+                      }
                     },
                     onCreateTap: () async {
                       await context.push('/workouts/create');
@@ -129,7 +146,12 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                     onWorkoutTap: (w) =>
                         context.push('/workouts/${w.id}/exercises'),
                   ),
-                  const StandardWorkoutsTab(),
+                  StandardWorkoutsTab(
+                    onProgramAdded: () {
+                      _tabController.animateTo(0);
+                      _refreshWorkouts();
+                    },
+                  ),
                 ],
               ),
             ),
@@ -837,6 +859,79 @@ class _SwipeableCardState extends State<_SwipeableCard>
                           widget.onTap();
                         }
                       },
+                      onLongPress: () {
+                        if (widget.isOpen) {
+                          _ctrl.animateTo(0.0,
+                              duration: const Duration(milliseconds: 200));
+                          widget.onClose();
+                        }
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: AppColors.card,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.vertical(top: Radius.circular(20)),
+                          ),
+                          builder: (_) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: Icon(
+                                    widget.isHidden
+                                        ? Icons.visibility
+                                        : Icons.visibility_off,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  title: Text(
+                                    widget.isHidden ? 'Показать' : 'Скрыть',
+                                    style: const TextStyle(
+                                        color: AppColors.textPrimary),
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    widget.onToggleHide();
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.archive_outlined,
+                                      color: Color(0xFFFF9500)),
+                                  title: const Text('В архив',
+                                      style: TextStyle(
+                                          color: AppColors.textPrimary)),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    widget.onArchive();
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.copy_rounded,
+                                      color: AppColors.accent),
+                                  title: const Text('Копировать',
+                                      style: TextStyle(
+                                          color: AppColors.textPrimary)),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    widget.onCopy();
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.delete_outline,
+                                      color: AppColors.error),
+                                  title: const Text('Удалить',
+                                      style:
+                                          TextStyle(color: AppColors.error)),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    widget.onDelete();
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                       onHorizontalDragUpdate: _onDragUpdate,
                       onHorizontalDragEnd: _onDragEnd,
                       child: Opacity(
@@ -844,6 +939,17 @@ class _SwipeableCardState extends State<_SwipeableCard>
                         child: _WorkoutCardContent(
                           workout: widget.workout,
                           index: widget.index,
+                          onActionsOpen: () {
+                            if (widget.isOpen) {
+                              _ctrl.animateTo(0.0,
+                                  duration: const Duration(milliseconds: 200));
+                              widget.onClose();
+                            } else {
+                              _ctrl.animateTo(1.0,
+                                  duration: const Duration(milliseconds: 250));
+                              widget.onOpen();
+                            }
+                          },
                         ),
                       ),
                     ),
@@ -931,8 +1037,13 @@ class _ActionPanel extends StatelessWidget {
 class _WorkoutCardContent extends StatelessWidget {
   final Workout workout;
   final int index;
+  final VoidCallback? onActionsOpen;
 
-  const _WorkoutCardContent({required this.workout, required this.index});
+  const _WorkoutCardContent({
+    required this.workout,
+    required this.index,
+    this.onActionsOpen,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -987,12 +1098,19 @@ class _WorkoutCardContent extends StatelessWidget {
           ),
           const Icon(Icons.chevron_right, color: AppColors.textSecondary),
           const SizedBox(width: 4),
-          ReorderableDragStartListener(
-            index: index,
-            child: Icon(
-              Icons.drag_handle,
-              color: AppColors.textSecondary.withValues(alpha: 0.7),
-              size: 22,
+          GestureDetector(
+            onTap: onActionsOpen,
+            behavior: HitTestBehavior.opaque,
+            child: ReorderableDragStartListener(
+              index: index,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                child: Icon(
+                  Icons.drag_handle,
+                  color: AppColors.textSecondary.withValues(alpha: 0.7),
+                  size: 22,
+                ),
+              ),
             ),
           ),
         ],

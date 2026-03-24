@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/models/exercise.dart';
@@ -133,6 +134,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       await _addProgram(program);
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboarding_done', true);
     if (mounted) context.go('/home');
     } catch (e) {
       if (mounted) {
@@ -215,9 +218,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     } catch (_) {}
   }
 
-  void _skip() {
+  void _skip() async {
     EventLogger.onboardingSkipped();
-    context.go('/home');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboarding_done', true);
+    if (mounted) context.go('/home');
   }
 
   @override

@@ -7,7 +7,9 @@ import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/models/exercise.dart';
 
 class StandardWorkoutsTab extends StatefulWidget {
-  const StandardWorkoutsTab({super.key});
+  const StandardWorkoutsTab({super.key, this.onProgramAdded});
+
+  final VoidCallback? onProgramAdded;
 
   @override
   State<StandardWorkoutsTab> createState() => _StandardWorkoutsTabState();
@@ -119,6 +121,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
             backgroundColor: Colors.green,
           ),
         );
+        widget.onProgramAdded?.call();
       }
     } catch (e) {
       if (mounted) {
