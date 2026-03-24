@@ -149,7 +149,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
       ),
       AppCache.peek<List<Map<String, dynamic>>>(
-        key: 'weekly_volume:$userId',
+        key: 'weekly_volume:$userId:26',
         decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
       ),
       AppCache.peek<Map<String, dynamic>>(
@@ -161,7 +161,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         decode: (s) => jsonDecode(s) as Map<String, dynamic>,
       ),
       AppCache.peek<List<Map<String, dynamic>>>(
-        key: 'calories_sessions:$userId',
+        key: 'calories_sessions:$userId:60',
         decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
       ),
       AppCache.peek<double>(
@@ -652,10 +652,78 @@ class _OverviewTab extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Shared: date range filter
+// ═══════════════════════════════════════════════════════════════════════════════
+
+enum _DateRange { month1, month3, month6, all }
+
+extension _DateRangeX on _DateRange {
+  String get label => switch (this) {
+        _DateRange.month1 => '1М',
+        _DateRange.month3 => '3М',
+        _DateRange.month6 => '6М',
+        _DateRange.all => 'Всё',
+      };
+
+  DateTime? get cutoff => switch (this) {
+        _DateRange.month1 => DateTime.now().subtract(const Duration(days: 31)),
+        _DateRange.month3 => DateTime.now().subtract(const Duration(days: 92)),
+        _DateRange.month6 => DateTime.now().subtract(const Duration(days: 183)),
+        _DateRange.all => null,
+      };
+}
+
+class _RangeChips extends StatelessWidget {
+  final _DateRange selected;
+  final void Function(_DateRange) onChanged;
+
+  const _RangeChips({required this.selected, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: _DateRange.values.map((r) {
+        final active = r == selected;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: GestureDetector(
+            onTap: () => onChanged(r),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: active ? AppColors.accent : AppColors.card,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                r.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+                  color: active ? Colors.white : AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+bool _afterCutoff(String dateStr, DateTime? cutoff) {
+  if (cutoff == null) return true;
+  try {
+    return DateTime.parse(dateStr).isAfter(cutoff);
+  } catch (_) {
+    return true;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Tab 2: Тренировки
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _WorkoutsTab extends StatelessWidget {
+class _WorkoutsTab extends StatefulWidget {
   final Future<void> Function() onRefresh;
   final List<Map<String, dynamic>> weeklyVolume;
   final double? communityAvgWeeklyVolume;
@@ -687,9 +755,38 @@ class _WorkoutsTab extends StatelessWidget {
   });
 
   @override
+  State<_WorkoutsTab> createState() => _WorkoutsTabState();
+}
+
+class _WorkoutsTabState extends State<_WorkoutsTab> {
+  _DateRange _range = _DateRange.month3;
+
+  List<Map<String, dynamic>> get _filteredVolume {
+    final cutoff = _range.cutoff;
+    return widget.weeklyVolume
+        .where((w) => _afterCutoff(w['week_start'] as String? ?? '', cutoff))
+        .toList();
+  }
+
+  Map<String, double> get _filteredExerciseProgress {
+    final cutoff = _range.cutoff;
+    return Map.fromEntries(
+      widget.exerciseProgress.entries
+          .where((e) => _afterCutoff(e.key, cutoff)),
+    );
+  }
+
+  List<Map<String, dynamic>> get _filteredCalories {
+    final cutoff = _range.cutoff;
+    return widget.caloriesPerSession
+        .where((s) => _afterCutoff(s['date'] as String? ?? '', cutoff))
+        .toList();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: widget.onRefresh,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
@@ -697,6 +794,8 @@ class _WorkoutsTab extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _RangeChips(selected: _range, onChanged: (r) => setState(() => _range = r)),
+            const SizedBox(height: 20),
             const Text(
               'Тренд объёма нагрузки',
               style: TextStyle(
@@ -706,12 +805,12 @@ class _WorkoutsTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Последние 8 недель (кг × повт.)',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            Text(
+              'кг × повт. · ${_range.label == 'Всё' ? 'всё время' : 'последние ${_range.label}'}',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
-            _VolumeBarChart(weeks: weeklyVolume, communityAvg: communityAvgWeeklyVolume),
+            _VolumeBarChart(weeks: _filteredVolume, communityAvg: widget.communityAvgWeeklyVolume),
             const SizedBox(height: 28),
             const Text(
               'Топ-5 упражнений за месяц',
@@ -727,7 +826,7 @@ class _WorkoutsTab extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
-            _TopExercisesCard(exercises: topExercises),
+            _TopExercisesCard(exercises: widget.topExercises),
             const SizedBox(height: 28),
             const Text(
               'Прогресс по упражнению',
@@ -738,7 +837,7 @@ class _WorkoutsTab extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            if (trackedExercises.isEmpty)
+            if (widget.trackedExercises.isEmpty)
               _emptyCard('Завершите тренировку с весом,\nчтобы увидеть прогресс')
             else ...[
               Container(
@@ -748,29 +847,29 @@ class _WorkoutsTab extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: DropdownButton<Map<String, dynamic>>(
-                  value: selectedExercise,
+                  value: widget.selectedExercise,
                   hint: const Text('Выберите упражнение',
                       style: TextStyle(color: AppColors.textSecondary)),
                   isExpanded: true,
                   underline: const SizedBox.shrink(),
                   dropdownColor: AppColors.card,
                   style: const TextStyle(color: AppColors.textPrimary),
-                  items: trackedExercises
+                  items: widget.trackedExercises
                       .map((ex) => DropdownMenuItem(
                             value: ex,
                             child: Text(ex['name'] as String),
                           ))
                       .toList(),
-                  onChanged: onExerciseChanged,
+                  onChanged: widget.onExerciseChanged,
                 ),
               ),
               const SizedBox(height: 12),
-              if (selectedExercise != null)
-                loadingChart
+              if (widget.selectedExercise != null)
+                widget.loadingChart
                     ? const SizedBox(
                         height: 180,
                         child: Center(child: CircularProgressIndicator()))
-                    : exerciseProgress.isEmpty
+                    : _filteredExerciseProgress.isEmpty
                         ? Container(
                             height: 80,
                             alignment: Alignment.center,
@@ -778,8 +877,8 @@ class _WorkoutsTab extends StatelessWidget {
                                 style: TextStyle(color: AppColors.textSecondary)),
                           )
                         : _ProgressChart(
-                            data: exerciseProgress,
-                            communityAvg: communityAvgExerciseWeight,
+                            data: _filteredExerciseProgress,
+                            communityAvg: widget.communityAvgExerciseWeight,
                           ),
             ],
             const SizedBox(height: 28),
@@ -797,8 +896,8 @@ class _WorkoutsTab extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
-            _MuscleBalanceChart(balance: muscleBalance),
-            if (muscleFrequency.isNotEmpty) ...[
+            _MuscleBalanceChart(balance: widget.muscleBalance),
+            if (widget.muscleFrequency.isNotEmpty) ...[
               const SizedBox(height: 24),
               const Text(
                 'Частота по группам мышц',
@@ -814,7 +913,7 @@ class _WorkoutsTab extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 12),
-              _MuscleFrequencyChart(frequency: muscleFrequency),
+              _MuscleFrequencyChart(frequency: widget.muscleFrequency),
             ],
             const SizedBox(height: 28),
             const Text(
@@ -831,10 +930,10 @@ class _WorkoutsTab extends StatelessWidget {
               style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
-            if (caloriesPerSession.isEmpty)
+            if (_filteredCalories.isEmpty)
               _emptyCard('Завершите тренировку,\nчтобы увидеть данные о калориях')
             else
-              _CaloriesChart(sessions: caloriesPerSession),
+              _CaloriesChart(sessions: _filteredCalories),
           ],
         ),
       ),
@@ -887,6 +986,15 @@ class _BodyTab extends StatefulWidget {
 }
 
 class _BodyTabState extends State<_BodyTab> {
+  _DateRange _range = _DateRange.month3;
+
+  Map<String, double> get _filteredBodyData {
+    final cutoff = _range.cutoff;
+    return Map.fromEntries(
+      widget.bodyMetricData.entries.where((e) => _afterCutoff(e.key, cutoff)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -923,6 +1031,8 @@ class _BodyTabState extends State<_BodyTab> {
                 ),
               )
             else ...[
+              _RangeChips(selected: _range, onChanged: (r) => setState(() => _range = r)),
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 decoration: BoxDecoration(
@@ -947,7 +1057,7 @@ class _BodyTabState extends State<_BodyTab> {
                 ),
               ),
               const SizedBox(height: 12),
-              if (widget.bodyMetricData.isEmpty)
+              if (_filteredBodyData.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -962,7 +1072,7 @@ class _BodyTabState extends State<_BodyTab> {
                   ),
                 )
               else
-                _ProgressChart(data: widget.bodyMetricData),
+                _ProgressChart(data: _filteredBodyData),
             ],
             const SizedBox(height: 28),
             const Text(
@@ -2015,7 +2125,9 @@ class _ProgressChart extends StatelessWidget {
 
     // Build full n×n matrix A = I + λ·D₂'D₂
     final a = List.generate(n, (_) => List<double>.filled(n, 0.0));
-    for (int i = 0; i < n; i++) a[i][i] = 1.0;
+    for (int i = 0; i < n; i++) {
+      a[i][i] = 1.0;
+    }
     for (int k = 0; k < n - 2; k++) {
       const idx = [0, 1, 2];
       const coeff = [1.0, -2.0, 1.0];
@@ -2049,7 +2161,9 @@ class _ProgressChart extends StatelessWidget {
     final tau = List<double>.filled(n, 0.0);
     for (int i = n - 1; i >= 0; i--) {
       tau[i] = b[i];
-      for (int j = i + 1; j < n; j++) tau[i] -= a[i][j] * tau[j];
+      for (int j = i + 1; j < n; j++) {
+        tau[i] -= a[i][j] * tau[j];
+      }
       tau[i] /= a[i][i];
     }
     return tau;
@@ -2205,7 +2319,7 @@ class _ProgressChart extends StatelessWidget {
               const SizedBox(width: 6),
               const Text('Факт', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
               const SizedBox(width: 16),
-              _DashedLine(color: hpColor),
+              const _DashedLine(color: hpColor),
               const SizedBox(width: 6),
               const Text('Тренд (HP)', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
             ],

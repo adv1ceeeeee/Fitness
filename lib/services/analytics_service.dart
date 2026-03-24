@@ -987,12 +987,12 @@ class AnalyticsService {
   }
 
   static Future<List<Map<String, dynamic>>> getWeeklyVolumeHistory(
-      {int weeks = 8}) async {
+      {int weeks = 26}) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
     return AppCache.get<List<Map<String, dynamic>>>(
-      key: 'weekly_volume:$userId',
+      key: 'weekly_volume:$userId:$weeks',
       ttl: const Duration(minutes: 10),
       fetch: () => _fetchWeeklyVolumeHistory(userId, weeks),
       encode: (v) => jsonEncode(v),
@@ -1233,13 +1233,13 @@ class AnalyticsService {
   /// Returns last [limit] completed sessions with kcal_total, oldest first.
   /// Only sessions that have kcal_total != null are included.
   static Future<List<Map<String, dynamic>>> getCaloriesPerSession({
-    int limit = 20,
+    int limit = 60,
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
     return AppCache.get<List<Map<String, dynamic>>>(
-      key: 'calories_sessions:$userId',
+      key: 'calories_sessions:$userId:$limit',
       ttl: const Duration(minutes: 10),
       fetch: () async {
         final res = await _client
