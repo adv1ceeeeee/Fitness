@@ -27,7 +27,25 @@ class _TodayScreenState extends State<TodayScreen> {
   bool _fromCache = false;
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    // Phase 1: show cache immediately if available
+    final cached = await CacheService.loadTodayWorkout();
+    if (cached != null && mounted) {
+      final workout = Workout.fromJson(cached['workout'] as Map<String, dynamic>);
+      final exercises = (cached['exercises'] as List<dynamic>)
+          .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+          .toList();
+      setState(() {
+        _workout = workout;
+        _exercises = exercises;
+        _fromCache = true;
+        _loading = false;
+      });
+    }
+    // Phase 2: refresh from network silently
+    _refreshToday();
+  }
+
+  Future<void> _refreshToday() async {
     try {
       final workout = await TrainingService.getTodayWorkout();
       if (workout != null) {
@@ -56,28 +74,8 @@ class _TodayScreenState extends State<TodayScreen> {
         }
       }
     } catch (_) {
-      final cached = await CacheService.loadTodayWorkout();
-      if (mounted) {
-        if (cached != null) {
-          final workout = Workout.fromJson(cached['workout'] as Map<String, dynamic>);
-          final exercises = (cached['exercises'] as List<dynamic>)
-              .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
-              .toList();
-          setState(() {
-            _workout = workout;
-            _exercises = exercises;
-            _fromCache = true;
-            _loading = false;
-          });
-        } else {
-          setState(() {
-            _workout = null;
-            _exercises = [];
-            _fromCache = true;
-            _loading = false;
-          });
-        }
-      }
+      // Keep showing cached data; only flip _loading if we never showed anything
+      if (mounted && _loading) setState(() => _loading = false);
     }
   }
 

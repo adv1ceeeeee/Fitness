@@ -1147,7 +1147,19 @@ class AnalyticsService {
   static Future<List<Map<String, dynamic>>> getPersonalRecords() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'personal_records:$userId',
+      ttl: const Duration(minutes: 15),
+      fetch: () => _fetchPersonalRecords(userId),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
 
+  static Future<List<Map<String, dynamic>>> _fetchPersonalRecords(
+      String userId) async {
     final sessionsRes = await _client
         .from('training_sessions')
         .select('id')

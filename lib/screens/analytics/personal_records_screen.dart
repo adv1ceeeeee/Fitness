@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/app_cache.dart';
+import 'package:sportwai/services/auth_service.dart';
 
 class PersonalRecordsScreen extends StatefulWidget {
   const PersonalRecordsScreen({super.key});
@@ -20,6 +23,22 @@ class _PersonalRecordsScreenState extends State<PersonalRecordsScreen> {
   }
 
   Future<void> _load() async {
+    // Phase 1: show cache immediately if available
+    final userId = AuthService.currentUser?.id;
+    if (userId != null) {
+      final cached = await AppCache.peek<List<Map<String, dynamic>>>(
+        key: 'personal_records:$userId',
+        decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+      );
+      if (cached != null && mounted) {
+        setState(() { _records = cached; _loading = false; });
+      }
+    }
+    // Phase 2: refresh from network silently
+    _refreshRecords();
+  }
+
+  Future<void> _refreshRecords() async {
     final records = await AnalyticsService.getPersonalRecords();
     if (mounted) setState(() { _records = records; _loading = false; });
   }
@@ -69,7 +88,7 @@ class _PersonalRecordsScreenState extends State<PersonalRecordsScreen> {
                   ),
                 )
               : RefreshIndicator(
-                  onRefresh: _load,
+                  onRefresh: _refreshRecords,
                   child: ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: _records.length,

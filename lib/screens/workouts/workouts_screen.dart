@@ -41,7 +41,16 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   }
 
   Future<void> _loadWorkouts() async {
-    setState(() => _loading = true);
+    // Phase 1: show cache immediately if available
+    final cached = await CacheService.loadWorkouts();
+    if (cached.isNotEmpty && mounted) {
+      setState(() { _workouts = cached; _loading = false; });
+    }
+    // Phase 2: refresh from network silently
+    _refreshWorkouts();
+  }
+
+  Future<void> _refreshWorkouts() async {
     try {
       final list = await WorkoutService.getMyWorkouts()
           .timeout(const Duration(seconds: 15));
@@ -61,8 +70,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
         });
       }
     } catch (_) {
-      final cached = await CacheService.loadWorkouts();
-      if (mounted) setState(() { _workouts = cached; _loading = false; });
+      if (mounted && _loading) setState(() => _loading = false);
     }
   }
 
