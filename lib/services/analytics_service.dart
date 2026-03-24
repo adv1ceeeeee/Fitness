@@ -1062,7 +1062,7 @@ class AnalyticsService {
       final key = monday.toIso8601String().split('T')[0];
       final label =
           '${monday.day}.${monday.month.toString().padLeft(2, '0')}';
-      return {'label': label, 'volume': weekVolume[key] ?? 0.0};
+      return {'label': label, 'volume': weekVolume[key] ?? 0.0, 'week_start': key};
     });
   }
 
@@ -1228,6 +1228,36 @@ class AnalyticsService {
     result.sort((a, b) => (a['exerciseName'] as String)
         .compareTo(b['exerciseName'] as String));
     return result;
+  }
+
+  /// Returns all personal record entries for [exerciseId], oldest first.
+  /// Each entry: {weight_kg: double, achieved_at: String (ISO date)}.
+  static Future<List<Map<String, dynamic>>> getExercisePrHistory(
+      String exerciseId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'pr_history:$userId:$exerciseId',
+      ttl: const Duration(minutes: 15),
+      fetch: () async {
+        final res = await _client
+            .from('personal_records')
+            .select('weight_kg, achieved_at')
+            .eq('user_id', userId)
+            .eq('exercise_id', exerciseId)
+            .order('achieved_at', ascending: true);
+        return (res as List)
+            .map((r) => {
+                  'weight_kg': (r['weight_kg'] as num).toDouble(),
+                  'achieved_at': (r['achieved_at'] as String).substring(0, 10),
+                })
+            .toList();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
   }
 
   /// Returns last [limit] completed sessions with kcal_total, oldest first.

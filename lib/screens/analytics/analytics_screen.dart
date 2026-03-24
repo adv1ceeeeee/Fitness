@@ -1828,26 +1828,35 @@ class _InsightsSection extends StatelessWidget {
       ));
     }
 
-    // 4. Consistency score this month
-    if (totalWorkouts > 0) {
+    // 4. Consistency: % weeks with 2+ workouts over last 12 weeks
+    if (heatmapData.isNotEmpty) {
       final now = DateTime.now();
-      final firstDay = DateTime(now.year, now.month, 1);
-      final daysElapsed = now.difference(firstDay).inDays + 1;
-      int thisMonth = 0;
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final weekWorkouts = <String, int>{};
+      for (int i = 0; i < 12; i++) {
+        final weekStart = monday.subtract(Duration(days: 7 * i));
+        final key = '${weekStart.year}-${weekStart.month}-${weekStart.day}';
+        weekWorkouts[key] = 0;
+      }
       for (final entry in heatmapData.entries) {
-        if (entry.value > 0 &&
-            entry.key.year == now.year &&
-            entry.key.month == now.month) {
-          thisMonth++;
+        if (entry.value <= 0) continue;
+        final d = entry.key;
+        final mon = d.subtract(Duration(days: d.weekday - 1));
+        final key = '${mon.year}-${mon.month}-${mon.day}';
+        if (weekWorkouts.containsKey(key)) {
+          weekWorkouts[key] = weekWorkouts[key]! + 1;
         }
       }
-      if (daysElapsed >= 7 && thisMonth > 0) {
-        final freqPerWeek = (thisMonth / (daysElapsed / 7)).toStringAsFixed(1);
+      final activeWeeks = weekWorkouts.values.where((c) => c >= 2).length;
+      final totalWeeks = weekWorkouts.length;
+      if (totalWeeks >= 4) {
+        final pct = (activeWeeks / totalWeeks * 100).round();
+        final emoji = pct >= 75 ? '🔥' : pct >= 50 ? '✅' : '📈';
         cards.add(_InsightCard(
           icon: Icons.repeat_rounded,
           color: AppColors.warning,
-          title: 'Регулярность в этом месяце',
-          body: 'В этом месяце вы тренировались $thisMonth раз — в среднем $freqPerWeek тренировки в неделю.',
+          title: 'Регулярность за 12 недель',
+          body: '$emoji В $activeWeeks из $totalWeeks недель вы тренировались 2 раза и более — это $pct% активных недель.',
         ));
       }
     }
@@ -1893,7 +1902,96 @@ class _InsightsSection extends StatelessWidget {
       }
     }
 
-    // 6. Streak insight
+    // 6. Wellness–volume correlations
+    if (wellnessHistory.isNotEmpty && weeklyVolume.isNotEmpty) {
+      // Build week_start → volume map
+      final weekVolMap = <String, double>{};
+      for (final w in weeklyVolume) {
+        final ws = w['week_start'] as String?;
+        if (ws != null) weekVolMap[ws] = (w['volume'] as num).toDouble();
+      }
+
+      // Helper: ISO Monday for any date string
+      String toMonday(String d) {
+        try {
+          final dt = DateTime.parse(d);
+          final mon = dt.subtract(Duration(days: dt.weekday - 1));
+          return '${mon.year}-${mon.month.toString().padLeft(2, '0')}-${mon.day.toString().padLeft(2, '0')}';
+        } catch (_) {
+          return d;
+        }
+      }
+
+      // Aggregate wellness metrics by week
+      final weekStress = <String, List<double>>{};
+      final weekEnergy = <String, List<double>>{};
+      for (final row in wellnessHistory) {
+        final date = row['date'] as String?;
+        if (date == null) continue;
+        final ws = toMonday(date);
+        final stress = row['stress'];
+        final energy = row['energy'];
+        if (stress != null) weekStress.putIfAbsent(ws, () => []).add((stress as num).toDouble());
+        if (energy != null) weekEnergy.putIfAbsent(ws, () => []).add((energy as num).toDouble());
+      }
+
+      double avg(List<double> l) => l.reduce((a, b) => a + b) / l.length;
+
+      // Stress vs volume
+      final stressWeeks = weekStress.entries
+          .where((e) => weekVolMap.containsKey(e.key))
+          .toList();
+      if (stressWeeks.length >= 6) {
+        final hi = stressWeeks.where((e) => avg(e.value) > 6).map((e) => weekVolMap[e.key]!).toList();
+        final lo = stressWeeks.where((e) => avg(e.value) <= 4).map((e) => weekVolMap[e.key]!).toList();
+        if (hi.length >= 2 && lo.length >= 2) {
+          final avgHi = avg(hi);
+          final avgLo = avg(lo);
+          if (avgLo > 0) {
+            final diff = ((avgLo - avgHi) / avgLo * 100).round();
+            if (diff.abs() >= 5) {
+              final less = diff > 0;
+              cards.add(_InsightCard(
+                icon: Icons.psychology_rounded,
+                color: const Color(0xFFFF9F0A),
+                title: 'Стресс и нагрузка',
+                body: less
+                    ? 'В недели с высоким стрессом (>6/10) ваш объём в среднем на $diff% ниже, чем при низком стрессе.'
+                    : 'Высокий стресс практически не снижает ваш объём — вы тренируетесь стабильно в любом состоянии.',
+              ));
+            }
+          }
+        }
+      }
+
+      // Energy vs volume
+      final energyWeeks = weekEnergy.entries
+          .where((e) => weekVolMap.containsKey(e.key))
+          .toList();
+      if (energyWeeks.length >= 6) {
+        final hi = energyWeeks.where((e) => avg(e.value) >= 7).map((e) => weekVolMap[e.key]!).toList();
+        final lo = energyWeeks.where((e) => avg(e.value) <= 4).map((e) => weekVolMap[e.key]!).toList();
+        if (hi.length >= 2 && lo.length >= 2) {
+          final avgHi = avg(hi);
+          final avgLo = avg(lo);
+          if (avgHi > 0) {
+            final diff = ((avgHi - avgLo) / avgHi * 100).round();
+            if (diff.abs() >= 5) {
+              cards.add(_InsightCard(
+                icon: Icons.bolt_rounded,
+                color: const Color(0xFF30D158),
+                title: 'Энергия и нагрузка',
+                body: diff > 0
+                    ? 'В недели с высокой энергией (7+/10) ваш объём на $diff% выше, чем в «тяжёлые» недели. Прислушивайтесь к себе.'
+                    : 'Уровень энергии слабо влияет на ваши результаты — отличный показатель дисциплины!',
+              ));
+            }
+          }
+        }
+      }
+    }
+
+    // 7. Streak insight
     if (bestStreak > 0) {
       cards.add(_InsightCard(
         icon: Icons.local_fire_department_rounded,
