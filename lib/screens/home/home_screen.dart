@@ -122,6 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _weeklyWorkoutGoal = 0;   // 0 = not set
   int _workoutsThisWeek = 0;
   int _daysSinceLastWorkout = -1;
+  int _streak = 0;
   Workout? _nextScheduledWorkout;
   bool _isRestDay = false;
 
@@ -323,6 +324,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         BodyMetricsService.getHistory(),
         AnalyticsService.getWorkoutsThisWeek(),
         TrainingService.getDaysSinceLastWorkout(),
+        AnalyticsService.getCurrentStreak(),
       ]).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
@@ -341,6 +343,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       }
       final daysSince = results[6] as int;
+      final streak = results[7] as int;
       // Check if today is a rest day in any active workout
       final todayAppDay = DateTime.now().weekday - 1; // 0=Mon…6=Sun
       final allWorkouts = await WorkoutService.getMyWorkouts();
@@ -369,6 +372,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _nextScheduledWorkout = nextWorkout;
         _isRestDay = isRestDay;
         _todayPlannedTime = plannedTime;
+        _streak = streak;
       });
       if (plannedTime != null) _startCountdown(plannedTime);
       _maybeShowWeeklySummary(weeklyGoal);
@@ -600,6 +604,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   name: name,
                   timeUntilWorkout: _timeUntilWorkout,
                   plannedTime: _todayPlannedTime,
+                  streak: _streak,
                 ),
                 const SizedBox(height: 24),
                 _TodayCard(
@@ -1344,11 +1349,13 @@ class _GreetingHeader extends StatelessWidget {
   final String name;
   final Duration? timeUntilWorkout;
   final DateTime? plannedTime;
+  final int streak;
 
   const _GreetingHeader({
     required this.name,
     required this.timeUntilWorkout,
     required this.plannedTime,
+    this.streak = 0,
   });
 
   static String _greeting() {
@@ -1372,11 +1379,63 @@ class _GreetingHeader extends StatelessWidget {
             color: AppColors.textPrimary,
           ),
         ),
-        if (countdown != null && plannedTime != null) ...[
-          const SizedBox(height: 8),
-          _CountdownChip(duration: countdown, plannedTime: plannedTime!),
-        ],
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            if (streak > 0) ...[
+              _StreakChip(streak: streak),
+              const SizedBox(width: 8),
+            ],
+            if (countdown != null && plannedTime != null)
+              _CountdownChip(duration: countdown, plannedTime: plannedTime!),
+          ],
+        ),
       ],
+    );
+  }
+}
+
+class _StreakChip extends StatelessWidget {
+  final int streak;
+  const _StreakChip({required this.streak});
+
+  String _label() {
+    if (streak == 1) return '1 день подряд';
+    if (streak < 5) return '$streak дня подряд';
+    return '$streak дней подряд';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hot = streak >= 7;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: hot
+            ? const Color(0xFFFF9F0A).withValues(alpha: 0.15)
+            : AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: hot
+              ? const Color(0xFFFF9F0A).withValues(alpha: 0.5)
+              : AppColors.separator,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🔥', style: TextStyle(fontSize: 13)),
+          const SizedBox(width: 4),
+          Text(
+            _label(),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: hot ? FontWeight.w600 : FontWeight.w400,
+              color: hot ? const Color(0xFFFF9F0A) : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1587,55 +1646,78 @@ class _TodayCard extends StatelessWidget {
       );
     }
 
-    // ── Workout exists ─────────────────────────────────────────────────────────
+    // ── Workout exists — hero card ──────────────────────────────────────────────
     return Material(
-      color: AppColors.card,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.fitness_center_rounded,
-                  color: AppColors.accent,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      workout!.name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0D2B6E), Color(0xFF1C1C1E)],
+            ),
+            border: Border.all(
+              color: AppColors.accent.withValues(alpha: 0.28),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // «СЕГОДНЯ» badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'СЕГОДНЯ',
+                    style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
                     ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Нажми, чтобы начать',
-                      style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              const Icon(Icons.arrow_forward_ios,
-                  size: 16, color: AppColors.textSecondary),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  workout!.name,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text(
+                    'Начать тренировку',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

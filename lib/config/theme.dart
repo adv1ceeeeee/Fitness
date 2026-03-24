@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Responsive sizing helpers.
 /// Usage: `context.rPad` — horizontal screen padding
@@ -25,8 +26,8 @@ class AppColors {
   static const Color surface = Color(0xFF2C2C2E); // iOS dark tertiary bg
 
   // ── Accent ──────────────────────────────────────────────────────────────────
-  static const Color accent = Color(0xFF007AFF); // iOS system blue
-  static const Color accentDark = Color(0xFF0A84FF); // iOS blue dark variant
+  static const Color accent = Color(0xFF0066FF); // SportWAI electric blue
+  static const Color accentDark = Color(0xFF338AFF); // lighter variant
 
   // ── Text ────────────────────────────────────────────────────────────────────
   static const Color textPrimary = Color(0xFFFFFFFF);
@@ -239,58 +240,59 @@ class AppTheme {
   }
 
   static ThemeData get darkTheme {
-    const textTheme = TextTheme(
-      // Large title — iOS 34pt bold
-      displayLarge: TextStyle(
+    // Manrope for display sizes, system font for body
+    final textTheme = TextTheme(
+      // Large title — 34pt bold
+      displayLarge: GoogleFonts.manrope(
         fontSize: 34,
-        fontWeight: FontWeight.w700,
+        fontWeight: FontWeight.w800,
         color: AppColors.textPrimary,
-        letterSpacing: 0.37,
+        letterSpacing: -0.5,
       ),
-      // Title 1 — iOS 28pt bold
-      displayMedium: TextStyle(
+      // Title 1 — 28pt bold
+      displayMedium: GoogleFonts.manrope(
         fontSize: 28,
         fontWeight: FontWeight.w700,
         color: AppColors.textPrimary,
-        letterSpacing: 0.36,
+        letterSpacing: -0.3,
       ),
-      // Title 2 — iOS 22pt bold
-      displaySmall: TextStyle(
+      // Title 2 — 22pt bold
+      displaySmall: GoogleFonts.manrope(
         fontSize: 22,
         fontWeight: FontWeight.w700,
         color: AppColors.textPrimary,
-        letterSpacing: 0.35,
+        letterSpacing: -0.2,
       ),
-      // Headline — iOS 17pt semibold
-      headlineMedium: TextStyle(
+      // Headline — 17pt semibold (system font, stays sharp at small sizes)
+      headlineMedium: const TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w600,
         color: AppColors.textPrimary,
         letterSpacing: -0.43,
       ),
       // Body — iOS 17pt regular
-      bodyLarge: TextStyle(
+      bodyLarge: const TextStyle(
         fontSize: 17,
         fontWeight: FontWeight.w400,
         color: AppColors.textPrimary,
         letterSpacing: -0.43,
       ),
       // Callout — iOS 16pt regular
-      bodyMedium: TextStyle(
+      bodyMedium: const TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w400,
         color: AppColors.textPrimary,
         letterSpacing: -0.32,
       ),
       // Subheadline — iOS 15pt regular
-      bodySmall: TextStyle(
+      bodySmall: const TextStyle(
         fontSize: 15,
         fontWeight: FontWeight.w400,
         color: AppColors.textSecondary,
         letterSpacing: -0.24,
       ),
       // Caption — iOS 12pt regular
-      labelSmall: TextStyle(
+      labelSmall: const TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         color: AppColors.textSecondary,

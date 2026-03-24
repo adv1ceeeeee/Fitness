@@ -1218,17 +1218,24 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
     );
   }
 
-  Widget _emptyCard(String msg) => Container(
-        padding: const EdgeInsets.all(20),
+  Widget _emptyCard(String msg, {IconData icon = Icons.bar_chart_rounded}) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
         decoration: BoxDecoration(
           color: AppColors.card,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Center(
-          child: Text(
-            msg,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textSecondary),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 36, color: AppColors.textSecondary.withValues(alpha: 0.35)),
+              const SizedBox(height: 10),
+              Text(
+                msg,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+              ),
+            ],
           ),
         ),
       );
@@ -3973,12 +3980,24 @@ class _VolumeBarChart extends StatelessWidget {
     );
   }
 
-  Widget _emptyCard(String msg) => Container(
-        height: 80,
-        alignment: Alignment.center,
+  Widget _emptyCard(String msg, {IconData icon = Icons.fitness_center_rounded}) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
         decoration: BoxDecoration(
             color: AppColors.card, borderRadius: BorderRadius.circular(16)),
-        child: Text(msg, style: const TextStyle(color: AppColors.textSecondary)),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 36, color: AppColors.textSecondary.withValues(alpha: 0.35)),
+              const SizedBox(height: 10),
+              Text(
+                msg,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+              ),
+            ],
+          ),
+        ),
       );
 }
 

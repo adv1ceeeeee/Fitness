@@ -19,6 +19,7 @@ import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:confetti/confetti.dart';
 
 enum _SessionPhase { warmup, exercise, cooldown }
 
@@ -1390,7 +1391,9 @@ class _SetBlock extends StatelessWidget {
       decoration: BoxDecoration(
         color: warmup
             ? const Color(0xFFB8690A).withValues(alpha: 0.08)
-            : AppColors.card,
+            : isActive
+                ? AppColors.accent.withValues(alpha: 0.07)
+                : AppColors.card,
         borderRadius: BorderRadius.circular(14),
         border: warmup
             ? Border.all(color: const Color(0xFFB8690A).withValues(alpha: 0.35), width: 1)
@@ -1763,6 +1766,7 @@ class _PrBannerState extends State<_PrBanner>
   late final AnimationController _ctrl;
   late final Animation<double> _opacity;
   late final Animation<Offset> _slide;
+  late final ConfettiController _confetti;
 
   @override
   void initState() {
@@ -1777,8 +1781,10 @@ class _PrBannerState extends State<_PrBanner>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
 
+    _confetti = ConfettiController(duration: const Duration(milliseconds: 1800));
     _ctrl.forward();
-    Future.delayed(const Duration(milliseconds: 2200), _dismiss);
+    _confetti.play();
+    Future.delayed(const Duration(milliseconds: 2800), _dismiss);
   }
 
   Future<void> _dismiss() async {
@@ -1789,6 +1795,7 @@ class _PrBannerState extends State<_PrBanner>
 
   @override
   void dispose() {
+    _confetti.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -1797,61 +1804,89 @@ class _PrBannerState extends State<_PrBanner>
   Widget build(BuildContext context) {
     final safeTop = MediaQuery.of(context).padding.top;
     return Positioned(
-      top: safeTop + 12,
-      left: 24,
-      right: 24,
-      child: SlideTransition(
-        position: _slide,
-        child: FadeTransition(
-          opacity: _opacity,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.success,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.success.withValues(alpha: 0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  const Text('🏆', style: TextStyle(fontSize: 28)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+      top: safeTop,
+      left: 0,
+      right: 0,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        clipBehavior: Clip.none,
+        children: [
+          // Конфетти из центра экрана
+          ConfettiWidget(
+            confettiController: _confetti,
+            blastDirectionality: BlastDirectionality.explosive,
+            shouldLoop: false,
+            numberOfParticles: 28,
+            gravity: 0.35,
+            particleDrag: 0.05,
+            emissionFrequency: 0.06,
+            colors: const [
+              AppColors.success,
+              Color(0xFFFFD60A),
+              AppColors.accent,
+              Color(0xFFFF9F0A),
+              Color(0xFFFF453A),
+              Colors.white,
+            ],
+          ),
+          // Баннер
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+            child: SlideTransition(
+              position: _slide,
+              child: FadeTransition(
+                opacity: _opacity,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.success.withValues(alpha: 0.5),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Row(
                       children: [
-                        const Text(
-                          'Личный рекорд!',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
+                        const Text('🏆', style: TextStyle(fontSize: 32)),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Личный рекорд!',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 17,
+                                ),
+                              ),
+                              if (widget.exerciseName.isNotEmpty)
+                                Text(
+                                  '${widget.exerciseName} · ${widget.weightKg % 1 == 0 ? widget.weightKg.toInt() : widget.weightKg.toStringAsFixed(1)} кг',
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        if (widget.exerciseName.isNotEmpty)
-                          Text(
-                            '${widget.exerciseName} — ${widget.weightKg % 1 == 0 ? widget.weightKg.toInt() : widget.weightKg.toStringAsFixed(1)} кг',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                            ),
-                          ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
