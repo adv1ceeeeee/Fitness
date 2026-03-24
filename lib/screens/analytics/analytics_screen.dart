@@ -783,6 +783,28 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
         .toList();
   }
 
+  /// Previous period: same number of weeks immediately before _filteredVolume.
+  ({double volume, int sessions})? get _periodComparison {
+    final cur = _filteredVolume;
+    final all = widget.weeklyVolume;
+    if (cur.isEmpty || all.length < cur.length * 2) return null;
+    final prevEnd = all.length - cur.length;
+    final prevStart = (prevEnd - cur.length).clamp(0, all.length);
+    final prev = all.sublist(prevStart, prevEnd);
+    if (prev.isEmpty) return null;
+    double curVol = 0, prevVol = 0;
+    int curSess = 0, prevSess = 0;
+    for (final w in cur) {
+      curVol += (w['volume'] as num).toDouble();
+      if ((w['volume'] as num) > 0) curSess++;
+    }
+    for (final w in prev) {
+      prevVol += (w['volume'] as num).toDouble();
+      if ((w['volume'] as num) > 0) prevSess++;
+    }
+    return (volume: curVol - prevVol, sessions: curSess - prevSess);
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -811,6 +833,55 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
             ),
             const SizedBox(height: 12),
             _VolumeBarChart(weeks: _filteredVolume, communityAvg: widget.communityAvgWeeklyVolume),
+            if (_range != _DateRange.all) ...[
+              const SizedBox(height: 10),
+              () {
+                final cmp = _periodComparison;
+                if (cmp == null) return const SizedBox.shrink();
+                final vDiff = cmp.volume;
+                final sDiff = cmp.sessions;
+                final vColor = vDiff >= 0 ? const Color(0xFF30D158) : AppColors.error;
+                final sColor = sDiff >= 0 ? const Color(0xFF30D158) : AppColors.error;
+                final vSign = vDiff >= 0 ? '+' : '';
+                final sSign = sDiff >= 0 ? '+' : '';
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'vs предыдущий период',
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            '$sSign$sDiff тр.',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: sColor),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '$vSign${vDiff.toStringAsFixed(0)} кг',
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: vColor),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }(),
+            ],
             const SizedBox(height: 28),
             const Text(
               'Топ-5 упражнений за месяц',
@@ -995,6 +1066,34 @@ class _BodyTabState extends State<_BodyTab> {
     );
   }
 
+  /// Linear extrapolation on the HP trend: returns forecast value [stepsAhead]
+  /// data-points into the future, or null if not enough data.
+  double? _forecast(Map<String, double> data, {int stepsAhead = 4}) {
+    final sorted = data.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    if (sorted.length < 5) return null;
+    final hp = _ProgressChart._hpFilter(sorted.map((e) => e.value).toList());
+    final lookback = hp.length.clamp(4, 10);
+    final recent = hp.sublist(hp.length - lookback);
+    // Least-squares slope
+    final n = recent.length.toDouble();
+    double sx = 0, sy = 0, sxy = 0, sx2 = 0;
+    for (int i = 0; i < recent.length; i++) {
+      sx += i; sy += recent[i]; sxy += i * recent[i]; sx2 += i * i;
+    }
+    final denom = n * sx2 - sx * sx;
+    if (denom.abs() < 1e-9) return null;
+    final slope = (n * sxy - sx * sy) / denom;
+    // Estimate how many data-steps ≈ stepsAhead weeks
+    if (sorted.length < 2) return null;
+    final daySpan = DateTime.parse(sorted.last.key)
+        .difference(DateTime.parse(sorted.first.key))
+        .inDays;
+    final daysPerPoint = daySpan / (sorted.length - 1);
+    if (daysPerPoint <= 0) return null;
+    final pointsAhead = (stepsAhead * 7 / daysPerPoint).roundToDouble();
+    return hp.last + slope * pointsAhead;
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -1071,8 +1170,47 @@ class _BodyTabState extends State<_BodyTab> {
                     ),
                   ),
                 )
-              else
+              else ...[
                 _ProgressChart(data: _filteredBodyData),
+                () {
+                  final fc = _forecast(_filteredBodyData);
+                  if (fc == null) return const SizedBox.shrink();
+                  final current = _filteredBodyData.values.last;
+                  final diff = fc - current;
+                  final isWeight = widget.selectedBodyMetric == 'weight_kg' ||
+                      widget.selectedBodyMetric == 'body_fat_pct';
+                  if (!isWeight) return const SizedBox.shrink();
+                  final sign = diff >= 0 ? '+' : '';
+                  final unit = widget.selectedBodyMetric == 'body_fat_pct' ? '%' : ' кг';
+                  final color = diff.abs() < 0.3
+                      ? AppColors.textSecondary
+                      : (widget.selectedBodyMetric == 'weight_kg'
+                          ? (diff < 0 ? AppColors.success : AppColors.error)
+                          : (diff < 0 ? AppColors.success : AppColors.error));
+                  return Container(
+                    margin: const EdgeInsets.only(top: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: color.withValues(alpha: 0.3), width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.trending_flat_rounded, size: 16, color: color),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Прогноз через ~4 нед: ${fc.toStringAsFixed(1)}$unit  ($sign${diff.toStringAsFixed(1)}$unit по тренду)',
+                            style: TextStyle(fontSize: 12, color: color),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }(),
+              ],
             ],
             const SizedBox(height: 28),
             const Text(
