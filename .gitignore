@@ -53,3 +53,7 @@ scripts/exercisedb_mapping.csv
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local secrets — never commit
+.dart_define
+*.dart_define
