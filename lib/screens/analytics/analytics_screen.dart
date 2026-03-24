@@ -3283,6 +3283,18 @@ class _ProgressChart extends StatelessWidget {
                 topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
               ),
+              lineTouchData: LineTouchData(
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
+                    s.y.toStringAsFixed(1),
+                    const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )).toList(),
+                ),
+              ),
               lineBarsData: [
                 if (communitySpots.length >= 2)
                   LineChartBarData(
@@ -3338,7 +3350,7 @@ class _ProgressChart extends StatelessWidget {
               const SizedBox(width: 16),
               const _DashedLine(color: hpColor),
               const SizedBox(width: 6),
-              const Text('Тренд (HP)', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              const Text('Тренд', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
             ],
           ),
         ],
