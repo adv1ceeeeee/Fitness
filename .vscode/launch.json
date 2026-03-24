@@ -1,20 +1,45 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Dev (local .dart_define)",
-      "request": "launch",
-      "type": "dart",
-      "args": ["--dart-define-from-file=.dart_define"]
-    },
-    {
-      "name": "Production",
-      "request": "launch",
-      "type": "dart",
-      "args": [
-        "--dart-define-from-file=.dart_define",
-        "--dart-define=DART_DEFINE_PRODUCTION=true"
-      ]
-    }
-  ]
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Flutter Web (fixed port)",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "args": [
+                "--web-port", "1935"
+            ]
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome against localhost",
+            "url": "http://localhost:1935",
+            "webRoot": "${workspaceFolder}"
+        },
+        {
+            "name": "Dev (default Supabase)",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "args": [
+                "--dart-define=DART_DEFINE_PRODUCTION=false"
+            ]
+        },
+        {
+            "name": "Prod (env vars from shell)",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "args": [
+                "--dart-define=SUPABASE_URL=${env:SUPABASE_URL}",
+                "--dart-define=SUPABASE_ANON_KEY=${env:SUPABASE_ANON_KEY}",
+                "--dart-define=SENTRY_DSN=${env:SENTRY_DSN}",
+                "--dart-define=DART_DEFINE_PRODUCTION=true"
+            ]
+        }
+    ]
 }
