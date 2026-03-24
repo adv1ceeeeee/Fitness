@@ -192,6 +192,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final warmupMins = workoutRes2['warmup_minutes'] as int? ?? 0;
     final cooldownMins = workoutRes2['cooldown_minutes'] as int? ?? 0;
 
+    final savedIdx = ex.isNotEmpty
+        ? ((await SharedPreferences.getInstance()).getInt('session_ex_idx_${widget.sessionId}') ?? 0)
+            .clamp(0, ex.length - 1)
+        : 0;
+
     if (mounted) {
       setState(() {
         _exercises = ex;
@@ -204,14 +209,18 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _warmupMinutes = warmupMins;
         _cooldownMinutes = cooldownMins;
         _loading = false;
-        if (ex.isNotEmpty) _initExercise(ex[0]);
+        if (ex.isNotEmpty) {
+          _currentExerciseIndex = savedIdx;
+          _completedSetsBefore = ex.take(savedIdx).fold(0, (s, e) => s + e.sets);
+          _initExercise(ex[savedIdx]);
+        }
         if (_warmupMinutes > 0) {
           _phase = _SessionPhase.warmup;
           _phaseSecondsLeft = _warmupMinutes * 60;
         }
       });
       if (_warmupMinutes > 0) _startPhaseTimer();
-      if (ex.isNotEmpty) await _maybeRestoreDraft(ex[0]);
+      if (_exercises.isNotEmpty) await _maybeRestoreDraft(_exercises[_currentExerciseIndex]);
 
       // Log auto-progress suggestions shown to user
       for (final exerciseId in autoProgress) {
@@ -592,6 +601,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _currentExerciseIndex = nextIndex;
         _initExercise(next);
       });
+      _saveExerciseIndex();
       _maybeRestoreDraft(next);
     }
   }
@@ -606,6 +616,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _currentExerciseIndex = prevIndex;
         _initExercise(prev);
       });
+      _saveExerciseIndex();
       _maybeRestoreDraft(prev);
     }
   }
@@ -613,6 +624,12 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   // ─── Draft persistence (survives process kill) ───────────────────────────
 
   String _draftKey(String weId) => 'set_draft_${widget.sessionId}_$weId';
+  String get _exerciseIdxKey => 'session_ex_idx_${widget.sessionId}';
+
+  Future<void> _saveExerciseIndex() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_exerciseIdxKey, _currentExerciseIndex);
+  }
 
   /// Persist current weights + reps for the active exercise to SharedPreferences.
   Future<void> _saveDraft() async {
@@ -655,6 +672,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   /// Remove all draft keys for this session (call on normal completion).
   Future<void> _clearAllDrafts() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_exerciseIdxKey);
     for (final we in _exercises) {
       await prefs.remove(_draftKey(we.id));
     }
