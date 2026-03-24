@@ -38,7 +38,9 @@ class _PersonalRecordsScreenState extends State<PersonalRecordsScreen> {
   }
 
   Future<void> _refreshRecords() async {
-    final records = await AnalyticsService.getPersonalRecords();
+    final records = await AppCache.withForceRefresh(
+      () => AnalyticsService.getPersonalRecords(),
+    );
     if (mounted) setState(() { _records = records; _loading = false; });
   }
 

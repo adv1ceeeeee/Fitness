@@ -313,6 +313,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _refreshFresh() async {
     if (!mounted) return;
     try {
+      await AppCache.withForceRefresh(() async {
       final prefs = await SharedPreferences.getInstance();
       final weeklyGoal = prefs.getInt('weekly_workout_goal') ?? 0;
 
@@ -377,6 +378,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (plannedTime != null) _startCountdown(plannedTime);
       _maybeShowWeeklySummary(weeklyGoal);
       _maybeShowDeloadSuggestion();
+      }); // end withForceRefresh
     } catch (e) {
       if (mounted) {
         setState(() => _loadingWorkout = false);

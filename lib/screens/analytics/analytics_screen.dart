@@ -241,7 +241,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   Future<void> _refreshFresh() async {
     if (!mounted) return;
     try {
-      await Future(() async {
+      await AppCache.withForceRefresh(() async {
         final profile = await ProfileService.getProfile();
         final total = await AnalyticsService.getTotalWorkouts();
         final streak = await AnalyticsService.getBestStreak();

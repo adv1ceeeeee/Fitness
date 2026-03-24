@@ -23,12 +23,26 @@ class AppCache {
   AppCache._();
 
   static SharedPreferences? _prefs;
+  static bool _forceRefresh = false;
 
   static Future<SharedPreferences> get _p async {
     return _prefs ??= await SharedPreferences.getInstance();
   }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
+
+  /// Runs [work] in force-refresh mode: all [get] calls inside will skip the
+  /// cache and always fetch from the real source, then update the cache.
+  ///
+  /// Safe to use from a single async context (Dart is single-threaded).
+  static Future<T> withForceRefresh<T>(Future<T> Function() work) async {
+    _forceRefresh = true;
+    try {
+      return await work();
+    } finally {
+      _forceRefresh = false;
+    }
+  }
 
   /// Get a cached value or fetch it.
   ///
@@ -45,25 +59,28 @@ class AppCache {
     required T Function(String? cached) decode,
   }) async {
     final prefs = await _p;
-    final cachedStr = prefs.getString('cache:$key');
-    final cachedAtMs = prefs.getInt('cache_at:$key');
-    final now = DateTime.now().millisecondsSinceEpoch;
 
-    final isFresh = cachedAtMs != null &&
-        (now - cachedAtMs) < ttl.inMilliseconds;
+    if (!_forceRefresh) {
+      final cachedStr = prefs.getString('cache:$key');
+      final cachedAtMs = prefs.getInt('cache_at:$key');
+      final now = DateTime.now().millisecondsSinceEpoch;
 
-    if (isFresh && cachedStr != null) {
-      // Cache is fresh — return immediately, no network
-      return decode(cachedStr);
+      final isFresh = cachedAtMs != null &&
+          (now - cachedAtMs) < ttl.inMilliseconds;
+
+      if (isFresh && cachedStr != null) {
+        // Cache is fresh — return immediately, no network
+        return decode(cachedStr);
+      }
+
+      if (cachedStr != null && cachedAtMs != null) {
+        // Stale — return cached immediately, revalidate in background
+        _refetchInBackground(key: key, fetch: fetch, encode: encode, prefs: prefs);
+        return decode(cachedStr);
+      }
     }
 
-    if (cachedStr != null && cachedAtMs != null) {
-      // Stale — return cached immediately, revalidate in background
-      _refetchInBackground(key: key, fetch: fetch, encode: encode, prefs: prefs);
-      return decode(cachedStr);
-    }
-
-    // Cache miss — must fetch synchronously
+    // Cache miss or force-refresh — fetch synchronously
     final value = await fetch();
     await _store(prefs, key, encode(value));
     return value;
