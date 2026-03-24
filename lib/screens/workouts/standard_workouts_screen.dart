@@ -145,6 +145,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
 
   void _showPreview(Map<String, dynamic> program) {
     final sections = program['sections'] as List?;
+    final isPremium = program['premium'] == true;
 
     showModalBottomSheet(
       context: context,
@@ -165,13 +166,42 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  program['name'] as String,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        program['name'] as String,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (isPremium)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFB800).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFB800)),
+                            SizedBox(width: 4),
+                            Text(
+                              '\$5',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFFFB800),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -228,9 +258,23 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(ctx);
-                            _useProgram(program);
+                            if (isPremium) {
+                              _showPaymentModal(program);
+                            } else {
+                              _useProgram(program);
+                            }
                           },
-                          child: const Text('Использовать эту программу'),
+                          style: isPremium
+                              ? ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFFB800),
+                                  foregroundColor: Colors.black,
+                                )
+                              : null,
+                          child: Text(
+                            isPremium
+                                ? 'Купить за \$5'
+                                : 'Использовать эту программу',
+                          ),
                         ),
                       ),
                       SizedBox(height: MediaQuery.of(ctx).padding.bottom + 16),
@@ -243,6 +287,18 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
         );
       },
     );
+  }
+
+  Future<void> _showPaymentModal(Map<String, dynamic> program) async {
+    final result = await Navigator.of(context, rootNavigator: true).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _PaymentScreen(programName: program['name'] as String),
+      ),
+    );
+    if (result == true) {
+      await _useProgram(program);
+    }
   }
 
   Widget _buildProgramCard(Map<String, dynamic> p) {
@@ -421,4 +477,250 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
       ],
     );
   }
+}
+
+// ─── Payment Screen (mock) ────────────────────────────────────────────────────
+
+class _PaymentScreen extends StatefulWidget {
+  const _PaymentScreen({required this.programName});
+  final String programName;
+
+  @override
+  State<_PaymentScreen> createState() => _PaymentScreenState();
+}
+
+class _PaymentScreenState extends State<_PaymentScreen> {
+  int _selectedBank = 0;
+  bool _loading = false;
+
+  static const _banks = [
+    _Bank('Сбербанк', '🟢'),
+    _Bank('Тинькофф', '🟡'),
+    _Bank('ВТБ', '🔵'),
+    _Bank('Альфа-Банк', '🔴'),
+  ];
+
+  Future<void> _pay() async {
+    setState(() => _loading = true);
+    // Mock network delay
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    setState(() => _loading = false);
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: AppColors.textPrimary),
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        title: const Text(
+          'Оплата',
+          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+        ),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Order summary ──────────────────────────────────────────
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Программа тренировок',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.programName,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Divider(height: 24, color: Color(0xFF2C2C2E)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: const [
+                            Text('Стоимость',
+                                style: TextStyle(color: AppColors.textSecondary)),
+                            Text(
+                              '\$5.00',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // ── Bank selection ─────────────────────────────────────────
+                  const Text(
+                    'Выберите банк',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...List.generate(_banks.length, (i) {
+                    final bank = _banks[i];
+                    final selected = _selectedBank == i;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedBank = i),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? AppColors.accent.withValues(alpha: 0.12)
+                                : AppColors.card,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: selected ? AppColors.accent : Colors.transparent,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(bank.emoji, style: const TextStyle(fontSize: 22)),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  bank.name,
+                                  style: TextStyle(
+                                    color: selected
+                                        ? AppColors.accent
+                                        : AppColors.textPrimary,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              if (selected)
+                                const Icon(Icons.check_circle_rounded,
+                                    color: AppColors.accent, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 16),
+
+                  // ── Mock card number ───────────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.credit_card_rounded,
+                            color: AppColors.textSecondary, size: 20),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            '•••• •••• •••• 4242',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 15,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                        const Text(
+                          '12/26',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Pay button ────────────────────────────────────────────────────
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+                24, 12, 24, MediaQuery.of(context).padding.bottom + 24),
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: _loading ? null : _pay,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.6),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: _loading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        'Оплатить \$5',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Bank {
+  const _Bank(this.name, this.emoji);
+  final String name;
+  final String emoji;
 }

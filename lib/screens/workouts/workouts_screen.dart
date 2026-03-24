@@ -824,9 +824,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
           final offset = -_anim.value * _actionWidth;
           return ClipRRect(
             borderRadius: BorderRadius.circular(16),
-            child: SizedBox(
-              height: 96,
-              child: Stack(
+            child: Stack(
                 children: [
                   // ── Action panel (revealed on swipe) ──────────────────────
                   Positioned.fill(
@@ -955,7 +953,6 @@ class _SwipeableCardState extends State<_SwipeableCard>
                     ),
                   ),
                 ],
-              ),
             ),
           );
         },
@@ -1048,7 +1045,6 @@ class _WorkoutCardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: double.infinity,
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
