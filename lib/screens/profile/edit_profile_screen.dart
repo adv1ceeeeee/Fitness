@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:sportwai/config/avatar_config.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/city_service.dart';
 import 'package:sportwai/services/profile_service.dart';
-import 'package:sportwai/widgets/avatar_widget.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final Profile profile;
@@ -31,9 +28,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _heightCtrl;
 
   String? _gender;
-  String? _avatarUrl;
   bool _isLoading = false;
-  bool _emailChanged = false;
+
 
   @override
   void initState() {
@@ -53,7 +49,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       text: p.heightCm != null ? p.heightCm!.toInt().toString() : '',
     );
     _gender = p.gender;
-    _avatarUrl = p.avatarUrl;
   }
 
   @override
@@ -104,120 +99,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  void _showAvatarPicker() {
-    showModalBottomSheet(
-      context: context,
-      useRootNavigator: true,
-      backgroundColor: AppColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Выбрать аватар',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 5,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-              ),
-              itemCount: kDefaultAvatars.length,
-              itemBuilder: (_, i) {
-                final opt = kDefaultAvatars[i];
-                final selected = _avatarUrl == opt.id;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() => _avatarUrl = opt.id);
-                    Navigator.pop(ctx);
-                    _saveAvatarUrl(opt.id);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: selected
-                          ? Border.all(color: AppColors.accent, width: 3)
-                          : null,
-                    ),
-                    child: AvatarWidget(avatarUrl: opt.id, radius: 28),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _pickPhoto();
-                },
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('Загрузить фото из галереи'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.accent,
-                  side: const BorderSide(color: AppColors.accent),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _saveAvatarUrl(String url) async {
-    await ProfileService.updateProfile({'avatar_url': url});
-  }
-
-  Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-      maxWidth: 512,
-    );
-    if (picked == null) return;
-
-    setState(() => _isLoading = true);
-    try {
-      final bytes = await picked.readAsBytes();
-      final url = await ProfileService.uploadAvatar(bytes);
-      await ProfileService.updateProfile({'avatar_url': url});
-      setState(() => _avatarUrl = url);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Аватар обновлён')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Не удалось загрузить фото. Убедитесь, что bucket "avatars" создан в Supabase Storage.',
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -260,29 +141,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             _cityCtrl.text.trim().isEmpty ? null : _cityCtrl.text.trim(),
         'phone':
             _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-        'height_cm': double.tryParse(_heightCtrl.text.trim()),
       };
+      final heightVal = double.tryParse(_heightCtrl.text.trim());
+      if (heightVal != null) updates['height_cm'] = heightVal;
 
       final newEmail = _emailCtrl.text.trim();
       final oldEmail = widget.profile.email ?? '';
 
-      if (newEmail.isNotEmpty && newEmail != oldEmail) {
-        await ProfileService.updateEmail(newEmail);
-        _emailChanged = true;
-        updates['email'] = newEmail;
-      }
+      if (newEmail.isNotEmpty) updates['email'] = newEmail;
+      if (newEmail.isEmpty && oldEmail.isNotEmpty) updates['email'] = null;
 
       await ProfileService.updateProfile(updates);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _emailChanged
-                  ? 'Профиль сохранён. Подтвердите новый email: $newEmail'
-                  : 'Профиль сохранён',
-            ),
-          ),
+          const SnackBar(content: Text('Профиль сохранён')),
         );
         Navigator.of(context).pop(true);
       }
@@ -336,43 +209,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // --- Аватар ---
-                Center(
-                  child: GestureDetector(
-                    onTap: _showAvatarPicker,
-                    child: Stack(
-                      children: [
-                        AvatarWidget(
-                          avatarUrl: _avatarUrl,
-                          radius: 48,
-                          fallbackLetter: _firstNameCtrl.text.isNotEmpty
-                              ? _firstNameCtrl.text
-                              : _nicknameCtrl.text,
-                        ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: AppColors.accent,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: AppColors.card, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.camera_alt,
-                              size: 14,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-
                 // --- ФИО ---
                 const _SectionLabel('Личные данные'),
                 _field(
@@ -511,7 +347,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     labelText: 'Email',
                     prefixIcon: Icon(Icons.email_outlined),
                     hintText: 'example@mail.com',
-                    helperText: 'Смена email потребует подтверждения',
+                    helperText: 'Контактный email — не используется для входа',
                   ),
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return null;

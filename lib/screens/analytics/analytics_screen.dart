@@ -3539,7 +3539,7 @@ class _AchievementsGrid extends StatelessWidget {
               crossAxisCount: 4,
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
-              childAspectRatio: 0.78,
+              childAspectRatio: 0.70,
             ),
             itemBuilder: (context, i) {
               final a = grouped[cat]![i];
@@ -3575,7 +3575,7 @@ class _AchievementCell extends StatelessWidget {
               ? Border.all(color: AppColors.accent.withValues(alpha: 0.5), width: 1.5)
               : Border.all(color: AppColors.surface, width: 1),
         ),
-        padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+        padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

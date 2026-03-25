@@ -137,6 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadOverrideWorkout();
     _showOnboardingOnce();
     _checkCrashRecovery();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -587,6 +588,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  static const _kOverrideWorkoutKey = 'home_override_workout_id';
+
+  Future<void> _loadOverrideWorkout() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedId = prefs.getString(_kOverrideWorkoutKey);
+    if (savedId == null) return;
+    final workout = await WorkoutService.getWorkout(savedId);
+    if (mounted && workout != null) {
+      setState(() => _overrideWorkout = workout);
+    } else if (workout == null) {
+      // Workout was deleted — clear saved preference
+      prefs.remove(_kOverrideWorkoutKey);
+    }
+  }
+
+  Future<void> _saveOverrideWorkout(String? workoutId) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (workoutId == null) {
+      await prefs.remove(_kOverrideWorkoutKey);
+    } else {
+      await prefs.setString(_kOverrideWorkoutKey, workoutId);
+    }
+  }
+
   void _showChangeProgramSheet() {
     showModalBottomSheet<void>(
       context: context,
@@ -601,6 +626,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onSelected: (workout) {
           Navigator.of(ctx).pop();
           setState(() => _overrideWorkout = workout);
+          _saveOverrideWorkout(workout.id);
         },
         onManageAll: () {
           Navigator.of(ctx).pop();
@@ -1757,6 +1783,29 @@ class _ChangeProgramSheetState extends State<_ChangeProgramSheet> {
   }
 }
 
+// ─── Schedule badge helpers ───────────────────────────────────────────────────
+
+/// Returns (label, isToday) for the schedule badge on the today card.
+/// days: 0=Пн … 6=Вс. Empty list = freestyle, shown as "СЕГОДНЯ".
+({String label, bool isToday}) _workoutScheduleBadge(List<int> days) {
+  if (days.isEmpty) return (label: 'СЕГОДНЯ', isToday: true);
+
+  // Dart weekday: 1=Mon…7=Sun → convert to 0=Mon…6=Sun
+  final today = DateTime.now().weekday - 1;
+
+  if (days.contains(today)) return (label: 'СЕГОДНЯ', isToday: true);
+
+  // Find closest upcoming day
+  int minDays = 7;
+  for (final d in days) {
+    final diff = (d - today + 7) % 7;
+    if (diff > 0 && diff < minDays) minDays = diff;
+  }
+
+  if (minDays == 1) return (label: 'ЗАВТРА', isToday: false);
+  return (label: 'ЧЕРЕЗ $minDays ДН.', isToday: false);
+}
+
 // ─── Today Card ───────────────────────────────────────────────────────────────
 
 class _TodayCard extends StatelessWidget {
@@ -1917,6 +1966,10 @@ class _TodayCard extends StatelessWidget {
     final bool isPremium = premiumWorkoutNames.contains(workout!.name);
     final bool isUserCreated = !allStandardWorkoutNames.contains(workout!.name);
     final Color iconColor = isPremium ? kPremiumColor : isUserCreated ? kUserColor : AppColors.accent;
+
+    final badge = _workoutScheduleBadge(workout!.days);
+    final badgeColor = badge.isToday ? AppColors.accent : AppColors.textSecondary;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -1949,13 +2002,13 @@ class _TodayCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: AppColors.accent.withValues(alpha: 0.15),
+                        color: badgeColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(5),
                       ),
-                      child: const Text(
-                        'СЕГОДНЯ',
+                      child: Text(
+                        badge.label,
                         style: TextStyle(
-                          color: AppColors.accent,
+                          color: badgeColor,
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.8,

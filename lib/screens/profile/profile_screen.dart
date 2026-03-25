@@ -16,7 +16,10 @@ import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:sportwai/widgets/avatar_widget.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_selector/file_selector.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -27,6 +30,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Profile? _profile;
+  bool _uploadingAvatar = false;
   int _totalWorkouts = 0;
   int _yearWorkouts = 0;
   int _monthWorkouts = 0;
@@ -346,6 +350,49 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) setState(() => _profile = p);
   }
 
+  bool get _isDesktop =>
+      defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux;
+
+  Future<void> _pickAndUploadAvatar() async {
+    XFile? file;
+
+    if (_isDesktop) {
+      const typeGroup = XTypeGroup(
+        label: 'Изображения',
+        extensions: ['jpg', 'jpeg', 'png', 'webp'],
+      );
+      final picked = await openFile(acceptedTypeGroups: [typeGroup]);
+      file = picked;
+    } else {
+      file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+    }
+
+    if (file == null || !mounted) return;
+
+    setState(() => _uploadingAvatar = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final url = await ProfileService.uploadAvatar(bytes);
+      await ProfileService.updateProfile({'avatar_url': url});
+      await _loadProfile();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось загрузить фото')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
   Future<void> _loadStats() async {
     final results = await Future.wait([
       AnalyticsService.getTotalWorkouts(),
@@ -532,10 +579,48 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Center(
                 child: Column(
                   children: [
-                    AvatarWidget(
-                      avatarUrl: _profile?.avatarUrl,
-                      radius: 50,
-                      fallbackLetter: _avatarLetter,
+                    GestureDetector(
+                      onTap: _uploadingAvatar ? null : _pickAndUploadAvatar,
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          _uploadingAvatar
+                              ? CircleAvatar(
+                                  radius: 50,
+                                  backgroundColor: AppColors.card,
+                                  child: const SizedBox(
+                                    width: 32,
+                                    height: 32,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: AppColors.accent,
+                                    ),
+                                  ),
+                                )
+                              : AvatarWidget(
+                                  avatarUrl: _profile?.avatarUrl,
+                                  radius: 50,
+                                  fallbackLetter: _avatarLetter,
+                                ),
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: AppColors.accent,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: AppColors.background,
+                                width: 2,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Text(

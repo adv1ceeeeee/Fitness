@@ -1104,3 +1104,30 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
 | Пригласить тренера | ProfileScreen | Требует бэкенд социальных связей |
 | iOS виджеты | — | Требует нативный Swift/WidgetKit код |
 | Paywall (Pro-подписка) | — | Ожидает интеграции RuStore / Google Play Billing |
+| Верификация контактного email | EditProfileScreen | См. ниже — запланировано |
+
+---
+
+## Запланировано
+
+### Верификация контактного email (OTP-код)
+
+**Идея:** перед сохранением контактного email пользователя отправлять на него 6-значный код подтверждения, чтобы нельзя было указать чужой адрес.
+
+**Стек:**
+- Email-провайдер: **Resend** (resend.com) — бесплатно 100 писем/день, простой REST API
+- Supabase Edge Function: генерирует код, сохраняет в БД, шлёт письмо через Resend
+- Таблица `email_verifications`: `{user_id, new_email, code, expires_at, used}`
+
+**Флоу:**
+1. Пользователь вводит новый email → нажимает «Отправить код»
+2. Edge Function генерирует 6-значный OTP, сохраняет в `email_verifications` (TTL 10 мин), отправляет письмо
+3. Появляется поле ввода кода
+4. Код верный и не истёк → email сохраняется в `profiles.email`
+
+**Что нужно для реализации:**
+1. Аккаунт Resend + API key
+2. Верифицированный домен отправителя (или `onboarding@resend.dev` для тестов)
+3. Написать Edge Function `send-email-otp`
+4. Миграция `048_email_verifications.sql`
+5. UI: диалог ввода кода в `EditProfileScreen`
