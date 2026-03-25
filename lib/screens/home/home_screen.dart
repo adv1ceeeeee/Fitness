@@ -24,6 +24,7 @@ import 'package:sportwai/services/feedback_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:sportwai/data/standard_programs.dart';
 
 // ─── Metric options for body progress panel ───────────────────────────────────
 
@@ -105,6 +106,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Profile? _profile;
   Workout? _todayWorkout;
+  Workout? _overrideWorkout; // user-selected program override for "Начать"
   bool _loadingWorkout = true;
   bool _wellnessLogged = true;
   Map<String, dynamic>? _todayWellness;
@@ -585,6 +587,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  void _showChangeProgramSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _ChangeProgramSheet(
+        currentWorkoutId: (_overrideWorkout ?? _todayWorkout)?.id,
+        onSelected: (workout) {
+          Navigator.of(ctx).pop();
+          setState(() => _overrideWorkout = workout);
+        },
+        onManageAll: () {
+          Navigator.of(ctx).pop();
+          context.go('/workouts');
+        },
+      ),
+    );
+  }
+
+  Future<void> _startDisplayedWorkout() async {
+    final workout = _overrideWorkout ?? _todayWorkout;
+    if (workout == null) return;
+    // If it's the scheduled workout, use the today screen flow
+    if (_overrideWorkout == null) {
+      context.push('/today');
+      return;
+    }
+    // Override workout: create/get a session and go straight to it
+    final session = await TrainingService.getOrCreateTodaySession(workout.id);
+    if (!mounted || session == null) return;
+    context.push('/session/${session.id}');
+  }
+
   @override
   Widget build(BuildContext context) {
     final rawName = _profile?.fullName?.split(' ').first ?? 'Атлет';
@@ -610,10 +649,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: 24),
                 _TodayCard(
-                  workout: _todayWorkout,
+                  workout: _overrideWorkout ?? _todayWorkout,
                   loading: _loadingWorkout,
-                  onTap: () => context.push('/today'),
-                  onCreateProgram: () => context.go('/workouts'),
+                  onTap: _startDisplayedWorkout,
+                  onCreateProgram: _showChangeProgramSheet,
                   onQuickStart: () => showModalBottomSheet<void>(
                     context: context,
                     useRootNavigator: true,
@@ -1544,6 +1583,180 @@ class _CountdownChip extends StatelessWidget {
   }
 }
 
+// ─── Change Program Sheet ─────────────────────────────────────────────────────
+
+class _ChangeProgramSheet extends StatefulWidget {
+  final void Function(Workout workout) onSelected;
+  final VoidCallback onManageAll;
+  final String? currentWorkoutId;
+
+  const _ChangeProgramSheet({
+    required this.onSelected,
+    required this.onManageAll,
+    this.currentWorkoutId,
+  });
+
+  @override
+  State<_ChangeProgramSheet> createState() => _ChangeProgramSheetState();
+}
+
+class _ChangeProgramSheetState extends State<_ChangeProgramSheet> {
+  List<Workout>? _workouts;
+
+  static const Color _kPremiumColor = Color(0xFFFFB800);
+  static const Color _kUserColor = Color(0xFFAB7FF8);
+
+  Color _iconColor(String name) {
+    if (premiumWorkoutNames.contains(name)) return _kPremiumColor;
+    if (allStandardWorkoutNames.contains(name)) return AppColors.accent;
+    return _kUserColor;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WorkoutService.getMyWorkouts().then((list) {
+      if (mounted) setState(() => _workouts = list);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textSecondary.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Text(
+                  'Выбрать программу',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_workouts == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_workouts!.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+              child: Text(
+                'Нет программ. Создайте первую программу тренировок.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else
+            Flexible(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shrinkWrap: true,
+                itemCount: _workouts!.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) {
+                  final w = _workouts![i];
+                  final color = _iconColor(w.name);
+                  final isActive = w.id == widget.currentWorkoutId;
+                  return Material(
+                    color: isActive
+                        ? color.withValues(alpha: 0.1)
+                        : AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: () => widget.onSelected(w),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(Icons.fitness_center_rounded,
+                                  size: 18, color: color),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                w.name,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: isActive
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                            if (isActive)
+                              Icon(Icons.check_rounded,
+                                  size: 18, color: color)
+                            else
+                              const Icon(Icons.chevron_right_rounded,
+                                  size: 20, color: AppColors.textSecondary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomPad),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: widget.onManageAll,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  side: BorderSide(
+                    color: AppColors.textSecondary.withValues(alpha: 0.3),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Управлять программами'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Today Card ───────────────────────────────────────────────────────────────
 
 class _TodayCard extends StatelessWidget {
@@ -1698,80 +1911,111 @@ class _TodayCard extends StatelessWidget {
       );
     }
 
-    // ── Workout exists — hero card ──────────────────────────────────────────────
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: onTap,
+    // ── Workout exists — hero card (matches programs-tab style) ──────────────
+    const Color kPremiumColor = Color(0xFFFFB800);
+    const Color kUserColor = Color(0xFFAB7FF8);
+    final bool isPremium = premiumWorkoutNames.contains(workout!.name);
+    final bool isUserCreated = !allStandardWorkoutNames.contains(workout!.name);
+    final Color iconColor = isPremium ? kPremiumColor : isUserCreated ? kUserColor : AppColors.accent;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(20),
-        child: Ink(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0D2B6E), Color(0xFF1C1C1E)],
-            ),
-            border: Border.all(
-              color: AppColors.accent.withValues(alpha: 0.28),
-              width: 1,
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Icon + name row (matches _WorkoutCardContent layout)
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.fitness_center_rounded,
+                  color: iconColor,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: const Text(
+                        'СЕГОДНЯ',
+                        style: TextStyle(
+                          color: AppColors.accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      workout!.name,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // «Начать тренировку» — primary action
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: onTap,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Начать тренировку',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
             ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // «СЕГОДНЯ» badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'СЕГОДНЯ',
-                    style: TextStyle(
-                      color: AppColors.accent,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
+          const SizedBox(height: 8),
+          // «Изменить программу» — secondary action
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: onCreateProgram,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  workout!.name,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    'Начать тренировку',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-              ],
+              ),
+              child: const Text(
+                'Изменить программу',
+                style: TextStyle(fontSize: 14),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

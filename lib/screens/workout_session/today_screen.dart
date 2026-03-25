@@ -281,7 +281,9 @@ class _WorkoutContent extends StatelessWidget {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          padding: EdgeInsets.fromLTRB(
+            24, 0, 24, 16 + MediaQuery.of(context).padding.bottom,
+          ),
           child: Column(
             children: [
               if (fromCache)
