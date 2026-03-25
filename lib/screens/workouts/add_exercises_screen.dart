@@ -44,13 +44,24 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Workout? _workout;
   List<WorkoutExercise> _programExercises = [];
   List<Exercise> _allExercises = [];
+  List<Workout> _groupSections = []; // all sections of a multi-section program
   String _searchQuery = '';
   bool _favoritesOnly = false;
   bool _loading = true;
   Timer? _searchDebounce;
   final Set<String> _expandedCategories = {};
+  int? _selectedDay; // currently active day context for adding exercises
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+  /// Exercises filtered to the currently selected day.
+  /// If no day is selected, shows all exercises (both day-assigned and unassigned).
+  List<WorkoutExercise> get _visibleExercises {
+    if (_selectedDay == null) return _programExercises;
+    return _programExercises
+        .where((e) => e.day == null || e.day == _selectedDay)
+        .toList();
+  }
 
   @override
   void initState() {
@@ -134,12 +145,21 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     final w = await wFuture;
     final ex = await exFuture;
     final all = await allFuture;
+    // If this is a section of a multi-section program, load siblings too.
+    final sections = (w?.groupId != null)
+        ? await WorkoutService.getSectionsByGroupId(w!.groupId!)
+        : <Workout>[];
     if (mounted) {
       setState(() {
         _workout = w;
         _programExercises = ex;
         _allExercises = all;
+        _groupSections = sections;
         _loading = false;
+        // Auto-select when only one day in this section
+        if (w != null && w.days.length == 1) {
+          _selectedDay = w.days.first;
+        }
       });
     }
   }
@@ -223,7 +243,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     if (_workout == null) return;
     final nameCtrl = TextEditingController(text: _workout!.name);
     final Set<int> selectedDays = Set.from(_workout!.days);
-    int cycleWeeks = _workout!.cycleWeeks;
+    int cycleWeeks = _workout!.cycleWeeks == 0 ? 8 : _workout!.cycleWeeks;
+    bool noCycle = _workout!.cycleWeeks == 0;
     int warmupMinutes = _workout!.warmupMinutes;
     int cooldownMinutes = _workout!.cooldownMinutes;
 
@@ -341,20 +362,26 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                SliderTheme(
-                  data: SliderTheme.of(ctx).copyWith(
-                    activeTrackColor: AppColors.accent,
-                    inactiveTrackColor: AppColors.surface,
-                    thumbColor: AppColors.accent,
-                    overlayColor: AppColors.accent.withValues(alpha: 0.12),
-                  ),
-                  child: Slider(
-                    value: cycleWeeks.clamp(4, 16).toDouble(),
-                    min: 4,
-                    max: 16,
-                    divisions: 12,
-                    label: '$cycleWeeks нед.',
-                    onChanged: (v) => setDialogState(() => cycleWeeks = v.round()),
+                Opacity(
+                  opacity: noCycle ? 0.35 : 1.0,
+                  child: IgnorePointer(
+                    ignoring: noCycle,
+                    child: SliderTheme(
+                      data: SliderTheme.of(ctx).copyWith(
+                        activeTrackColor: AppColors.accent,
+                        inactiveTrackColor: AppColors.surface,
+                        thumbColor: AppColors.accent,
+                        overlayColor: AppColors.accent.withValues(alpha: 0.12),
+                      ),
+                      child: Slider(
+                        value: cycleWeeks.clamp(4, 16).toDouble(),
+                        min: 4,
+                        max: 16,
+                        divisions: 12,
+                        label: '$cycleWeeks нед.',
+                        onChanged: (v) => setDialogState(() => cycleWeeks = v.round()),
+                      ),
+                    ),
                   ),
                 ),
                 const Padding(
@@ -365,6 +392,39 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       Text('4 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                       Text('16 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: () => setDialogState(() => noCycle = !noCycle),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: noCycle
+                          ? AppColors.accent.withValues(alpha: 0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: noCycle
+                            ? AppColors.accent
+                            : AppColors.textSecondary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.all_inclusive, size: 16,
+                            color: noCycle ? AppColors.accent : AppColors.textSecondary),
+                        const SizedBox(width: 6),
+                        Text('Без цикла',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: noCycle ? AppColors.accent : AppColors.textSecondary,
+                            )),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -410,7 +470,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   widget.workoutId,
                   name: name,
                   days: selectedDays.toList()..sort(),
-                  cycleWeeks: cycleWeeks,
+                  cycleWeeks: noCycle ? 0 : cycleWeeks,
                   warmupMinutes: warmupMinutes,
                   cooldownMinutes: cooldownMinutes,
                 );
@@ -816,6 +876,103 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     context.push('/exercise/${ex.id}/history', extra: ex);
   }
 
+  /// Called when user taps an exercise card or the + button.
+  /// If the program has multiple days and none is selected, asks the user
+  /// to pick a day first, then opens the settings sheet.
+  void _triggerAddExercise(Exercise ex) {
+    final days = _workout?.days ?? [];
+    if (days.length > 1 && _selectedDay == null) {
+      // Ask which day
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: AppColors.card,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 56),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('В какой день добавить?',
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+              Text(ex.displayName,
+                  style: const TextStyle(
+                      fontSize: 13, color: AppColors.textSecondary)),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: days.map((d) {
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      setState(() => _selectedDay = d);
+                      _openAddSheet(ex);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: AppColors.accent.withValues(alpha: 0.4)),
+                      ),
+                      child: Text(
+                        _dayLabels[d],
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      _openAddSheet(ex);
+    }
+  }
+
+  void _openAddSheet(Exercise ex) {
+    _showExerciseSettingsSheet(
+      title: ex.displayName,
+      gifUrl: ex.gifUrl,
+      description: ex.descriptionRu ?? ex.description,
+      isCardio: ex.category == 'cardio',
+      initialSets: 3,
+      initialRepsRange: '8-12',
+      initialRest: 90,
+      initialTargetWeight: null,
+      initialDurationMinutes: 30,
+      saveLabel: 'Добавить в программу',
+      onSave: (s, r, rest, tw, dur) => WorkoutService.addExerciseToWorkout(
+        widget.workoutId,
+        ex.id,
+        sets: s,
+        repsRange: r,
+        restSeconds: rest,
+        targetWeight: tw,
+        durationMinutes: dur,
+        day: _selectedDay,
+      ),
+    );
+  }
+
   List<Widget> _buildExerciseTiles(List<Exercise> exercises) {
     return exercises.map((ex) => Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -823,6 +980,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(12),
         child: ListTile(
+          onTap: () => _triggerAddExercise(ex),
           onLongPress: () => _showExerciseHistory(ex),
           leading: Icon(
             ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
@@ -853,27 +1011,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 ),
               IconButton(
                 icon: const Icon(Icons.add, color: AppColors.accent),
-                onPressed: () => _showExerciseSettingsSheet(
-                  title: ex.displayName,
-                  gifUrl: ex.gifUrl,
-                  description: ex.descriptionRu ?? ex.description,
-                  isCardio: ex.category == 'cardio',
-                  initialSets: 3,
-                  initialRepsRange: '8-12',
-                  initialRest: 90,
-                  initialTargetWeight: null,
-                  initialDurationMinutes: 30,
-                  saveLabel: 'Добавить в программу',
-                  onSave: (s, r, rest, tw, dur) => WorkoutService.addExerciseToWorkout(
-                    widget.workoutId,
-                    ex.id,
-                    sets: s,
-                    repsRange: r,
-                    restSeconds: rest,
-                    targetWeight: tw,
-                    durationMinutes: dur,
-                  ),
-                ),
+                onPressed: () => _triggerAddExercise(ex),
               ),
             ],
           ),
@@ -1037,11 +1175,121 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   if (workout != null) ...[
                     const SizedBox(width: 8),
                     Text(
-                      '${workout.cycleWeeks} нед.',
+                      workout.cycleWeeks == 0 ? '∞' : '${workout.cycleWeeks} нед.',
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 12),
                     ),
                   ]
+                ],
+              ),
+            ),
+
+          // ── Day/section tabs (multi-section programs) ─────────────────────
+          if (_groupSections.length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _groupSections.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, i) {
+                    final s = _groupSections[i];
+                    final isActive = s.id == widget.workoutId;
+                    final dayLabel = s.days
+                        .map((d) => _dayLabels[d])
+                        .join(', ');
+                    return GestureDetector(
+                      onTap: isActive
+                          ? null
+                          : () => context.go(
+                                '/workouts/${s.id}/exercises',
+                              ),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? AppColors.accent
+                              : AppColors.card,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: isActive
+                                ? AppColors.accent
+                                : Colors.transparent,
+                          ),
+                        ),
+                        child: Text(
+                          dayLabel.isEmpty ? s.name : dayLabel,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isActive
+                                ? Colors.white
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+          // ── Day selector chips (when section has > 1 day) ──────────────────
+          if ((days.length > 1))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+              child: Row(
+                children: [
+                  const Text('День: ',
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary)),
+                  ...days.map((d) {
+                    final isSelected = _selectedDay == d;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: GestureDetector(
+                        onTap: () => setState(() =>
+                            _selectedDay = isSelected ? null : d),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF3A3A3A)
+                                : AppColors.card,
+                            borderRadius: BorderRadius.circular(8),
+                            border: isSelected
+                                ? Border.all(color: const Color(0xFF6B6B6B))
+                                : null,
+                          ),
+                          child: Text(
+                            _dayLabels[d],
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  if (_selectedDay != null)
+                    GestureDetector(
+                      onTap: () => setState(() => _selectedDay = null),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 2),
+                        child: Icon(Icons.close,
+                            size: 14, color: AppColors.textSecondary),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1095,9 +1343,11 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   16, 0, 16, MediaQuery.of(context).padding.bottom + 80),
               children: [
                 // Упражнения в программе
-                if (_programExercises.isNotEmpty) ...[
+                if (_visibleExercises.isNotEmpty) ...[
                   Text(
-                    'В программе (${_programExercises.length})',
+                    _selectedDay == null
+                        ? 'В программе (${_programExercises.length})'
+                        : 'В программе — ${_dayLabels[_selectedDay!]} (${_visibleExercises.length})',
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       color: AppColors.textPrimary,
@@ -1120,24 +1370,25 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         _programExercises.map((e) => e.id).toList(),
                       );
                     },
-                    children: _programExercises.asMap().entries.map((entry) {
+                    children: _visibleExercises.asMap().entries.map((entry) {
                       final i = entry.key;
                       final we = entry.value;
-                      final isLast = i == _programExercises.length - 1;
-                      final nextWe = isLast ? null : _programExercises[i + 1];
+                      final isLast = i == _visibleExercises.length - 1;
+                      final nextWe = isLast ? null : _visibleExercises[i + 1];
                       final isLinkedWithNext = !isLast &&
                           we.supersetGroup != null &&
                           we.supersetGroup == nextWe?.supersetGroup;
+                      final realIdx = _programExercises.indexOf(we);
                       return _ProgramExerciseCard(
                         key: ValueKey(we.id),
                         dragIndex: i,
                         workoutExercise: we,
-                        supersetLabel: _supersetLabel(i),
+                        supersetLabel: _supersetLabel(realIdx),
                         isLinkedWithNext: isLinkedWithNext,
                         canLink: !isLast,
                         isDropSet: we.isDropSet,
-                        onToggleLink: () => _toggleSuperset(i),
-                        onToggleDropSet: () => _toggleDropSet(i),
+                        onToggleLink: () => _toggleSuperset(realIdx),
+                        onToggleDropSet: () => _toggleDropSet(realIdx),
                         onEdit: () => _showExerciseSettingsSheet(
                           title: we.exercise?.displayName ?? '?',
                           gifUrl: we.exercise?.gifUrl,
@@ -1240,17 +1491,52 @@ class _ProgramExerciseCard extends StatelessWidget {
     final isCardio = we.exercise?.category == 'cardio';
     final inSuperset = supersetLabel != null;
 
-    final String subtitle;
+    // Murasaki (紫) — medium-dark Japanese purple
+    const murasakiColor = Color(0xFF8B5EA8);
+
+    // Build subtitle as InlineSpan list so weight can be colored separately
+    final List<InlineSpan> subtitleSpans;
+    const sep = TextSpan(
+      text: '  •  ',
+      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+    );
     if (isCardio) {
-      subtitle = '${we.durationMinutes ?? 30} мин';
-    } else {
-      final parts = <String>[
-        '${we.sets} подх. × ${we.repsRange} повт.',
-        'отдых ${we.restSeconds}с',
+      subtitleSpans = [
+        TextSpan(
+          text: '${we.durationMinutes ?? 30} мин',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
       ];
-      if (we.targetWeight != null) parts.add('${we.targetWeight} кг');
-      if (we.targetRpe != null) parts.add('RPE ${we.targetRpe}');
-      subtitle = parts.join('  •  ');
+    } else {
+      subtitleSpans = [
+        TextSpan(
+          text: '${we.sets} подх. × ${we.repsRange} повт.',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        sep,
+        TextSpan(
+          text: 'отдых ${we.restSeconds}с',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        if (we.targetWeight != null) ...[
+          sep,
+          TextSpan(
+            text: '${we.targetWeight} кг',
+            style: const TextStyle(
+              color: murasakiColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        if (we.targetRpe != null) ...[
+          sep,
+          TextSpan(
+            text: 'RPE ${we.targetRpe}',
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+        ],
+      ];
     }
 
     // Accent colour for this superset group (cycle through palette)
@@ -1347,10 +1633,8 @@ class _ProgramExerciseCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          style: const TextStyle(
-                              color: AppColors.textSecondary, fontSize: 12),
+                        RichText(
+                          text: TextSpan(children: subtitleSpans),
                         ),
                       ],
                     ),

@@ -48,6 +48,28 @@ class WorkoutService {
     return Workout.fromJson(res);
   }
 
+  /// Returns all sections that belong to the same multi-section program,
+  /// ordered by the earliest day in each section.
+  static Future<List<Workout>> getSectionsByGroupId(String groupId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    final res = await _client
+        .from('workouts')
+        .select()
+        .eq('user_id', userId)
+        .eq('group_id', groupId)
+        .isFilter('deleted_at', null);
+    final list = (res as List)
+        .map((e) => Workout.fromJson(e as Map<String, dynamic>))
+        .toList();
+    list.sort((a, b) {
+      final da = a.days.isEmpty ? 99 : a.days.reduce((x, y) => x < y ? x : y);
+      final db = b.days.isEmpty ? 99 : b.days.reduce((x, y) => x < y ? x : y);
+      return da.compareTo(db);
+    });
+    return list;
+  }
+
   static Future<void> setGroupId(String workoutId, String groupId) async {
     await _client
         .from('workouts')
@@ -107,6 +129,7 @@ class WorkoutService {
     double? targetWeight,
     int? targetRpe,
     int? durationMinutes,
+    int? day,
   }) async {
     final maxOrder = await _client
         .from('workout_exercises')
@@ -128,6 +151,7 @@ class WorkoutService {
       if (targetWeight != null) 'target_weight': targetWeight,
       if (targetRpe != null) 'target_rpe': targetRpe,
       if (durationMinutes != null) 'duration_minutes': durationMinutes,
+      if (day != null) 'day': day,
     });
   }
 

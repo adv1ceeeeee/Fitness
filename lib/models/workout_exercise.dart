@@ -13,6 +13,7 @@ class WorkoutExercise {
   final int? durationMinutes;
   final int? supersetGroup;
   final bool isDropSet;
+  final int? day; // which day of the week (0=Mon … 6=Sun), null = all days
   Exercise? exercise;
 
   WorkoutExercise({
@@ -28,6 +29,7 @@ class WorkoutExercise {
     this.durationMinutes,
     this.supersetGroup,
     this.isDropSet = false,
+    this.day,
     this.exercise,
   });
 
@@ -46,6 +48,7 @@ class WorkoutExercise {
         durationMinutes: durationMinutes,
         supersetGroup: supersetGroup,
         isDropSet: isDropSet,
+        day: day,
         exercise: newExercise,
       );
 
@@ -63,6 +66,7 @@ class WorkoutExercise {
       durationMinutes: json['duration_minutes'] as int?,
       supersetGroup: json['superset_group'] as int?,
       isDropSet: json['is_drop_set'] as bool? ?? false,
+      day: json['day'] as int?,
       exercise: json['exercises'] != null
           ? Exercise.fromJson(json['exercises'] as Map<String, dynamic>)
           : null,
@@ -82,5 +86,6 @@ class WorkoutExercise {
         'duration_minutes': durationMinutes,
         'superset_group': supersetGroup,
         'is_drop_set': isDropSet,
+        'day': day,
       };
 }
