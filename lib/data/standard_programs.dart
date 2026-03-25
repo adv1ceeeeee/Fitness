@@ -307,6 +307,26 @@ const List<Map<String, dynamic>> standardPrograms = [
   },
 ];
 
+/// All workout/section names that belong to premium programs.
+final Set<String> premiumWorkoutNames = {
+  for (final p in standardPrograms)
+    if (p['premium'] == true) ...[
+      p['name'] as String,
+      if (p['sections'] != null)
+        for (final s in p['sections'] as List) (s as Map)['name'] as String,
+    ],
+};
+
+/// All workout/section names from ANY standard program (free + premium).
+/// If a workout name is NOT in this set → it was created by the user.
+final Set<String> allStandardWorkoutNames = {
+  for (final p in standardPrograms) ...[
+    p['name'] as String,
+    if (p['sections'] != null)
+      for (final s in p['sections'] as List) (s as Map)['name'] as String,
+  ],
+};
+
 /// Возвращает название рекомендуемой программы по цели и уровню пользователя.
 /// Используется в онбординге.
 String recommendedProgramName({

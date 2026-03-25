@@ -9,6 +9,7 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
 import 'package:sportwai/widgets/skeleton.dart';
 
@@ -194,6 +195,10 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
   Set<String> _hiddenIds = {};
   String? _openSwipeId;
 
+  // Multi-select delete mode
+  bool _deleteMode = false;
+  Set<String> _selectedIds = {};
+
   static const _kOrder = 'workout_order';
   static const _kHidden = 'hidden_workout_ids';
 
@@ -286,6 +291,114 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
 
   void _setOpen(String? id) {
     if (_openSwipeId != id) setState(() => _openSwipeId = id);
+  }
+
+  void _enterDeleteMode() {
+    setState(() {
+      _deleteMode = true;
+      _selectedIds = {};
+      _openSwipeId = null;
+    });
+  }
+
+  void _exitDeleteMode() {
+    setState(() {
+      _deleteMode = false;
+      _selectedIds = {};
+    });
+  }
+
+  void _toggleSelect(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _toggleSelectAll() {
+    final sorted = _sortedWorkouts;
+    setState(() {
+      if (_selectedIds.length == sorted.length) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds = sorted.map((w) => w.id).toSet();
+      }
+    });
+  }
+
+  Future<void> _confirmBulkDelete() async {
+    final selected =
+        _sortedWorkouts.where((w) => _selectedIds.contains(w.id)).toList();
+    if (selected.isEmpty) {
+      _exitDeleteMode();
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Text(
+          'Удалить ${selected.length} ${_plural(selected.length, 'программу', 'программы', 'программ')}?',
+          style: const TextStyle(color: AppColors.textPrimary),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: selected.length,
+              itemBuilder: (_, i) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text(
+                  '• ${selected[i].name}',
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 14),
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await Future.wait(selected.map((w) {
+        EventLogger.workoutDeleted(workoutName: w.name);
+        return widget.onDelete(w.id);
+      }));
+      if (mounted) {
+        setState(() {
+          _orderedIds.removeWhere((id) => _selectedIds.contains(id));
+          _hiddenIds.removeWhere((id) => _selectedIds.contains(id));
+          _selectedIds = {};
+          _deleteMode = false;
+          _openSwipeId = null;
+        });
+      }
+    }
+  }
+
+  String _plural(int n, String one, String few, String many) {
+    if (n % 10 == 1 && n % 100 != 11) return one;
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return few;
+    return many;
   }
 
   Future<void> _confirmDelete(Workout w) async {
@@ -588,16 +701,75 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
               ),
               const SizedBox(height: 24),
               if (sorted.isNotEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    'Действующие программы',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.5,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Действующие программы',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      if (_deleteMode)
+                        GestureDetector(
+                          onTap: _toggleSelectAll,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: _selectedIds.length == sorted.length
+                                    ? AppColors.accent
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: _selectedIds.length == sorted.length
+                                      ? AppColors.accent
+                                      : AppColors.textSecondary,
+                                  width: 1.5,
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: _selectedIds.length == sorted.length
+                                  ? const Icon(Icons.check,
+                                      size: 13, color: Colors.white)
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _deleteMode
+                            ? _confirmBulkDelete
+                            : _enterDeleteMode,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Icon(
+                            Icons.delete_outline,
+                            size: 20,
+                            color: _deleteMode && _selectedIds.isNotEmpty
+                                ? AppColors.error
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                      if (_deleteMode)
+                        GestureDetector(
+                          onTap: _exitDeleteMode,
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 8, top: 2, bottom: 2),
+                            child: Icon(Icons.close,
+                                size: 18, color: AppColors.textSecondary),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               if (sorted.isEmpty && inactive.isEmpty)
@@ -712,19 +884,64 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                 ),
           children: [
             for (int i = 0; i < sorted.length; i++)
-              _SwipeableCard(
+              Padding(
                 key: ValueKey(sorted[i].id),
-                workout: sorted[i],
-                index: i,
-                isHidden: _hiddenIds.contains(sorted[i].id),
-                isOpen: _openSwipeId == sorted[i].id,
-                onOpen: () => _setOpen(sorted[i].id),
-                onClose: () => _setOpen(null),
-                onTap: () => widget.onWorkoutTap(sorted[i]),
-                onToggleHide: () => _toggleHidden(sorted[i].id),
-                onDelete: () => _confirmDelete(sorted[i]),
-                onCopy: () => _duplicateWorkout(sorted[i]),
-                onArchive: () => _archiveWorkout(sorted[i]),
+                padding: const EdgeInsets.only(bottom: 0),
+                child: Row(
+                  children: [
+                    // ── Checkbox (delete mode only) ──────────────────
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: _deleteMode ? 36 : 0,
+                      alignment: Alignment.center,
+                      child: _deleteMode
+                          ? GestureDetector(
+                              onTap: () => _toggleSelect(sorted[i].id),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                width: 22,
+                                height: 22,
+                                decoration: BoxDecoration(
+                                  color: _selectedIds.contains(sorted[i].id)
+                                      ? AppColors.accent
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: _selectedIds.contains(sorted[i].id)
+                                        ? AppColors.accent
+                                        : AppColors.textSecondary,
+                                    width: 1.5,
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: _selectedIds.contains(sorted[i].id)
+                                    ? const Icon(Icons.check,
+                                        size: 14, color: Colors.white)
+                                    : null,
+                              ),
+                            )
+                          : null,
+                    ),
+                    // ── Card ─────────────────────────────────────────
+                    Expanded(
+                      child: _SwipeableCard(
+                        workout: sorted[i],
+                        index: i,
+                        inDeleteMode: _deleteMode,
+                        isHidden: _hiddenIds.contains(sorted[i].id),
+                        isOpen: !_deleteMode && _openSwipeId == sorted[i].id,
+                        onOpen: () => _setOpen(sorted[i].id),
+                        onClose: () => _setOpen(null),
+                        onTap: _deleteMode
+                            ? () => _toggleSelect(sorted[i].id)
+                            : () => widget.onWorkoutTap(sorted[i]),
+                        onToggleHide: () => _toggleHidden(sorted[i].id),
+                        onDelete: () => _confirmDelete(sorted[i]),
+                        onCopy: () => _duplicateWorkout(sorted[i]),
+                        onArchive: () => _archiveWorkout(sorted[i]),
+                      ),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -740,6 +957,7 @@ class _SwipeableCard extends StatefulWidget {
   final int index;
   final bool isHidden;
   final bool isOpen;
+  final bool inDeleteMode;
   final VoidCallback onOpen;
   final VoidCallback onClose;
   final VoidCallback onTap;
@@ -754,6 +972,7 @@ class _SwipeableCard extends StatefulWidget {
     required this.index,
     required this.isHidden,
     required this.isOpen,
+    this.inDeleteMode = false,
     required this.onOpen,
     required this.onClose,
     required this.onTap,
@@ -849,6 +1068,10 @@ class _SwipeableCardState extends State<_SwipeableCard>
                     offset: Offset(offset, 0),
                     child: GestureDetector(
                       onTap: () {
+                        if (widget.inDeleteMode) {
+                          widget.onTap(); // in delete mode tap = toggle select
+                          return;
+                        }
                         if (widget.isOpen) {
                           _ctrl.animateTo(0.0,
                               duration: const Duration(milliseconds: 200));
@@ -857,7 +1080,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
                           widget.onTap();
                         }
                       },
-                      onLongPress: () {
+                      onLongPress: widget.inDeleteMode ? null : () {
                         if (widget.isOpen) {
                           _ctrl.animateTo(0.0,
                               duration: const Duration(milliseconds: 200));
@@ -930,14 +1153,15 @@ class _SwipeableCardState extends State<_SwipeableCard>
                           ),
                         );
                       },
-                      onHorizontalDragUpdate: _onDragUpdate,
-                      onHorizontalDragEnd: _onDragEnd,
+                      onHorizontalDragUpdate: widget.inDeleteMode ? null : _onDragUpdate,
+                      onHorizontalDragEnd: widget.inDeleteMode ? null : _onDragEnd,
                       child: Opacity(
                         opacity: widget.isHidden ? 0.5 : 1.0,
                         child: _WorkoutCardContent(
                           workout: widget.workout,
                           index: widget.index,
-                          onActionsOpen: () {
+                          inDeleteMode: widget.inDeleteMode,
+                          onActionsOpen: widget.inDeleteMode ? null : () {
                             if (widget.isOpen) {
                               _ctrl.animateTo(0.0,
                                   duration: const Duration(milliseconds: 200));
@@ -1035,15 +1259,29 @@ class _WorkoutCardContent extends StatelessWidget {
   final Workout workout;
   final int index;
   final VoidCallback? onActionsOpen;
+  final bool inDeleteMode;
 
   const _WorkoutCardContent({
     required this.workout,
     required this.index,
     this.onActionsOpen,
+    this.inDeleteMode = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isPremium = premiumWorkoutNames.contains(workout.name);
+    final isUserCreated = !allStandardWorkoutNames.contains(workout.name);
+
+    // icon tint: yellow=Pro, purple=user-created, blue=standard free
+    const Color kPremiumColor = Color(0xFFFFB800);
+    const Color kUserColor = Color(0xFFAB7FF8); // purple
+    final Color iconColor = isPremium
+        ? kPremiumColor
+        : isUserCreated
+            ? kUserColor
+            : AppColors.accent;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -1057,12 +1295,12 @@ class _WorkoutCardContent extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.2),
+                color: iconColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.fitness_center_rounded,
-                color: AppColors.accent,
+                color: iconColor,
                 size: 28,
               ),
             ),
@@ -1082,17 +1320,49 @@ class _WorkoutCardContent extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  '${workout.daysPerWeek} тренировок в неделю',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${workout.daysPerWeek} тренировок в неделю',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    if (isPremium) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: kPremiumColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.star_rounded, size: 10, color: kPremiumColor),
+                            SizedBox(width: 2),
+                            Text(
+                              'Pro',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: kPremiumColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
           ),
           const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+          if (!inDeleteMode) ...[
           const SizedBox(width: 4),
           GestureDetector(
             onTap: onActionsOpen,
@@ -1109,6 +1379,7 @@ class _WorkoutCardContent extends StatelessWidget {
               ),
             ),
           ),
+          ], // end if (!inDeleteMode)
         ],
       ),
     );

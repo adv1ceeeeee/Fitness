@@ -29,26 +29,47 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
     if (mounted) setState(() => _exercises = list);
   }
 
-  Exercise? _findExercise(String name) {
+  /// Returns exercises, loading them first if not yet loaded.
+  Future<List<Exercise>> _ensureExercises() async {
+    if (_exercises.isNotEmpty) return _exercises;
+    final list = await ExerciseService.getExercises();
+    if (mounted) setState(() => _exercises = list);
+    return list;
+  }
+
+  Exercise? _findExercise(String name, List<Exercise> exercises) {
+    // 1. Exact match (case-insensitive)
     try {
-      return _exercises.firstWhere(
+      return exercises.firstWhere(
+        (e) => e.name.toLowerCase() == name.toLowerCase(),
+      );
+    } catch (_) {}
+    // 2. DB name contains search term
+    try {
+      return exercises.firstWhere(
         (e) => e.name.toLowerCase().contains(name.toLowerCase()),
       );
-    } catch (_) {
-      return null;
-    }
+    } catch (_) {}
+    // 3. Search term contains DB name (for shortened names)
+    try {
+      return exercises.firstWhere(
+        (e) => name.toLowerCase().contains(e.name.toLowerCase()),
+      );
+    } catch (_) {}
+    return null;
   }
 
   /// Creates a single workout and adds its exercises.
   Future<void> _createSection(
     String name,
     List<int> days,
-    List exercises, {
+    List exercises,
+    List<Exercise> allExercises, {
     String? groupId,
   }) async {
     final workout = await WorkoutService.createWorkout(name, days, groupId: groupId);
     for (final ex in exercises) {
-      final exercise = _findExercise(ex['name'] as String);
+      final exercise = _findExercise(ex['name'] as String, allExercises);
       if (exercise != null) {
         await WorkoutService.addExerciseToWorkout(
           workout.id,
@@ -64,6 +85,9 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
 
   Future<void> _useProgram(Map<String, dynamic> program) async {
     try {
+      // Ensure the exercise catalog is loaded before building the program.
+      final allExercises = await _ensureExercises();
+
       final sections = program['sections'] as List?;
 
       if (sections != null && sections.isNotEmpty) {
@@ -82,7 +106,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
 
         // Add exercises to the first section
         for (final ex in (firstSection['exercises'] as List)) {
-          final exercise = _findExercise(ex['name'] as String);
+          final exercise = _findExercise(ex['name'] as String, allExercises);
           if (exercise != null) {
             await WorkoutService.addExerciseToWorkout(
               firstWorkout.id,
@@ -101,6 +125,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
             sec['name'] as String,
             (sec['days'] as List).cast<int>(),
             sec['exercises'] as List,
+            allExercises,
             groupId: groupId,
           );
         }
@@ -110,6 +135,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
           program['name'] as String,
           (program['days'] as List).cast<int>(),
           program['exercises'] as List,
+          allExercises,
         );
       }
 

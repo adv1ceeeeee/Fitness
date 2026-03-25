@@ -46,6 +46,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   List<Exercise> _allExercises = [];
   String _searchQuery = '';
   bool _favoritesOnly = false;
+  bool _loading = true;
   Timer? _searchDebounce;
   final Set<String> _expandedCategories = {};
 
@@ -126,14 +127,19 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   Future<void> _load() async {
-    final w = await WorkoutService.getWorkout(widget.workoutId);
-    final ex = await WorkoutService.getWorkoutExercises(widget.workoutId);
-    final all = await ExerciseService.getExercises();
+    if (mounted) setState(() => _loading = true);
+    final wFuture = WorkoutService.getWorkout(widget.workoutId);
+    final exFuture = WorkoutService.getWorkoutExercises(widget.workoutId);
+    final allFuture = ExerciseService.getExercises();
+    final w = await wFuture;
+    final ex = await exFuture;
+    final all = await allFuture;
     if (mounted) {
       setState(() {
         _workout = w;
         _programExercises = ex;
         _allExercises = all;
+        _loading = false;
       });
     }
   }
@@ -878,6 +884,14 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(backgroundColor: AppColors.background, elevation: 0),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final workout = _workout;
     final days = workout?.days ?? [];
 
