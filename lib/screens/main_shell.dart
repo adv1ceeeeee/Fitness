@@ -14,6 +14,7 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/version_service.dart';
+import 'package:sportwai/services/workout_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
   final StatefulNavigationShell navigationShell;
@@ -281,6 +282,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   Future<void> _onPlayTap() async {
     final cyclicWorkout = await TrainingService.getTodayWorkout();
     final todaySessions = await TrainingService.getTodayIncompleteSessions();
+    final allWorkouts = await WorkoutService.getMyWorkouts();
     if (!mounted) return;
 
     final choices = <_WorkoutChoice>[];
@@ -306,7 +308,18 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       ));
     }
 
-    // Always show the choice sheet so user can pick free workout
+    // Add all remaining user programs not yet in choices
+    for (final w in allWorkouts) {
+      if (!choices.any((c) => c.workoutId == w.id)) {
+        choices.add(_WorkoutChoice(
+          workoutId: w.id,
+          workoutName: w.name,
+          isCyclic: false,
+        ));
+      }
+    }
+
+    // Show sheet (even if empty — user can pick free workout)
     if (choices.isEmpty) {
       _openFreeWorkout();
       return;
@@ -316,6 +329,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     final result = await showModalBottomSheet<Object>(
       context: context,
       backgroundColor: const Color(0xFF1C1C1E),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -500,115 +514,128 @@ class _StartChoiceSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.75;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Какую тренировку начать?',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 20, 24, 12),
+            child: Text(
+              'Какую тренировку начать?',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          ...choices.map(
-            (c) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  onTap: () => Navigator.pop(context, c),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    child: Row(
-                      children: [
-                        Icon(
-                          c.isCyclic
-                              ? Icons.calendar_month_outlined
-                              : Icons.fitness_center_outlined,
-                          size: 20,
-                          color: AppColors.accent,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+          Flexible(
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(24, 0, 24, bottomPadding + 16),
+              shrinkWrap: true,
+              children: [
+                ...choices.map(
+                  (c) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        onTap: () => Navigator.pop(context, c),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                          child: Row(
                             children: [
-                              Text(
-                                c.workoutName,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
+                              Icon(
                                 c.isCyclic
-                                    ? 'По расписанию программы'
-                                    : 'Разовая тренировка',
-                                style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 12,
+                                    ? Icons.calendar_month_outlined
+                                    : Icons.fitness_center_outlined,
+                                size: 20,
+                                color: AppColors.accent,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      c.workoutName,
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      c.isCyclic
+                                          ? 'По расписанию программы'
+                                          : 'Программа тренировок',
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
+                              const Icon(Icons.chevron_right,
+                                  size: 18, color: AppColors.textSecondary),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right,
-                            size: 18, color: AppColors.textSecondary),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
-          // Free workout option
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Material(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: onFreeWorkout,
-                borderRadius: BorderRadius.circular(14),
-                child: const Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  child: Row(
-                    children: [
-                      Icon(Icons.shuffle,
-                          size: 20, color: AppColors.textSecondary),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                // Free workout option
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Material(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: onFreeWorkout,
+                      borderRadius: BorderRadius.circular(14),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        child: Row(
                           children: [
-                            Text('Свободная тренировка',
-                                style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w500)),
-                            SizedBox(height: 2),
-                            Text('Выбрать упражнения вручную',
-                                style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12)),
+                            Icon(Icons.shuffle,
+                                size: 20, color: AppColors.textSecondary),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Свободная тренировка',
+                                      style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w500)),
+                                  SizedBox(height: 2),
+                                  Text('Выбрать упражнения вручную',
+                                      style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 12)),
+                                ],
+                              ),
+                            ),
+                            Icon(Icons.chevron_right,
+                                size: 18, color: AppColors.textSecondary),
                           ],
                         ),
                       ),
-                      Icon(Icons.chevron_right,
-                          size: 18, color: AppColors.textSecondary),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ],

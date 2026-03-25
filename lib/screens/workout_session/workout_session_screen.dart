@@ -1001,7 +1001,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             child: LinearProgressIndicator(
               value: _progressValue,
               backgroundColor: AppColors.surface,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.success),
               minHeight: 4,
             ),
           ),
@@ -1243,11 +1243,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
                     // Шапка столбцов
                     Padding(
-                      padding: const EdgeInsets.only(left: 44, right: 48),
+                      padding: const EdgeInsets.only(left: 32, right: 44),
                       child: Row(
                         children: [
                           SizedBox(
-                            width: 72,
+                            width: 48,
                             child: Text(
                               'Вес, ${weightLabel(useKg)}',
                               textAlign: TextAlign.center,
@@ -1469,29 +1469,29 @@ class _SetBlock extends StatelessWidget {
         color: warmup
             ? const Color(0xFFB8690A).withValues(alpha: 0.08)
             : isActive
-                ? AppColors.accent.withValues(alpha: 0.07)
+                ? AppColors.success.withValues(alpha: 0.07)
                 : AppColors.card,
         borderRadius: BorderRadius.circular(14),
         border: warmup
             ? Border.all(color: const Color(0xFFB8690A).withValues(alpha: 0.35), width: 1)
             : isActive
-                ? Border.all(color: AppColors.accent, width: 1.5)
+                ? Border.all(color: AppColors.success, width: 1.5)
                 : done
                     ? Border.all(
-                        color: AppColors.accent.withValues(alpha: 0.25),
+                        color: AppColors.success.withValues(alpha: 0.25),
                         width: 1)
                     : null,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       child: Opacity(
         opacity: done ? 0.55 : 1.0,
         child: Row(
           children: [
             _SetBadge(number: index + 1, done: done, active: isActive && !warmup, isWarmup: warmup),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             // Поле ввода веса
             SizedBox(
-              width: 72,
+              width: 48,
               height: 36,
               child: TextField(
                 controller: weightController,
@@ -1535,7 +1535,7 @@ class _SetBlock extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             Expanded(
               child: _Stepper(
                 value: data.reps,
@@ -1545,7 +1545,7 @@ class _SetBlock extends StatelessWidget {
                 onChanged: onRepsChanged,
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             Expanded(
               child: _Stepper(
                 value: data.rpe ?? 0,
@@ -1556,17 +1556,18 @@ class _SetBlock extends StatelessWidget {
                 onChanged: (v) => onRpeChanged(v == 0 ? null : v),
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 2),
             if (!done)
               GestureDetector(
                 onTap: onWarmupToggle,
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
                   child: Icon(
                     warmup
                         ? Icons.local_fire_department
                         : Icons.local_fire_department_outlined,
-                    size: 20,
+                    size: 16,
                     color: warmup
                         ? const Color(0xFFB8690A)
                         : AppColors.textSecondary.withValues(alpha: 0.5),
@@ -1579,27 +1580,27 @@ class _SetBlock extends StatelessWidget {
                 onTap: onComplete,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: 38,
-                  height: 38,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: isActive ? AppColors.accent : AppColors.surface,
+                    color: isActive ? AppColors.success : AppColors.surface,
                   ),
                   child: Icon(Icons.check,
-                      size: 20,
+                      size: 18,
                       color: isActive
-                          ? Colors.black
+                          ? Colors.white
                           : AppColors.textSecondary),
                 ),
               )
             else
               SizedBox(
-                width: 38,
-                height: 38,
+                width: 34,
+                height: 34,
                 child: Center(
                   child: comparison == null
                       ? const Icon(Icons.check_circle,
-                          color: AppColors.accent, size: 22)
+                          color: AppColors.success, size: 22)
                       : Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1644,29 +1645,29 @@ class _SetBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     const warmupColor = Color(0xFFB8690A);
     return Container(
-      width: 30,
-      height: 30,
+      width: 24,
+      height: 24,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: done
-            ? (isWarmup ? warmupColor : AppColors.accent)
+            ? (isWarmup ? warmupColor : AppColors.success)
             : active
                 ? (isWarmup
                     ? warmupColor.withValues(alpha: 0.18)
-                    : AppColors.accent.withValues(alpha: 0.15))
+                    : AppColors.success.withValues(alpha: 0.15))
                 : AppColors.surface,
       ),
       alignment: Alignment.center,
       child: done
-          ? Icon(Icons.check, size: 15, color: isWarmup ? Colors.white : Colors.black)
+          ? Icon(Icons.check, size: 14, color: Colors.white)
           : isWarmup
-              ? const Icon(Icons.local_fire_department, size: 15, color: warmupColor)
+              ? const Icon(Icons.local_fire_department, size: 14, color: warmupColor)
               : Text(
                   '$number',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: active ? AppColors.accent : AppColors.textSecondary,
+                    color: active ? AppColors.success : AppColors.textSecondary,
                   ),
                 ),
     );
@@ -1704,20 +1705,20 @@ class _Stepper extends StatelessWidget {
             icon: Icons.remove,
             enabled: enabled && value > min,
             onTap: () => onChanged(value - 1)),
-        const SizedBox(width: 6),
+        const SizedBox(width: 2),
         SizedBox(
-          width: 32,
+          width: 22,
           child: Text(display,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 17,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: enabled
                     ? AppColors.textPrimary
                     : AppColors.textSecondary,
               )),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 2),
         _MiniBtn(
             icon: Icons.add,
             enabled: enabled && value < max,
@@ -1772,12 +1773,12 @@ class _MiniBtnState extends State<_MiniBtn> {
       onLongPressEnd: (_) => _stopRepeat(),
       onLongPressCancel: _stopRepeat,
       child: Container(
-        width: 26,
-        height: 26,
+        width: 20,
+        height: 20,
         decoration: const BoxDecoration(
             shape: BoxShape.circle, color: AppColors.surface),
         child: Icon(widget.icon,
-            size: 14,
+            size: 12,
             color: widget.enabled
                 ? AppColors.textPrimary
                 : AppColors.textSecondary.withValues(alpha: 0.35)),

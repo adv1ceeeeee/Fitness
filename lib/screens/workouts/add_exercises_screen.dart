@@ -49,7 +49,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   bool _favoritesOnly = false;
   bool _loading = true;
   Timer? _searchDebounce;
-  final Set<String> _expandedCategories = {};
+  String? _openCategory; // currently pinned/open category (single-expand)
   int? _selectedDay; // currently active day context for adding exercises
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -872,6 +872,15 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     }
   }
 
+  List<Exercise> _exercisesForCategory(String category) {
+    final source = _favoritesOnly
+        ? _allExercises.where((e) => e.isFavorite).toList()
+        : _allExercises;
+    return source
+        .where((e) => Exercise.categoryDisplayName(e.category) == category)
+        .toList();
+  }
+
   void _showExerciseHistory(Exercise ex) {
     context.push('/exercise/${ex.id}/history', extra: ex);
   }
@@ -1033,7 +1042,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     final workout = _workout;
     final days = workout?.days ?? [];
 
-    // Build catalog with collapsible group separators
+    // Catalog — collapsed list of category headers only (exercise list shown separately)
     final groups = _groupedExercises;
     final catalogWidgets = <Widget>[];
     bool weightedHeaderShown = false;
@@ -1041,27 +1050,20 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     for (final group in groups) {
       final isCardioGroup = group.value.any((e) => e.category == 'cardio');
       if (!isCardioGroup && !weightedHeaderShown) {
-        catalogWidgets.add(const _GroupSeparator('С отягощением'));
+        catalogWidgets.add(const _GroupSeparator('Группы мышц'));
         weightedHeaderShown = true;
       }
       if (isCardioGroup && !cardioHeaderShown) {
-        catalogWidgets.add(const _GroupSeparator('Без отягощения'));
+        catalogWidgets.add(const _GroupSeparator('Кардио'));
         cardioHeaderShown = true;
       }
-      final expanded = _expandedCategories.contains(group.key);
       catalogWidgets.add(_CategoryHeader(
         label: group.key,
         count: group.value.length,
-        expanded: expanded,
-        onToggle: () => setState(() {
-          if (expanded) {
-            _expandedCategories.remove(group.key);
-          } else {
-            _expandedCategories.add(group.key);
-          }
-        }),
+        expanded: _openCategory == group.key,
+        onToggle: () => setState(() =>
+            _openCategory = _openCategory == group.key ? null : group.key),
       ));
-      if (expanded) catalogWidgets.addAll(_buildExerciseTiles(group.value));
     }
 
     final isMultiSection = widget.totalSections > 1;
@@ -1337,6 +1339,28 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           ),
           const SizedBox(height: 12),
 
+          // ── Открытая категория: прилипающий заголовок + список ──────────────
+          if (_openCategory != null && _searchQuery.isEmpty) ...[
+            Container(
+              color: AppColors.background,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _CategoryHeader(
+                label: _openCategory!,
+                count: _exercisesForCategory(_openCategory!).length,
+                expanded: true,
+                onToggle: () => setState(() => _openCategory = null),
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFF2A2A2A)),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                    16, 8, 16, MediaQuery.of(context).padding.bottom + 80),
+                children: _buildExerciseTiles(
+                    _exercisesForCategory(_openCategory!)),
+              ),
+            ),
+          ] else
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
