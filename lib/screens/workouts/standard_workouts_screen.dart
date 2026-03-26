@@ -38,29 +38,60 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
   }
 
   Exercise? _findExercise(String name, List<Exercise> exercises) {
-    // 1. Exact match (case-insensitive)
-    try {
-      return exercises.firstWhere(
-        (e) => e.name.toLowerCase() == name.toLowerCase(),
-      );
-    } catch (_) {}
-    // 2. DB name contains search term
-    try {
-      return exercises.firstWhere(
-        (e) => e.name.toLowerCase().contains(name.toLowerCase()),
-      );
-    } catch (_) {}
-    // 3. Search term contains DB name (for shortened names)
-    try {
-      return exercises.firstWhere(
-        (e) => name.toLowerCase().contains(e.name.toLowerCase()),
-      );
-    } catch (_) {}
+    // Normalize: lowercase + ё→е for Russian text matching
+    String n(String s) => s.toLowerCase().replaceAll('ё', 'е').replaceAll('й', 'й');
+
+    final q = n(name);
+
+    // Helper: all candidate strings for an exercise (name + nameRu)
+    List<String> candidates(Exercise e) => [
+          n(e.name),
+          if (e.nameRu != null) n(e.nameRu!),
+        ];
+
+    // 1. Exact match
+    final exact = exercises.where(
+        (e) => candidates(e).any((c) => c == q));
+    if (exact.isNotEmpty) return exact.first;
+
+    // 2. Candidate contains full query
+    final contains = exercises.where(
+        (e) => candidates(e).any((c) => c.contains(q)));
+    if (contains.isNotEmpty) return contains.first;
+
+    // 3. Full query contains candidate (shortened DB names)
+    final contained = exercises.where(
+        (e) => candidates(e).any((c) => q.contains(c)));
+    if (contained.isNotEmpty) return contained.first;
+
+    // 4. Word-bag: all meaningful words from query appear in candidate
+    final words = q.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+    if (words.isNotEmpty) {
+      final wordMatch = exercises.where((e) {
+        final target = candidates(e).join(' ');
+        return words.every((w) => target.contains(w));
+      });
+      if (wordMatch.isNotEmpty) return wordMatch.first;
+
+      // 5. Partial word-bag: ≥60% of words match, ranked by match count
+      final scored = exercises
+          .map((e) {
+            final target = candidates(e).join(' ');
+            final count = words.where((w) => target.contains(w)).length;
+            return (e, count);
+          })
+          .where((p) => p.$2 >= (words.length * 0.6).ceil())
+          .toList()
+        ..sort((a, b) => b.$2.compareTo(a.$2));
+      if (scored.isNotEmpty) return scored.first.$1;
+    }
+
     return null;
   }
 
   /// Creates a single workout and adds its exercises.
-  Future<void> _createSection(
+  /// Returns list of exercise names that were NOT found in the catalog.
+  Future<List<String>> _createSection(
     String name,
     List<int> days,
     List exercises,
@@ -68,8 +99,10 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
     String? groupId,
   }) async {
     final workout = await WorkoutService.createWorkout(name, days, groupId: groupId);
+    final notFound = <String>[];
     for (final ex in exercises) {
-      final exercise = _findExercise(ex['name'] as String, allExercises);
+      final exName = ex['name'] as String;
+      final exercise = _findExercise(exName, allExercises);
       if (exercise != null) {
         await WorkoutService.addExerciseToWorkout(
           workout.id,
@@ -78,9 +111,11 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
           repsRange: ex['reps'] as String? ?? '8-12',
           restSeconds: ex['rest'] as int? ?? 90,
         );
+      } else {
+        notFound.add(exName);
       }
     }
-    return;
+    return notFound;
   }
 
   Future<void> _useProgram(Map<String, dynamic> program) async {
@@ -89,9 +124,11 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
       final allExercises = await _ensureExercises();
 
       final sections = program['sections'] as List?;
+      final allNotFound = <String>[];
 
       if (sections != null && sections.isNotEmpty) {
-        // Multi-section program: create first workout, then rest share same groupId.
+        // Multi-section program: create first workout manually to get groupId,
+        // then remaining sections share it.
         final firstSection = sections.first as Map<String, dynamic>;
         final firstWorkout = await WorkoutService.createWorkout(
           firstSection['name'] as String,
@@ -99,14 +136,14 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
         );
         final groupId = firstWorkout.id;
 
-        // Update first workout to point to its own id as group_id
         if (sections.length > 1) {
           await WorkoutService.setGroupId(firstWorkout.id, groupId);
         }
 
-        // Add exercises to the first section
+        // Add exercises to first section, tracking not-found
         for (final ex in (firstSection['exercises'] as List)) {
-          final exercise = _findExercise(ex['name'] as String, allExercises);
+          final exName = ex['name'] as String;
+          final exercise = _findExercise(exName, allExercises);
           if (exercise != null) {
             await WorkoutService.addExerciseToWorkout(
               firstWorkout.id,
@@ -115,38 +152,52 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
               repsRange: ex['reps'] as String? ?? '8-12',
               restSeconds: ex['rest'] as int? ?? 90,
             );
+          } else {
+            allNotFound.add(exName);
           }
         }
 
         // Create remaining sections
         for (final s in sections.skip(1)) {
           final sec = s as Map<String, dynamic>;
-          await _createSection(
+          allNotFound.addAll(await _createSection(
             sec['name'] as String,
             (sec['days'] as List).cast<int>(),
             sec['exercises'] as List,
             allExercises,
             groupId: groupId,
-          );
+          ));
         }
       } else {
         // Single workout program
-        await _createSection(
+        allNotFound.addAll(await _createSection(
           program['name'] as String,
           (program['days'] as List).cast<int>(),
           program['exercises'] as List,
           allExercises,
-        );
+        ));
       }
 
       if (mounted) {
         EventLogger.standardProgramUsed(programName: program['name'] as String);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Программа "${program['name']}" добавлена в "Мои программы"'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (allNotFound.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Программа "${program['name']}" добавлена в "Мои программы"'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Программа добавлена. Не найдено в каталоге: ${allNotFound.join(', ')}',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 8),
+            ),
+          );
+        }
         widget.onProgramAdded?.call();
       }
     } catch (e) {

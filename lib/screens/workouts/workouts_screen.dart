@@ -198,6 +198,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
   // Multi-select delete mode
   bool _deleteMode = false;
   Set<String> _selectedIds = {};
+  bool _inactiveDeleteMode = false;
+  Set<String> _inactiveSelectedIds = {};
 
   static const _kOrder = 'workout_order';
   static const _kHidden = 'hidden_workout_ids';
@@ -306,6 +308,89 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       _deleteMode = false;
       _selectedIds = {};
     });
+  }
+
+  void _enterInactiveDeleteMode() {
+    setState(() {
+      _inactiveDeleteMode = true;
+      _inactiveSelectedIds = {};
+    });
+  }
+
+  void _exitInactiveDeleteMode() {
+    setState(() {
+      _inactiveDeleteMode = false;
+      _inactiveSelectedIds = {};
+    });
+  }
+
+  void _toggleInactiveSelect(String id) {
+    setState(() {
+      if (_inactiveSelectedIds.contains(id)) {
+        _inactiveSelectedIds.remove(id);
+      } else {
+        _inactiveSelectedIds.add(id);
+      }
+    });
+  }
+
+  void _toggleInactiveSelectAll() {
+    final inactive = _inactiveWorkouts;
+    setState(() {
+      if (_inactiveSelectedIds.length == inactive.length) {
+        _inactiveSelectedIds.clear();
+      } else {
+        _inactiveSelectedIds = inactive.map((w) => w.id).toSet();
+      }
+    });
+  }
+
+  Future<void> _confirmInactiveBulkDelete() async {
+    final inactive = _inactiveWorkouts;
+    final selected =
+        inactive.where((w) => _inactiveSelectedIds.contains(w.id)).toList();
+    if (selected.isEmpty) { _exitInactiveDeleteMode(); return; }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: Text(
+          'Удалить ${selected.length} ${_plural(selected.length, 'программу', 'программы', 'программ')}?',
+          style: const TextStyle(color: AppColors.textPrimary),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: selected.length,
+              itemBuilder: (_, i) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Text('• ${selected[i].name}',
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 14)),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    _exitInactiveDeleteMode();
+    for (final w in selected) await widget.onDelete(w.id);
   }
 
   void _toggleSelect(String id) {
@@ -856,26 +941,143 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                         Padding(
                           padding: EdgeInsets.only(
                               top: upcoming.isNotEmpty ? 8 : 0, bottom: 12),
-                          child: const Text(
-                            'Завершённые / неактивные',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                              letterSpacing: 0.5,
-                            ),
+                          child: Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Завершённые / неактивные',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                              if (_inactiveDeleteMode)
+                                GestureDetector(
+                                  onTap: _toggleInactiveSelectAll,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 2),
+                                    child: AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 150),
+                                      width: 20,
+                                      height: 20,
+                                      decoration: BoxDecoration(
+                                        color: _inactiveSelectedIds.length ==
+                                                inactive.length
+                                            ? AppColors.accent
+                                            : Colors.transparent,
+                                        border: Border.all(
+                                          color: _inactiveSelectedIds.length ==
+                                                  inactive.length
+                                              ? AppColors.accent
+                                              : AppColors.textSecondary,
+                                          width: 1.5,
+                                        ),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: _inactiveSelectedIds.length ==
+                                              inactive.length
+                                          ? const Icon(Icons.check,
+                                              size: 13, color: Colors.white)
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: _inactiveDeleteMode
+                                    ? _confirmInactiveBulkDelete
+                                    : _enterInactiveDeleteMode,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 2),
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    size: 20,
+                                    color: _inactiveDeleteMode &&
+                                            _inactiveSelectedIds.isNotEmpty
+                                        ? AppColors.error
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              if (_inactiveDeleteMode)
+                                GestureDetector(
+                                  onTap: _exitInactiveDeleteMode,
+                                  child: const Padding(
+                                    padding: EdgeInsets.only(
+                                        left: 8, top: 2, bottom: 2),
+                                    child: Icon(Icons.close,
+                                        size: 18,
+                                        color: AppColors.textSecondary),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                         for (final w in inactive)
                           Padding(
+                            key: ValueKey(w.id),
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: _InactiveWorkoutCard(
-                              workout: w,
-                              sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
-                              durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
-                              onTap: () => widget.onWorkoutTap(w),
-                              onDelete: () => _confirmDelete(w),
-                              onCopy: () => _duplicateWorkout(w),
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: _inactiveDeleteMode ? 36 : 0,
+                                  alignment: Alignment.center,
+                                  child: _inactiveDeleteMode
+                                      ? GestureDetector(
+                                          onTap: () =>
+                                              _toggleInactiveSelect(w.id),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 150),
+                                            width: 22,
+                                            height: 22,
+                                            decoration: BoxDecoration(
+                                              color: _inactiveSelectedIds
+                                                      .contains(w.id)
+                                                  ? AppColors.accent
+                                                  : Colors.transparent,
+                                              border: Border.all(
+                                                color: _inactiveSelectedIds
+                                                        .contains(w.id)
+                                                    ? AppColors.accent
+                                                    : AppColors.textSecondary,
+                                                width: 1.5,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: _inactiveSelectedIds
+                                                    .contains(w.id)
+                                                ? const Icon(Icons.check,
+                                                    size: 14,
+                                                    color: Colors.white)
+                                                : null,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                Expanded(
+                                  child: _InactiveWorkoutCard(
+                                    workout: w,
+                                    sessionDate: widget.sessionInfo[w.id]
+                                        ?['date'] as String?,
+                                    durationSeconds: widget.sessionInfo[w.id]
+                                        ?['duration_seconds'] as int?,
+                                    onTap: _inactiveDeleteMode
+                                        ? () => _toggleInactiveSelect(w.id)
+                                        : () => widget.onWorkoutTap(w),
+                                    onDelete: () => _confirmDelete(w),
+                                    onCopy: () => _duplicateWorkout(w),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                       ],

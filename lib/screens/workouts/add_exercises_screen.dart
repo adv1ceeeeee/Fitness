@@ -69,6 +69,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String? _selectedCategoryKey; // 'chest', 'back', etc. (derived from _openCategory)
   String? _selectedMovementType; // 'press', 'row', etc.
   bool _showMovementFilter = false; // movement chips visible inside expanded category
+  bool _showCategorySearch = false; // search field inside expanded category
+  String _categorySearchQuery = ''; // search query inside expanded category
+  final TextEditingController _categorySearchController = TextEditingController();
   ExerciseSortMode _sortMode = ExerciseSortMode.alphabetical;
   Map<String, double> _userBest1RMs = {};
   Map<String, int> _popularity = {};
@@ -93,6 +96,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _categorySearchController.dispose();
     super.dispose();
   }
 
@@ -933,6 +937,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     if (_selectedMovementType != null) {
       source = source.where((e) => e.effectiveMovementType == _selectedMovementType).toList();
     }
+    if (_categorySearchQuery.isNotEmpty) {
+      final q = _categorySearchQuery.toLowerCase();
+      source = source.where((e) =>
+          e.displayName.toLowerCase().contains(q) ||
+          e.name.toLowerCase().contains(q)).toList();
+    }
     return _sorted(source);
   }
 
@@ -1122,11 +1132,17 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             _selectedCategoryKey = null;
             _selectedMovementType = null;
             _showMovementFilter = false;
+            _showCategorySearch = false;
+            _categorySearchQuery = '';
+            _categorySearchController.clear();
           } else {
             _openCategory = group.key;
             _selectedCategoryKey = _keyForDisplayName(group.key);
             _selectedMovementType = null;
             _showMovementFilter = false;
+            _showCategorySearch = false;
+            _categorySearchQuery = '';
+            _categorySearchController.clear();
           }
         }),
       ));
@@ -1469,11 +1485,60 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   _selectedCategoryKey = null;
                   _selectedMovementType = null;
                   _showMovementFilter = false;
+                  _showCategorySearch = false;
+                  _categorySearchQuery = '';
+                  _categorySearchController.clear();
                 }),
                 onFilterToggle: () => setState(
                     () => _showMovementFilter = !_showMovementFilter),
+                onSearchToggle: () => setState(() {
+                  _showCategorySearch = !_showCategorySearch;
+                  if (!_showCategorySearch) {
+                    _categorySearchQuery = '';
+                    _categorySearchController.clear();
+                  }
+                }),
+                searchVisible: _showCategorySearch,
               ),
             ),
+            // ── Search field inside category ──────────────────────────────────
+            if (_showCategorySearch)
+              Container(
+                color: AppColors.background,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  controller: _categorySearchController,
+                  autofocus: true,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Поиск в категории...',
+                    hintStyle: TextStyle(
+                        color: AppColors.textSecondary.withValues(alpha: 0.6),
+                        fontSize: 14),
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        size: 18, color: AppColors.textSecondary),
+                    suffixIcon: _categorySearchQuery.isNotEmpty
+                        ? GestureDetector(
+                            onTap: () => setState(() {
+                              _categorySearchQuery = '';
+                              _categorySearchController.clear();
+                            }),
+                            child: const Icon(Icons.close_rounded,
+                                size: 16, color: AppColors.textSecondary),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: AppColors.card,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (v) => setState(() => _categorySearchQuery = v),
+                ),
+              ),
             // ── Movement type chips (shown when ≡ is active) ──────────────────
             if (_showMovementFilter && _selectedCategoryKey != null)
               Container(
@@ -1507,7 +1572,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             const Divider(height: 1, color: Color(0xFF2A2A2A)),
             Expanded(
               child: ListView(
-                key: ValueKey('$_openCategory/$_selectedMovementType'),
+                key: ValueKey('$_openCategory/$_selectedMovementType/$_categorySearchQuery'),
                 padding: EdgeInsets.fromLTRB(
                     16, 8, 16, MediaQuery.of(context).padding.bottom + 80),
                 children: _buildExerciseTiles(
@@ -2070,8 +2135,10 @@ class _CategoryHeader extends StatelessWidget {
   final bool expanded;
   final bool filterVisible; // movement chips are shown
   final bool filterActive;  // a movement type is selected
+  final bool searchVisible; // search field is shown
   final VoidCallback onToggle;
   final VoidCallback? onFilterToggle; // null = no filter button
+  final VoidCallback? onSearchToggle; // null = no search button
 
   const _CategoryHeader({
     required this.label,
@@ -2081,7 +2148,9 @@ class _CategoryHeader extends StatelessWidget {
     this.totalCount = 0,
     this.filterVisible = false,
     this.filterActive = false,
+    this.searchVisible = false,
     this.onFilterToggle,
+    this.onSearchToggle,
   });
 
   @override
@@ -2121,12 +2190,28 @@ class _CategoryHeader extends StatelessWidget {
               ),
             ),
           ),
+          // Search toggle button
+          if (onSearchToggle != null) ...[
+            GestureDetector(
+              onTap: onSearchToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Icon(
+                  Icons.search_rounded,
+                  size: 18,
+                  color: searchVisible
+                      ? AppColors.accent
+                      : AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
           // Filter toggle button (≡)
           if (onFilterToggle != null) ...[
             GestureDetector(
               onTap: onFilterToggle,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Icon(
                   Icons.tune_rounded,
                   size: 18,

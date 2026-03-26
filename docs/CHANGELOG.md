@@ -11,6 +11,34 @@ Versioning: `MAJOR.MINOR.PATCH+BUILD`
 
 ---
 
+## [1.7.0+21] — 2026-03-26
+
+### Added
+- **Поиск внутри категории** — иконка 🔍 в заголовке развёрнутой группы мышц открывает текстовое поле для фильтрации упражнений внутри категории; сбрасывается при смене категории
+- **Мусорка для «Завершённые / неактивные»** — мульти-выбор с чекбоксами, выбрать всё, подтверждение удаления — идентично разделу «Действующие программы»
+- **Стандартные программы v2** — полная переработка: 14 программ (было 11); научно обоснованный подбор упражнений:
+  - Новичок (Full body): StrongLifts 5×5 / Starting Strength
+  - Набор массы: мульти-секция Верх A / Низ Б
+  - Силовая 5×5: мульти-секция тренировка A / Б (точный протокол)
+  - Домашние тренировки: мульти-секция силовой / кардио+кор
+  - Ягодицы и ноги: мульти-секция составные / изоляция
+  - Верх/Низ (Upper-Lower): расширен до 8 упражнений в секции
+  - PPL: расширен до 8 упражнений в секции
+  - **Сплит Арнольда** — новая программа (Грудь+Спина / Плечи+Руки / Ноги, 6 дней)
+  - Пауэрлифтинг: переработан в 4 секции Sheiko-style
+
+### Fixed
+- **Поиск упражнений при создании программы** — `_findExercise` теперь проверяет `nameRu` (не только `name`), нормализует ё→е, поддерживает word-bag matching (все слова запроса в названии) и partial match (≥60% слов); snackbar показывает ненайденные упражнения
+- **Дублирование workout при создании мульти-секции** — исправлена ошибка двойного создания первой секции в `_useProgram`
+
+### Technical
+- `add_exercises_screen`: `_categorySearchQuery`, `_categorySearchController`, `_showCategorySearch`; фильтрация в `_exercisesForCategory()`; `_CategoryHeader` расширен полем `searchVisible` и колбэком `onSearchToggle`
+- `workouts_screen`: `_inactiveDeleteMode`, `_inactiveSelectedIds`; методы `_enterInactiveDeleteMode`, `_exitInactiveDeleteMode`, `_toggleInactiveSelect`, `_toggleInactiveSelectAll`, `_confirmInactiveBulkDelete`
+- `standard_workouts_screen`: `_findExercise` — 5-уровневый fuzzy matching; `_createSection` возвращает `List<String>` ненайденных упражнений
+- `standard_programs.dart`: полная замена контента; `recommendedProgramName` возвращает «Сплит Арнольда» для advanced/general
+
+---
+
 ## [1.6.0+20] — 2026-03-26
 
 ### Added
