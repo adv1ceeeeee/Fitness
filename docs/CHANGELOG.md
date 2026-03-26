@@ -28,8 +28,12 @@ Versioning: `MAJOR.MINOR.PATCH+BUILD`
 
 ### Technical
 - Добавлен пакет `model_viewer_plus: ^1.10.0` (+ `webview_flutter`, `webview_flutter_android`, `webview_flutter_wkwebview`)
+- Добавлен пакет `webview_flutter: ^4.0.0` как явная зависимость
 - Добавлен пакет `flutter_svg: ^2.0.10+1`
 - Добавлена директория `assets/models/` для GLB файлов
+- `body_model_widget.dart` переписан с `ModelViewer` на нативный `WebViewController`: GLB и `model-viewer.min.js` копируются из Flutter assets в temp-директорию, страница загружается через `loadFile()` (вызывает `loadFileURL:allowingReadAccessToURL:` на WKWebView) — решает проблему null-origin при `loadHtmlString`
+- `macos/Runner/Info.plist`: добавлен `NSAllowsLocalNetworking` для разрешения localhost соединений WKWebView
+- `assets/models/model-viewer.min.js` добавлен в проект (из бандла `model_viewer_plus`)
 
 ---
 
