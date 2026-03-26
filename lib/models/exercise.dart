@@ -10,6 +10,11 @@ class Exercise {
   final String? userId;
   final bool isFavorite;
   final String? gifUrl;
+  /// Movement pattern: 'press','row','fly','curl','extension','raise',
+  /// 'squat','lunge','plank','cardio','other'
+  final String? movementType;
+  /// Difficulty: 'beginner', 'intermediate', 'advanced'
+  final String? difficulty;
 
   Exercise({
     required this.id,
@@ -23,6 +28,8 @@ class Exercise {
     this.userId,
     this.isFavorite = false,
     this.gifUrl,
+    this.movementType,
+    this.difficulty,
   });
 
   String get displayName => nameRu ?? name;
@@ -42,6 +49,8 @@ class Exercise {
       userId: json['user_id'] as String?,
       isFavorite: json['is_favorite'] as bool? ?? false,
       gifUrl: json['gif_url'] as String?,
+      movementType: json['movement_type'] as String?,
+      difficulty: json['difficulty'] as String?,
     );
   }
 
@@ -66,5 +75,54 @@ class Exercise {
       'core': 'Пресс',
     };
     return map[category] ?? category;
+  }
+
+  static String movementDisplayName(String type) {
+    const map = {
+      'press': 'Жим',
+      'row': 'Тяга',
+      'fly': 'Разводка',
+      'curl': 'Сгибание',
+      'extension': 'Разгибание',
+      'raise': 'Подъём',
+      'squat': 'Приседания',
+      'lunge': 'Выпад',
+      'plank': 'Планка',
+      'cardio': 'Кардио',
+      'other': 'Другое',
+    };
+    return map[type] ?? type;
+  }
+
+  static String difficultyDisplayName(String d) {
+    const map = {
+      'beginner': 'Начинающий',
+      'intermediate': 'Средний',
+      'advanced': 'Продвинутый',
+    };
+    return map[d] ?? d;
+  }
+
+  /// Movement types available for a given category.
+  static List<String> movementsForCategory(String categoryKey) {
+    const map = {
+      'chest':     ['press', 'fly', 'curl'],
+      'back':      ['row', 'raise', 'extension'],
+      'shoulders': ['press', 'raise', 'row', 'fly'],
+      'arms':      ['curl', 'extension', 'press'],
+      'legs':      ['squat', 'lunge', 'press', 'curl', 'extension', 'raise'],
+      'core':      ['plank', 'curl', 'raise'],
+      'cardio':    ['cardio'],
+    };
+    return map[categoryKey] ?? [];
+  }
+
+  int get difficultyOrder {
+    switch (difficulty) {
+      case 'beginner': return 0;
+      case 'intermediate': return 1;
+      case 'advanced': return 2;
+      default: return 3;
+    }
   }
 }

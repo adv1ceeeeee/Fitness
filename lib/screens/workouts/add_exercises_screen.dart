@@ -39,6 +39,19 @@ const _categoryOrder = [
   'Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио', 'Пресс',
 ];
 
+// Category key → display name (in chip order)
+const _categoryChips = [
+  ('chest', 'Грудь'),
+  ('back', 'Спина'),
+  ('shoulders', 'Плечи'),
+  ('arms', 'Руки'),
+  ('legs', 'Ноги'),
+  ('core', 'Пресс'),
+  ('cardio', 'Кардио'),
+];
+
+enum ExerciseSortMode { alphabetical, difficulty, popularity, userResults }
+
 
 class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Workout? _workout;
@@ -51,6 +64,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Timer? _searchDebounce;
   String? _openCategory; // currently pinned/open category (single-expand)
   int? _selectedDay; // currently active day context for adding exercises
+  // ── Filter & sort ──
+  String? _selectedCategoryKey; // 'chest', 'back', etc.
+  String? _selectedMovementType; // 'press', 'row', etc.
+  ExerciseSortMode _sortMode = ExerciseSortMode.alphabetical;
+  Map<String, double> _userBest1RMs = {};
+  Map<String, int> _popularity = {};
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -98,7 +117,30 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         (e.nameRu?.toLowerCase().contains(q) ?? false)
       ).toList();
     }
-    return list;
+    if (_selectedCategoryKey != null) {
+      list = list.where((e) => e.category == _selectedCategoryKey).toList();
+    }
+    if (_selectedMovementType != null) {
+      list = list.where((e) => e.movementType == _selectedMovementType).toList();
+    }
+    return _sorted(list);
+  }
+
+  List<Exercise> _sorted(List<Exercise> list) {
+    final copy = List<Exercise>.from(list);
+    switch (_sortMode) {
+      case ExerciseSortMode.alphabetical:
+        copy.sort((a, b) => a.displayName.compareTo(b.displayName));
+      case ExerciseSortMode.difficulty:
+        copy.sort((a, b) => a.difficultyOrder.compareTo(b.difficultyOrder));
+      case ExerciseSortMode.popularity:
+        copy.sort((a, b) =>
+          (_popularity[b.id] ?? 0).compareTo(_popularity[a.id] ?? 0));
+      case ExerciseSortMode.userResults:
+        copy.sort((a, b) =>
+          (_userBest1RMs[b.id] ?? 0).compareTo(_userBest1RMs[a.id] ?? 0));
+    }
+    return copy;
   }
 
   Future<void> _toggleFavorite(Exercise ex) async {
@@ -142,9 +184,14 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     final wFuture = WorkoutService.getWorkout(widget.workoutId);
     final exFuture = WorkoutService.getWorkoutExercises(widget.workoutId);
     final allFuture = ExerciseService.getExercises();
+    // Load sort data in parallel (non-blocking — failures silently ignored)
+    final ormsF = ExerciseService.getBest1RMs();
+    final popF = ExerciseService.getPopularity();
     final w = await wFuture;
     final ex = await exFuture;
     final all = await allFuture;
+    final orms = await ormsF;
+    final pop = await popF;
     // If this is a section of a multi-section program, load siblings too.
     final sections = (w?.groupId != null)
         ? await WorkoutService.getSectionsByGroupId(w!.groupId!)
@@ -155,6 +202,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         _programExercises = ex;
         _allExercises = all;
         _groupSections = sections;
+        _userBest1RMs = orms;
+        _popularity = pop;
         _loading = false;
         // Auto-select when only one day in this section
         if (w != null && w.days.length == 1) {
@@ -873,12 +922,16 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   List<Exercise> _exercisesForCategory(String category) {
-    final source = _favoritesOnly
+    var source = _favoritesOnly
         ? _allExercises.where((e) => e.isFavorite).toList()
-        : _allExercises;
-    return source
+        : List<Exercise>.from(_allExercises);
+    source = source
         .where((e) => Exercise.categoryDisplayName(e.category) == category)
         .toList();
+    if (_selectedMovementType != null) {
+      source = source.where((e) => e.movementType == _selectedMovementType).toList();
+    }
+    return _sorted(source);
   }
 
   void _showExerciseHistory(Exercise ex) {
@@ -1296,7 +1349,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
 
-          // Поиск + фильтр избранных
+          // ── Поиск ───────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextField(
@@ -1312,6 +1365,65 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
           ),
+          // ── Категории ───────────────────────────────────────────────────────
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _buildChip(
+                  label: 'Все',
+                  selected: _selectedCategoryKey == null,
+                  onTap: () => setState(() {
+                    _selectedCategoryKey = null;
+                    _selectedMovementType = null;
+                    _openCategory = null;
+                  }),
+                ),
+                ..._categoryChips.map((t) {
+                  final (key, label) = t;
+                  return _buildChip(
+                    label: label,
+                    selected: _selectedCategoryKey == key,
+                    onTap: () => setState(() {
+                      if (_selectedCategoryKey == key) {
+                        _selectedCategoryKey = null;
+                        _selectedMovementType = null;
+                        _openCategory = null;
+                      } else {
+                        _selectedCategoryKey = key;
+                        _selectedMovementType = null;
+                        _openCategory = Exercise.categoryDisplayName(key);
+                      }
+                    }),
+                  );
+                }),
+              ],
+            ),
+          ),
+          // ── Типы движений (когда выбрана категория) ─────────────────────────
+          if (_selectedCategoryKey != null) ...[
+            SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: Exercise.movementsForCategory(_selectedCategoryKey!)
+                    .map((mt) => _buildChip(
+                          label: Exercise.movementDisplayName(mt),
+                          selected: _selectedMovementType == mt,
+                          small: true,
+                          onTap: () => setState(() {
+                            _selectedMovementType =
+                                _selectedMovementType == mt ? null : mt;
+                          }),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ],
+          // ── Избранное + сортировка ───────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
             child: Row(
@@ -1334,10 +1446,46 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   backgroundColor: AppColors.card,
                   showCheckmark: false,
                 ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: _showSortSheet,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _sortMode != ExerciseSortMode.alphabetical
+                          ? AppColors.accent.withValues(alpha: 0.15)
+                          : AppColors.card,
+                      borderRadius: BorderRadius.circular(20),
+                      border: _sortMode != ExerciseSortMode.alphabetical
+                          ? Border.all(color: AppColors.accent, width: 1)
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.sort_rounded,
+                            size: 16,
+                            color: _sortMode != ExerciseSortMode.alphabetical
+                                ? AppColors.accent
+                                : AppColors.textSecondary),
+                        const SizedBox(width: 4),
+                        Text(
+                          _sortModeLabel(_sortMode),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _sortMode != ExerciseSortMode.alphabetical
+                                ? AppColors.accent
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
           // ── Открытая категория: прилипающий заголовок + список ──────────────
           if (_openCategory != null && _searchQuery.isEmpty) ...[
@@ -1476,6 +1624,68 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Filter/sort helpers ──────────────────────────────────────────────────
+
+  Widget _buildChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    bool small = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        margin: const EdgeInsets.only(right: 8),
+        padding: EdgeInsets.symmetric(
+            horizontal: small ? 10 : 14,
+            vertical: small ? 4 : 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.accent.withValues(alpha: 0.15)
+              : AppColors.card,
+          borderRadius: BorderRadius.circular(20),
+          border: selected
+              ? Border.all(color: AppColors.accent, width: 1.2)
+              : Border.all(color: Colors.transparent),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: small ? 12 : 13,
+            color: selected ? AppColors.accent : AppColors.textSecondary,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _sortModeLabel(ExerciseSortMode mode) {
+    switch (mode) {
+      case ExerciseSortMode.alphabetical: return 'А–Я';
+      case ExerciseSortMode.difficulty:   return 'Сложность';
+      case ExerciseSortMode.popularity:   return 'Популярность';
+      case ExerciseSortMode.userResults:  return 'Мой результат';
+    }
+  }
+
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _SortSheet(
+        current: _sortMode,
+        onSelect: (m) {
+          setState(() => _sortMode = m);
+          Navigator.pop(context);
+        },
       ),
     );
   }
@@ -2150,6 +2360,72 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             color: AppColors.accent.withValues(alpha: 0.1),
           ),
         ),
+      ],
+    );
+  }
+}
+
+// ─── Sort bottom sheet ────────────────────────────────────────────────────────
+
+class _SortSheet extends StatelessWidget {
+  final ExerciseSortMode current;
+  final ValueChanged<ExerciseSortMode> onSelect;
+  const _SortSheet({required this.current, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    const options = [
+      (ExerciseSortMode.alphabetical,  Icons.sort_by_alpha_rounded,  'По алфавиту',      'А → Я'),
+      (ExerciseSortMode.difficulty,    Icons.fitness_center_outlined, 'По сложности',     'начинающий → продвинутый'),
+      (ExerciseSortMode.popularity,    Icons.trending_up_rounded,     'По популярности',  'чаще всего добавляемые'),
+      (ExerciseSortMode.userResults,   Icons.emoji_events_outlined,   'По результату',    'лучший 1ПМ первым'),
+    ];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 12),
+        Container(
+          width: 36, height: 4,
+          decoration: BoxDecoration(
+            color: AppColors.textSecondary.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Сортировка',
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...options.map((o) {
+          final (mode, icon, title, sub) = o;
+          final sel = current == mode;
+          return ListTile(
+            leading: Icon(icon,
+                color: sel ? AppColors.accent : AppColors.textSecondary),
+            title: Text(title,
+                style: TextStyle(
+                    color: sel ? AppColors.accent : AppColors.textPrimary,
+                    fontWeight:
+                        sel ? FontWeight.w600 : FontWeight.normal)),
+            subtitle: Text(sub,
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 12)),
+            trailing: sel
+                ? const Icon(Icons.check_circle_rounded,
+                    color: AppColors.accent, size: 20)
+                : null,
+            onTap: () => onSelect(mode),
+          );
+        }),
+        const SizedBox(height: 16),
       ],
     );
   }

@@ -61,6 +61,53 @@ class ExerciseService {
     await _client.from('exercises').delete().eq('id', id);
   }
 
+  /// Returns best estimated 1RM (Epley: w*(1+r/30)) per exercise_id
+  /// for the current user. Only completed non-warmup sets with weight > 0.
+  static Future<Map<String, double>> getBest1RMs() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return {};
+    try {
+      final rows = await _client
+          .from('sets')
+          .select('weight, reps, workout_exercises!inner(exercise_id)')
+          .eq('completed', true)
+          .eq('is_warmup', false)
+          .gt('weight', 0);
+      final result = <String, double>{};
+      for (final r in rows as List) {
+        final exId = (r['workout_exercises'] as Map)['exercise_id'] as String?;
+        if (exId == null) continue;
+        final w = (r['weight'] as num?)?.toDouble() ?? 0;
+        final rep = (r['reps'] as num?)?.toDouble() ?? 0;
+        if (w <= 0 || rep <= 0) continue;
+        final orm = w * (1 + rep / 30.0);
+        if ((result[exId] ?? 0) < orm) result[exId] = orm;
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Returns usage count (number of completed sets) per exercise_id.
+  static Future<Map<String, int>> getPopularity() async {
+    try {
+      final rows = await _client
+          .from('sets')
+          .select('workout_exercises!inner(exercise_id)')
+          .eq('completed', true);
+      final result = <String, int>{};
+      for (final r in rows as List) {
+        final exId = (r['workout_exercises'] as Map)['exercise_id'] as String?;
+        if (exId == null) continue;
+        result[exId] = (result[exId] ?? 0) + 1;
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
   static Future<void> toggleFavorite(
     String exerciseId, {
     required bool add,

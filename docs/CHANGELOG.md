@@ -11,6 +11,22 @@ Versioning: `MAJOR.MINOR.PATCH+BUILD`
 
 ---
 
+## [1.6.0+20] — 2026-03-26
+
+### Added
+- **Добавление упражнений: фильтр по группе мышц** — горизонтальные чипы (Грудь / Спина / Плечи / Руки / Ноги / Пресс / Кардио) мгновенно фильтруют каталог и открывают нужную категорию
+- **Добавление упражнений: фильтр по типу движения** — при выборе категории появляется второй ряд чипов (Жим / Тяга / Разводка / Сгибание / Разгибание / Подъём / Приседания / Выпад / Планка / Кардио) — набор зависит от категории
+- **Добавление упражнений: сортировка** — кнопка «Сортировка» (правый угол) открывает шторку с 4 режимами: По алфавиту, По сложности, По популярности, По результату (лучший 1ПМ = вес × (1 + повт/30) из истории сетов)
+- **Упражнение: поля `movement_type` и `difficulty`** — модель и БД расширены; SQL-миграция в `docs/sql/add_movement_type_difficulty.sql`
+
+### Technical
+- `Exercise` модель: добавлены `movementType`, `difficulty`, `difficultyOrder`, `movementDisplayName()`, `difficultyDisplayName()`, `movementsForCategory()`
+- `ExerciseService`: добавлены `getBest1RMs()` (1ПМ по формуле Эпли из таблицы `sets`) и `getPopularity()` (счётчик выполненных сетов)
+- `add_exercises_screen`: новые state vars `_selectedCategoryKey`, `_selectedMovementType`, `_sortMode`; метод `_sorted()` применяет активный режим; `_SortSheet` — bottom sheet с выбором сортировки
+- SQL: `docs/sql/add_movement_type_difficulty.sql` — добавляет колонки и заполняет `movement_type` / `difficulty` через ILIKE-паттерны по имени упражнения
+
+---
+
 ## [1.5.0+19] — 2026-03-26
 
 ### Added
