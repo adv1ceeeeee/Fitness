@@ -28,6 +28,9 @@ class BodyMetricsService {
     if (userId == null) return;
     final dateStr = (date ?? DateTime.now()).toIso8601String().split('T')[0];
 
+    // Invalidate local cache so screen refreshes immediately
+    await AppCache.invalidate('body_metrics:$userId');
+
     await _client.from('body_metrics').upsert(
       {
         'user_id': userId,
