@@ -65,8 +65,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String? _openCategory; // currently pinned/open category (single-expand)
   int? _selectedDay; // currently active day context for adding exercises
   // ── Filter & sort ──
-  String? _selectedCategoryKey; // 'chest', 'back', etc.
+  String? _selectedCategoryKey; // 'chest', 'back', etc. (derived from _openCategory)
   String? _selectedMovementType; // 'press', 'row', etc.
+  bool _showMovementFilter = false; // movement chips visible inside expanded category
   ExerciseSortMode _sortMode = ExerciseSortMode.alphabetical;
   Map<String, double> _userBest1RMs = {};
   Map<String, int> _popularity = {};
@@ -121,7 +122,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       list = list.where((e) => e.category == _selectedCategoryKey).toList();
     }
     if (_selectedMovementType != null) {
-      list = list.where((e) => e.movementType == _selectedMovementType).toList();
+      list = list.where((e) => e.effectiveMovementType == _selectedMovementType).toList();
     }
     return _sorted(list);
   }
@@ -929,7 +930,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         .where((e) => Exercise.categoryDisplayName(e.category) == category)
         .toList();
     if (_selectedMovementType != null) {
-      source = source.where((e) => e.movementType == _selectedMovementType).toList();
+      source = source.where((e) => e.effectiveMovementType == _selectedMovementType).toList();
     }
     return _sorted(source);
   }
@@ -1114,8 +1115,19 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         label: group.key,
         count: group.value.length,
         expanded: _openCategory == group.key,
-        onToggle: () => setState(() =>
-            _openCategory = _openCategory == group.key ? null : group.key),
+        onToggle: () => setState(() {
+          if (_openCategory == group.key) {
+            _openCategory = null;
+            _selectedCategoryKey = null;
+            _selectedMovementType = null;
+            _showMovementFilter = false;
+          } else {
+            _openCategory = group.key;
+            _selectedCategoryKey = _keyForDisplayName(group.key);
+            _selectedMovementType = null;
+            _showMovementFilter = false;
+          }
+        }),
       ));
     }
 
@@ -1365,64 +1377,6 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
           ),
-          // ── Категории ───────────────────────────────────────────────────────
-          SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                _buildChip(
-                  label: 'Все',
-                  selected: _selectedCategoryKey == null,
-                  onTap: () => setState(() {
-                    _selectedCategoryKey = null;
-                    _selectedMovementType = null;
-                    _openCategory = null;
-                  }),
-                ),
-                ..._categoryChips.map((t) {
-                  final (key, label) = t;
-                  return _buildChip(
-                    label: label,
-                    selected: _selectedCategoryKey == key,
-                    onTap: () => setState(() {
-                      if (_selectedCategoryKey == key) {
-                        _selectedCategoryKey = null;
-                        _selectedMovementType = null;
-                        _openCategory = null;
-                      } else {
-                        _selectedCategoryKey = key;
-                        _selectedMovementType = null;
-                        _openCategory = Exercise.categoryDisplayName(key);
-                      }
-                    }),
-                  );
-                }),
-              ],
-            ),
-          ),
-          // ── Типы движений (когда выбрана категория) ─────────────────────────
-          if (_selectedCategoryKey != null) ...[
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: Exercise.movementsForCategory(_selectedCategoryKey!)
-                    .map((mt) => _buildChip(
-                          label: Exercise.movementDisplayName(mt),
-                          selected: _selectedMovementType == mt,
-                          small: true,
-                          onTap: () => setState(() {
-                            _selectedMovementType =
-                                _selectedMovementType == mt ? null : mt;
-                          }),
-                        ))
-                    .toList(),
-              ),
-            ),
-          ],
           // ── Избранное + сортировка ───────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -1487,7 +1441,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           ),
           const SizedBox(height: 8),
 
-          // ── Открытая категория: прилипающий заголовок + список ──────────────
+          // ── Открытая категория: прилипающий заголовок + фильтр + список ──────
           if (_openCategory != null && _searchQuery.isEmpty) ...[
             Container(
               color: AppColors.background,
@@ -1495,10 +1449,50 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               child: _CategoryHeader(
                 label: _openCategory!,
                 count: _exercisesForCategory(_openCategory!).length,
+                totalCount: _totalForCategory(_openCategory!),
                 expanded: true,
-                onToggle: () => setState(() => _openCategory = null),
+                filterVisible: _showMovementFilter,
+                filterActive: _selectedMovementType != null,
+                onToggle: () => setState(() {
+                  _openCategory = null;
+                  _selectedCategoryKey = null;
+                  _selectedMovementType = null;
+                  _showMovementFilter = false;
+                }),
+                onFilterToggle: () => setState(
+                    () => _showMovementFilter = !_showMovementFilter),
               ),
             ),
+            // ── Movement type chips (shown when ≡ is active) ──────────────────
+            if (_showMovementFilter && _selectedCategoryKey != null)
+              Container(
+                color: AppColors.background,
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildChip(
+                        label: 'Все',
+                        selected: _selectedMovementType == null,
+                        small: true,
+                        onTap: () =>
+                            setState(() => _selectedMovementType = null),
+                      ),
+                      ...Exercise.movementsForCategory(_selectedCategoryKey!)
+                          .map((mt) => _buildChip(
+                                label: Exercise.movementDisplayName(mt),
+                                selected: _selectedMovementType == mt,
+                                small: true,
+                                onTap: () => setState(() {
+                                  _selectedMovementType =
+                                      _selectedMovementType == mt ? null : mt;
+                                }),
+                              )),
+                    ],
+                  ),
+                ),
+              ),
             const Divider(height: 1, color: Color(0xFF2A2A2A)),
             Expanded(
               child: ListView(
@@ -1629,6 +1623,23 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   // ── Filter/sort helpers ──────────────────────────────────────────────────
+
+  String? _keyForDisplayName(String displayName) {
+    for (final (key, label) in _categoryChips) {
+      if (label == displayName) return key;
+    }
+    return null;
+  }
+
+  /// Total exercises in category ignoring movement type filter.
+  int _totalForCategory(String displayName) {
+    final source = _favoritesOnly
+        ? _allExercises.where((e) => e.isFavorite).toList()
+        : _allExercises;
+    return source
+        .where((e) => Exercise.categoryDisplayName(e.category) == displayName)
+        .length;
+  }
 
   Widget _buildChip({
     required String label,
@@ -2043,50 +2054,87 @@ class _NumberButton extends StatelessWidget {
 class _CategoryHeader extends StatelessWidget {
   final String label;
   final int count;
+  final int totalCount; // unfiltered total (shown as "12/85" when filtered)
   final bool expanded;
+  final bool filterVisible; // movement chips are shown
+  final bool filterActive;  // a movement type is selected
   final VoidCallback onToggle;
+  final VoidCallback? onFilterToggle; // null = no filter button
 
   const _CategoryHeader({
     required this.label,
     required this.count,
     required this.expanded,
     required this.onToggle,
+    this.totalCount = 0,
+    this.filterVisible = false,
+    this.filterActive = false,
+    this.onFilterToggle,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onToggle,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.accent,
-                letterSpacing: 0.5,
+    final showFiltered = filterActive && totalCount > 0 && count != totalCount;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          // Tap the label/count area to expand/collapse
+          Expanded(
+            child: GestureDetector(
+              onTap: onToggle,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    showFiltered ? '$count/$totalCount' : '$count',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: filterActive
+                          ? AppColors.accent.withValues(alpha: 0.7)
+                          : AppColors.textSecondary.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 6),
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary.withValues(alpha: 0.6),
+          ),
+          // Filter toggle button (≡)
+          if (onFilterToggle != null) ...[
+            GestureDetector(
+              onTap: onFilterToggle,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Icon(
+                  Icons.tune_rounded,
+                  size: 18,
+                  color: filterVisible || filterActive
+                      ? AppColors.accent
+                      : AppColors.textSecondary,
+                ),
               ),
             ),
-            const Spacer(),
-            Icon(
+          ],
+          // Expand/collapse
+          GestureDetector(
+            onTap: onToggle,
+            child: Icon(
               expanded ? Icons.expand_less : Icons.expand_more,
               size: 18,
               color: AppColors.textSecondary,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

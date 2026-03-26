@@ -125,4 +125,71 @@ class Exercise {
       default: return 3;
     }
   }
+
+  /// Returns movement_type from DB if set, otherwise infers from exercise name.
+  /// Every exercise gets a type — no exercise falls through to 'other'.
+  String get effectiveMovementType {
+    if (movementType != null && movementType != 'other') return movementType!;
+    final n = '${nameRu ?? ''} $name'.toLowerCase();
+    bool has(List<String> words) => words.any((w) => n.contains(w));
+
+    switch (category) {
+      case 'chest':
+        if (has(['разводк', 'fly', 'flye', 'кроссов', 'crossover', 'бабочк',
+                  'pec deck', 'pec-deck', 'сведени', 'кабельн'])) return 'fly';
+        // default: press (жим лёжа, отжимания, дипы и всё остальное)
+        return 'press';
+
+      case 'back':
+        if (has(['гиперэкст', 'hyperext', 'разгибани', 'good morning',
+                  'наклон', 'roman chair', 'экстензи'])) return 'extension';
+        if (has(['подтягив', 'pull-up', 'pullup', 'chin-up', 'chinup',
+                  'тяга верхн', 'тяга к груд', 'lat pull', 'pulldown',
+                  'тяга к под', 'верхний блок', 'блок сверх',
+                  'вис', 'мышечный выход'])) return 'raise';
+        // default: row (тяга штанги, тяга гантели, становая, всё остальное)
+        return 'row';
+
+      case 'shoulders':
+        if (has(['задни', 'rear', 'обратн', 'reverse fly', 'face pull',
+                  'обратная разводк', 'rear delt'])) return 'fly';
+        if (has(['тяга к подборо', 'upright row', 'шраг', 'shrug',
+                  'высокая тяга'])) return 'row';
+        if (has(['жим', 'press', 'арнольд', 'arnold', 'military',
+                  'overhead', 'за голов'])) return 'press';
+        // default: raise (боковые махи, подъём вперёд и всё остальное)
+        return 'raise';
+
+      case 'arms':
+        if (has(['трицепс', 'tricep', 'разгибани', 'extension', 'pushdown',
+                  'skull', 'french', 'kickback', 'узким', 'close grip',
+                  'жим узк', 'отжимани на брус', 'французск'])) return 'extension';
+        if (has(['жим', 'press', 'dip', 'брус', 'отжим'])) return 'press';
+        // default: curl (бицепс, молоток, концентрированное и всё остальное)
+        return 'curl';
+
+      case 'legs':
+        if (has(['икр', 'calf', 'носк', 'donkey', 'gastrocn'])) return 'raise';
+        if (has(['разгибани', 'leg extension', 'квадр'])) return 'extension';
+        if (has(['сгибани', 'leg curl', 'hamstring', 'nordic',
+                  'румынск', 'romanian', 'мертвая', 'мёртвая'])) return 'curl';
+        if (has(['жим ног', 'leg press', 'гак', 'hack', 'смит', 'smith'])) return 'press';
+        if (has(['выпад', 'lunge', 'болгарск', 'bulgarian', 'split squat',
+                  'степ', 'step-up', 'step up', 'реверс выпад'])) return 'lunge';
+        // default: squat (приседания и всё остальное)
+        return 'squat';
+
+      case 'core':
+        if (has(['планка', 'plank', 'ролик', 'ab wheel', 'dead bug',
+                  'вакуум', 'vacuum', 'hollow', 'статик', 'l-sit'])) return 'plank';
+        if (has(['подъём ног', 'подъем ног', 'leg raise', 'knee raise',
+                  'висе', 'hanging', 'складк', 'уголок'])) return 'raise';
+        // default: curl (скручивания, пресс и всё остальное)
+        return 'curl';
+
+      case 'cardio':
+        return 'cardio';
+    }
+    return movementType ?? 'other';
+  }
 }
