@@ -535,6 +535,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.card,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -1659,7 +1660,7 @@ class _SetBadge extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: done
-          ? Icon(Icons.check, size: 14, color: Colors.white)
+          ? const Icon(Icons.check, size: 14, color: Colors.white)
           : isWarmup
               ? const Icon(Icons.local_fire_department, size: 14, color: warmupColor)
               : Text(
@@ -2387,8 +2388,10 @@ class _PlateCalcSheet extends StatelessWidget {
     final perSide = _calcPlates(display, bar, plates);
     final displayStr = display % 1 == 0 ? display.toInt().toString() : display.toStringAsFixed(1);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+    return SafeArea(
+      top: false,
+      child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2446,6 +2449,7 @@ class _PlateCalcSheet extends StatelessWidget {
             ),
         ],
       ),
+    ),
     );
   }
 }
