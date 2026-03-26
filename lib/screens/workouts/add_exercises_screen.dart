@@ -10,6 +10,7 @@ import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
@@ -1131,6 +1132,16 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       ));
     }
 
+    // Same color logic as program cards in workouts_screen
+    const Color kPremiumColor = Color(0xFFFFB800);
+    const Color kUserColor = Color(0xFFAB7FF8);
+    final String wName = workout?.name ?? '';
+    final Color workoutIconColor = premiumWorkoutNames.contains(wName)
+        ? kPremiumColor
+        : allStandardWorkoutNames.contains(wName)
+            ? AppColors.accent
+            : kUserColor;
+
     final isMultiSection = widget.totalSections > 1;
     final sectionTitle = isMultiSection
         ? '${widget.sectionIndex + 1}/${widget.totalSections}: ${workout?.name ?? ''}'
@@ -1146,12 +1157,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               child: Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: 0.2),
+                  color: workoutIconColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(9),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.fitness_center_rounded,
-                  color: AppColors.accent,
+                  color: workoutIconColor,
                   size: 18,
                 ),
               ),
@@ -1496,6 +1507,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             const Divider(height: 1, color: Color(0xFF2A2A2A)),
             Expanded(
               child: ListView(
+                key: ValueKey('$_openCategory/$_selectedMovementType'),
                 padding: EdgeInsets.fromLTRB(
                     16, 8, 16, MediaQuery.of(context).padding.bottom + 80),
                 children: _buildExerciseTiles(
