@@ -1766,6 +1766,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.card,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _SortSheet(
@@ -2525,7 +2526,9 @@ class _SortSheet extends StatelessWidget {
       (ExerciseSortMode.popularity,    Icons.trending_up_rounded,     'По популярности',  'чаще всего добавляемые'),
       (ExerciseSortMode.userResults,   Icons.emoji_events_outlined,   'По результату',    'лучший 1ПМ первым'),
     ];
-    return Column(
+    return SafeArea(
+      top: false,
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 12),
@@ -2572,6 +2575,7 @@ class _SortSheet extends StatelessWidget {
         }),
         const SizedBox(height: 16),
       ],
+    ),
     );
   }
 }
