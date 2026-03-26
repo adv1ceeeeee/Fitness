@@ -98,6 +98,17 @@ class AppCache {
     return decode(cachedStr);
   }
 
+  /// Returns true if [key] exists in cache AND was stored within [maxAge].
+  /// Use this to gate phase-1 loading: if false, skip stale data and let
+  /// phase-2 fill in fresh values to avoid a visible flash.
+  static Future<bool> isFresh(String key, {required Duration maxAge}) async {
+    final prefs = await _p;
+    final cachedAtMs = prefs.getInt('cache_at:$key');
+    if (cachedAtMs == null) return false;
+    final age = DateTime.now().millisecondsSinceEpoch - cachedAtMs;
+    return age < maxAge.inMilliseconds;
+  }
+
   /// Invalidate a cached key (forces fresh fetch on next [get] call).
   static Future<void> invalidate(String key) async {
     final prefs = await _p;

@@ -273,6 +273,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
 
+    // Skip stale phase-1 data to avoid flash (e.g. 0→1 workouts this week)
+    final statsAreFresh = await AppCache.isFresh(
+      'workouts_week:$userId',
+      maxAge: const Duration(minutes: 10),
+    );
+    if (!statsAreFresh) return;
+
     final results = await Future.wait([
       AppCache.peek<int>(
         key: 'workouts_week:$userId',

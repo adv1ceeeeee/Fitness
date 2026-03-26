@@ -125,6 +125,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
 
+    // Skip phase-1 if stats cache is stale — avoids a visible flash where old
+    // data (e.g. 1 workout) briefly appears before phase-2 fetches the real
+    // value (e.g. 2). After _refreshFresh writes fresh data, this key will be
+    // fresh and subsequent loads will show correct data immediately.
+    final statsAreFresh = await AppCache.isFresh(
+      'total_workouts:$userId',
+      maxAge: const Duration(minutes: 10),
+    );
+    if (!statsAreFresh) return;
+
     // Peek all keys in parallel
     final results = await Future.wait([
       AppCache.peek<int>(
