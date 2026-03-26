@@ -49,6 +49,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   List<Map<String, dynamic>> _bodyHistory = [];
   String _selectedBodyMetric = 'weight_kg';
+  bool _bodyDailyAvg = false; // false = last measurement, true = average
 
   static const _bodyMetricOptions = <String, String>{
     'weight_kg':        'Вес (кг)',
@@ -66,15 +67,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   };
 
   Map<String, double> get _bodyMetricData {
-    final result = <String, double>{};
+    // Group values by date, then aggregate (last or average)
+    final grouped = <String, List<double>>{};
     for (final row in _bodyHistory) {
       final date = row['date'] as String?;
       final v = row[_selectedBodyMetric];
-      if (date != null && v != null) {
-        result[date] = (v as num).toDouble();
-      }
+      if (date == null || v == null) continue;
+      grouped.putIfAbsent(date, () => []).add((v as num).toDouble());
     }
-    return result;
+    return grouped.map((date, values) {
+      final agg = _bodyDailyAvg
+          ? values.reduce((a, b) => a + b) / values.length
+          : values.last;
+      return MapEntry(date, agg);
+    });
   }
 
   List<String> get _availableBodyMetrics => _bodyMetricOptions.keys
@@ -544,6 +550,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     onMetricChanged: (k) {
                       if (k != null) setState(() => _selectedBodyMetric = k);
                     },
+                    dailyAvg: _bodyDailyAvg,
+                    onToggleDailyAvg: () => setState(() => _bodyDailyAvg = !_bodyDailyAvg),
                   ),
                   // Tab 4: Инсайты
                   _InsightsTab(
@@ -1264,6 +1272,8 @@ class _BodyTab extends StatefulWidget {
   final Map<String, double> bodyMetricData;
   final List<Map<String, dynamic>> wellnessHistory;
   final void Function(String?) onMetricChanged;
+  final bool dailyAvg;
+  final VoidCallback onToggleDailyAvg;
 
   const _BodyTab({
     required this.onRefresh,
@@ -1274,6 +1284,8 @@ class _BodyTab extends StatefulWidget {
     required this.bodyMetricData,
     required this.wellnessHistory,
     required this.onMetricChanged,
+    required this.dailyAvg,
+    required this.onToggleDailyAvg,
   });
 
   @override
@@ -1284,6 +1296,17 @@ class _BodyTabState extends State<_BodyTab> {
   _DateRange _range = _DateRange.month3;
   final _chartKey = GlobalKey();
   bool _sharing = false;
+
+  /// True if any date has more than one measurement for the selected metric.
+  bool get _hasMutiplePerDay {
+    final counts = <String, int>{};
+    for (final row in widget.bodyHistory) {
+      final date = row['date'] as String?;
+      if (date == null || row[widget.selectedBodyMetric] == null) continue;
+      counts[date] = (counts[date] ?? 0) + 1;
+    }
+    return counts.values.any((c) => c > 1);
+  }
 
   Future<void> _shareChart() async {
     if (_sharing) return;
@@ -1435,6 +1458,57 @@ class _BodyTabState extends State<_BodyTab> {
                   onChanged: widget.onMetricChanged,
                 ),
               ),
+              // Daily aggregation toggle — shown only when history has multiple
+              // entries on at least one day
+              if (_hasMutiplePerDay) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: widget.onToggleDailyAvg,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: widget.dailyAvg
+                              ? AppColors.accent.withValues(alpha: 0.15)
+                              : AppColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: widget.dailyAvg
+                                ? AppColors.accent.withValues(alpha: 0.5)
+                                : Colors.transparent,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              widget.dailyAvg
+                                  ? Icons.compress_rounded
+                                  : Icons.last_page_rounded,
+                              size: 14,
+                              color: widget.dailyAvg
+                                  ? AppColors.accent
+                                  : AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              widget.dailyAvg ? 'Среднее за день' : 'Последнее за день',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: widget.dailyAvg
+                                    ? AppColors.accent
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               if (_filteredBodyData.isEmpty)
                 Container(
