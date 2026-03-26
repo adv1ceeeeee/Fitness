@@ -776,9 +776,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 const SizedBox(height: 12),
                 _QuickWeightCard(
-                  currentWeight: () {
+                  metric: _goalMetric,
+                  currentValue: () {
                     for (final m in _bodyMetricsHistory.reversed) {
-                      if (m['weight_kg'] != null) return (m['weight_kg'] as num).toDouble();
+                      if (m[_goalMetric] != null) return (m[_goalMetric] as num).toDouble();
                     }
                     return null;
                   }(),
@@ -2448,38 +2449,57 @@ class _ActionCard extends StatelessWidget {
   }
 }
 
-// ─── Quick weight logging card ────────────────────────────────────────────────
+// ─── Quick metric logging card ────────────────────────────────────────────────
 
 class _QuickWeightCard extends StatefulWidget {
-  final double? currentWeight;
+  final String metric;
+  final double? currentValue;
   final Future<void> Function() onSaved;
 
-  const _QuickWeightCard({this.currentWeight, required this.onSaved});
+  const _QuickWeightCard({
+    this.metric = 'weight_kg',
+    this.currentValue,
+    required this.onSaved,
+  });
 
   @override
   State<_QuickWeightCard> createState() => _QuickWeightCardState();
 }
 
 class _QuickWeightCardState extends State<_QuickWeightCard> {
-  late final TextEditingController _ctrl;
+  late TextEditingController _ctrl;
   bool _saving = false;
   bool _saved = false;
-  List<Map<String, dynamic>> _todayLogs = [];
+  // Only used for weight_kg (multi-log per day)
+  List<Map<String, dynamic>> _todayWeightLogs = [];
 
   @override
   void initState() {
     super.initState();
-    final hint = widget.currentWeight;
-    _ctrl = TextEditingController(
-        text: hint != null
-            ? (hint % 1 == 0 ? hint.toInt().toString() : hint.toStringAsFixed(1))
-            : '');
-    _loadLogs();
+    _ctrl = _buildController();
+    if (widget.metric == 'weight_kg') _loadWeightLogs();
   }
 
-  Future<void> _loadLogs() async {
+  @override
+  void didUpdateWidget(_QuickWeightCard old) {
+    super.didUpdateWidget(old);
+    if (old.metric != widget.metric || old.currentValue != widget.currentValue) {
+      _ctrl.dispose();
+      _ctrl = _buildController();
+      _todayWeightLogs = [];
+      if (widget.metric == 'weight_kg') _loadWeightLogs();
+    }
+  }
+
+  TextEditingController _buildController() {
+    final hint = widget.currentValue;
+    return TextEditingController(
+        text: hint != null ? fmtMetricValue(hint) : '');
+  }
+
+  Future<void> _loadWeightLogs() async {
     final logs = await BodyMetricsService.getTodayWeightLogs();
-    if (mounted) setState(() => _todayLogs = logs);
+    if (mounted) setState(() => _todayWeightLogs = logs);
   }
 
   @override
@@ -2488,13 +2508,29 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
     super.dispose();
   }
 
+  String get _unit => _metricOptions[widget.metric]?.$2 ?? '';
+  String get _label => _metricOptions[widget.metric]?.$1 ?? widget.metric;
+  bool get _isWeight => widget.metric == 'weight_kg';
+
   Future<void> _save({bool updateDaily = true}) async {
     final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
-    if (v == null || v <= 0 || v > 500) return;
+    if (v == null || v <= 0) return;
     setState(() => _saving = true);
     try {
-      await BodyMetricsService.logWeight(v, updateDaily: updateDaily);
-      await _loadLogs();
+      if (_isWeight) {
+        await BodyMetricsService.logWeight(v, updateDaily: updateDaily);
+        await _loadWeightLogs();
+      } else {
+        await BodyMetricsService.upsert(
+          weightKg:       widget.metric == 'weight_kg'       ? v : null,
+          bodyFatPct:     widget.metric == 'body_fat_pct'    ? v : null,
+          waistCm:        widget.metric == 'waist_cm'        ? v : null,
+          chestCm:        widget.metric == 'chest_cm'        ? v : null,
+          hipsCm:         widget.metric == 'hips_cm'         ? v : null,
+          rightArmCm:     widget.metric == 'right_arm_cm'    ? v : null,
+          shouldersCm:    widget.metric == 'shoulders_cm'    ? v : null,
+        );
+      }
       await widget.onSaved();
       if (mounted) setState(() { _saving = false; _saved = true; });
       await Future.delayed(const Duration(seconds: 2));
@@ -2503,7 +2539,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось сохранить вес')),
+          SnackBar(content: Text('Не удалось сохранить $_label')),
         );
       }
     }
@@ -2524,9 +2560,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: secondary
-              ? AppColors.surface
-              : AppColors.accent,
+          color: secondary ? AppColors.surface : AppColors.accent,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Text(
@@ -2543,7 +2577,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
 
   @override
   Widget build(BuildContext context) {
-    final hasTodayLogs = _todayLogs.isNotEmpty;
+    final hasTodayWeightLogs = _isWeight && _todayWeightLogs.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -2557,18 +2591,21 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
           // Header row
           Row(
             children: [
-              const Icon(Icons.monitor_weight_outlined,
-                  color: AppColors.accent, size: 22),
+              Icon(
+                _isWeight ? Icons.monitor_weight_outlined : Icons.straighten_rounded,
+                color: AppColors.accent,
+                size: 22,
+              ),
               const SizedBox(width: 10),
-              const Text(
-                'Вес сегодня',
-                style: TextStyle(
+              Text(
+                '$_label сегодня',
+                style: const TextStyle(
                     color: AppColors.textPrimary, fontWeight: FontWeight.w500),
               ),
-              if (hasTodayLogs) ...[
+              if (hasTodayWeightLogs) ...[
                 const Spacer(),
                 Builder(builder: (_) {
-                  final log = _todayLogs.last;
+                  final log = _todayWeightLogs.last;
                   final w = (log['weight_kg'] as num).toDouble();
                   final t = _formatTime(log['measured_at'] as String);
                   return Container(
@@ -2578,7 +2615,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '$t · ${w % 1 == 0 ? w.toInt() : w.toStringAsFixed(1)} кг',
+                      '$t · ${fmtMetricValue(w)} кг',
                       style: const TextStyle(
                           color: AppColors.textSecondary, fontSize: 11),
                     ),
@@ -2600,12 +2637,12 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
                   style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontWeight: FontWeight.w600),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: '—',
-                    suffixText: 'кг',
+                    suffixText: _unit,
                     isDense: true,
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   ),
                   onSubmitted: (_) => _save(),
                 ),
@@ -2627,7 +2664,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
                                 strokeWidth: 2,
                                 color: AppColors.accent),
                           )
-                        : hasTodayLogs
+                        : hasTodayWeightLogs
                             ? Row(
                                 key: const ValueKey('two-btn'),
                                 children: [
@@ -2650,7 +2687,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
               ),
             ],
           ),
-          if (hasTodayLogs)
+          if (hasTodayWeightLogs)
             const Padding(
               padding: EdgeInsets.only(top: 6),
               child: Text(

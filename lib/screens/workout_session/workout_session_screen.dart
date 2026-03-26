@@ -80,6 +80,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   DateTime? _restStartedAt;
   DateTime? _pausedAt;
   int _lastRestSeconds = 0;
+  int? _lastCompletedSetIndex;
 
   bool _deloadActive = false;
   Set<String> _fatiguedCategories = {}; // categories trained < 48h ago
@@ -261,8 +262,9 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     for (final c in _weightControllers) {
       c.dispose();
     }
+    _lastCompletedSetIndex = null;
     _weightControllers = List.generate(
-        we.sets, (_) => TextEditingController(text: lastWeightText)..addListener(_saveDraft));
+        we.sets, (i) => TextEditingController(text: i == 0 ? lastWeightText : '')..addListener(_saveDraft));
     _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps, repsTarget: defaultReps));
     _setComparisons.clear();
   }
@@ -349,6 +351,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     } else {
       _setComparisons[index] = null;
     }
+
+    _lastCompletedSetIndex = index;
 
     // Optimistic update — instant visual feedback
     setState(() {
@@ -467,10 +471,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.card,
+      useRootNavigator: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
+      builder: (_) => SafeArea(
+        top: false,
+        child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -528,6 +535,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -581,6 +589,17 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       _lastRestSeconds =
           DateTime.now().difference(_restStartedAt!).inSeconds;
       _restStartedAt = null;
+    }
+    // Pre-fill next set's weight from the just-completed set (weight only, not reps)
+    if (!_goToNextAfterRest && _lastCompletedSetIndex != null) {
+      final nextIdx = _lastCompletedSetIndex! + 1;
+      if (nextIdx < _weightControllers.length &&
+          _weightControllers[nextIdx].text.isEmpty) {
+        final prevWeight = _weightControllers[_lastCompletedSetIndex!].text;
+        if (prevWeight.isNotEmpty) {
+          _weightControllers[nextIdx].text = prevWeight;
+        }
+      }
     }
     setState(() => _resting = false);
     if (_goToNextAfterRest) _advanceExercise();

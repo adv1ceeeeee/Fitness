@@ -137,6 +137,31 @@ class AppRouter {
       return null;
     },
     routes: [
+      // ── Session screens (above shell — no bottom nav) ──────────────────────
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/session/:sessionId',
+        pageBuilder: (context, state) {
+          final sessionId = state.pathParameters['sessionId']!;
+          return _slideUpPage(state, WorkoutSessionScreen(sessionId: sessionId));
+        },
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/session-summary',
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>;
+          return _slideUpPage(
+            state,
+            SessionSummaryScreen(
+              sessionId: extra['sessionId'] as String,
+              workoutId: extra['workoutId'] as String,
+              durationSeconds: extra['durationSeconds'] as int,
+            ),
+          );
+        },
+      ),
+
       // ── Auth & onboarding (no bottom nav) ─────────────────────────────────
       GoRoute(
         path: '/',
@@ -224,28 +249,6 @@ class AppRouter {
                           (extra?['pendingIds'] as List?)?.cast<String>() ?? [],
                       sectionIndex: extra?['sectionIndex'] as int? ?? 0,
                       totalSections: extra?['totalSections'] as int? ?? 1,
-                    ),
-                  );
-                },
-              ),
-              GoRoute(
-                path: '/session/:sessionId',
-                pageBuilder: (context, state) {
-                  final sessionId = state.pathParameters['sessionId']!;
-                  return _slideUpPage(
-                      state, WorkoutSessionScreen(sessionId: sessionId));
-                },
-              ),
-              GoRoute(
-                path: '/session-summary',
-                pageBuilder: (context, state) {
-                  final extra = state.extra as Map<String, dynamic>;
-                  return _slideUpPage(
-                    state,
-                    SessionSummaryScreen(
-                      sessionId: extra['sessionId'] as String,
-                      workoutId: extra['workoutId'] as String,
-                      durationSeconds: extra['durationSeconds'] as int,
                     ),
                   );
                 },

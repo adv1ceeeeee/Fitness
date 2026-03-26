@@ -43,6 +43,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   Map<String, dynamic>? _selectedExercise;
   Map<String, double> _exerciseProgress = {};
   double? _communityAvgExerciseWeight;
+  double? _communityAvgWorkoutsPerWeek;
   bool _loadingChart = false;
 
   double? _communityAvgWeeklyVolume;
@@ -271,6 +272,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         final muscleFreq = await AnalyticsService.getMuscleGroupFrequency();
         final caloriesPerSession = await AnalyticsService.getCaloriesPerSession();
         final communityAvgVol = await AnalyticsService.getCommunityAvgWeeklyVolume();
+        final communityAvgFreq = await AnalyticsService.getCommunityAvgWorkoutsPerWeek();
         final weekCmp = await AnalyticsService.getWeekComparison();
         final heatmap = await AnalyticsService.getWorkoutHeatmap();
         final topExercises = await AnalyticsService.getTopExercisesByVolume();
@@ -294,6 +296,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             _muscleFrequency = muscleFreq;
             _caloriesPerSession = caloriesPerSession;
             _communityAvgWeeklyVolume = communityAvgVol;
+            _communityAvgWorkoutsPerWeek = communityAvgFreq;
             _weekComparison = weekCmp;
             _heatmapData = heatmap;
             _topExercises = topExercises;
@@ -566,6 +569,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     weeklyVolume: _weeklyVolume,
                     muscleBalance: _muscleBalance,
                     wellnessHistory: _wellnessHistory,
+                    communityAvgWeeklyVolume: _communityAvgWeeklyVolume,
+                    communityAvgWorkoutsPerWeek: _communityAvgWorkoutsPerWeek,
                     sharing: _sharing,
                     onShare: _shareAsImage,
                   ),
@@ -1649,6 +1654,8 @@ class _InsightsTab extends StatelessWidget {
   final List<Map<String, dynamic>> weeklyVolume;
   final Map<String, int> muscleBalance;
   final List<Map<String, dynamic>> wellnessHistory;
+  final double? communityAvgWeeklyVolume;
+  final double? communityAvgWorkoutsPerWeek;
   final bool sharing;
   final VoidCallback onShare;
 
@@ -1664,6 +1671,8 @@ class _InsightsTab extends StatelessWidget {
     required this.weeklyVolume,
     required this.muscleBalance,
     required this.wellnessHistory,
+    this.communityAvgWeeklyVolume,
+    this.communityAvgWorkoutsPerWeek,
     required this.sharing,
     required this.onShare,
   });
@@ -1700,6 +1709,8 @@ class _InsightsTab extends StatelessWidget {
               wellnessHistory: wellnessHistory,
               bestStreak: bestStreak,
               totalWorkouts: totalWorkouts,
+              communityAvgWeeklyVolume: communityAvgWeeklyVolume,
+              communityAvgWorkoutsPerWeek: communityAvgWorkoutsPerWeek,
             ),
             const SizedBox(height: 28),
             const Text(
@@ -2754,6 +2765,8 @@ class _InsightsSection extends StatelessWidget {
   final List<Map<String, dynamic>> wellnessHistory;
   final int bestStreak;
   final int totalWorkouts;
+  final double? communityAvgWeeklyVolume;
+  final double? communityAvgWorkoutsPerWeek;
 
   const _InsightsSection({
     required this.heatmapData,
@@ -2762,6 +2775,8 @@ class _InsightsSection extends StatelessWidget {
     required this.wellnessHistory,
     required this.bestStreak,
     required this.totalWorkouts,
+    this.communityAvgWeeklyVolume,
+    this.communityAvgWorkoutsPerWeek,
   });
 
   static const _weekdayNames = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
@@ -3004,6 +3019,77 @@ class _InsightsSection extends StatelessWidget {
             ? 'Ваш лучший стрик — $bestStreak дней подряд. Продолжайте в том же духе!'
             : 'Лучший стрик пока $bestStreak дней. Попробуйте не пропускать тренировки несколько недель подряд!',
       ));
+    }
+
+    // 8. Community: volume comparison
+    if (communityAvgWeeklyVolume != null && weeklyVolume.length >= 4) {
+      final recent4 = weeklyVolume.sublist(weeklyVolume.length - 4);
+      final userAvgVol = recent4.fold(0.0, (s, w) => s + (w['volume'] as num).toDouble()) / 4;
+      if (userAvgVol > 0) {
+        final diff = userAvgVol - communityAvgWeeklyVolume!;
+        final pct = communityAvgWeeklyVolume! > 0
+            ? (diff / communityAvgWeeklyVolume! * 100).round().abs()
+            : 0;
+        if (diff >= 0) {
+          cards.add(_InsightCard(
+            icon: Icons.groups_rounded,
+            color: const Color(0xFF30D158),
+            title: 'Объём vs сообщество',
+            body: 'Ваш средний недельный объём за последние 4 недели на $pct% выше среднего по приложению. Отличный результат!',
+          ));
+        } else if (pct >= 10) {
+          cards.add(_InsightCard(
+            icon: Icons.groups_rounded,
+            color: AppColors.accent,
+            title: 'Объём vs сообщество',
+            body: 'Ваш средний недельный объём на $pct% ниже среднего по приложению. Есть куда расти — попробуйте постепенно увеличивать нагрузку.',
+          ));
+        }
+      }
+    }
+
+    // 9. Community: workout frequency comparison
+    if (communityAvgWorkoutsPerWeek != null && heatmapData.isNotEmpty) {
+      final now = DateTime.now();
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      int totalSessions = 0;
+      int countedWeeks = 0;
+      for (int i = 1; i <= 8; i++) {
+        final weekStart = monday.subtract(Duration(days: 7 * i));
+        final weekEnd = weekStart.add(const Duration(days: 6));
+        int sessionsInWeek = 0;
+        for (final entry in heatmapData.entries) {
+          if (!entry.key.isBefore(weekStart) &&
+              !entry.key.isAfter(weekEnd) &&
+              entry.value > 0) {
+            sessionsInWeek++;
+          }
+        }
+        totalSessions += sessionsInWeek;
+        countedWeeks++;
+      }
+      if (countedWeeks >= 4) {
+        final userAvgFreq = totalSessions / countedWeeks;
+        final diff = userAvgFreq - communityAvgWorkoutsPerWeek!;
+        final absDiff = diff.abs();
+        if (absDiff >= 0.5) {
+          if (diff > 0) {
+            cards.add(_InsightCard(
+              icon: Icons.emoji_events_rounded,
+              color: const Color(0xFFFFD60A),
+              title: 'Частота vs сообщество',
+              body: 'Вы тренируетесь в среднем ${userAvgFreq.toStringAsFixed(1)} раз/нед — это больше среднего по приложению (${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} раз/нед). Так держать!',
+            ));
+          } else {
+            cards.add(_InsightCard(
+              icon: Icons.groups_rounded,
+              color: AppColors.accent,
+              title: 'Частота vs сообщество',
+              body: 'Среднее по приложению — ${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} тренировок/нед, у вас ${userAvgFreq.toStringAsFixed(1)}. Попробуйте добавить ещё одну тренировку в неделю.',
+            ));
+          }
+        }
+      }
     }
 
     return cards;

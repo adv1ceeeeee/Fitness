@@ -1331,6 +1331,44 @@ class AnalyticsService {
     );
   }
 
+  /// Average workouts per week across all users who trained in the last 4 weeks.
+  /// Minimum 3 active users required — returns null otherwise.
+  static Future<double?> getCommunityAvgWorkoutsPerWeek() async {
+    if (AuthService.currentUser == null) return null;
+    return AppCache.get<double?>(
+      key: 'community_avg_freq',
+      ttl: const Duration(minutes: 30),
+      fetch: () async {
+        try {
+          final since = DateTime.now()
+              .subtract(const Duration(days: 28))
+              .toIso8601String()
+              .split('T')[0];
+          // Count completed sessions per user in last 4 weeks
+          final res = await _client
+              .from('training_sessions')
+              .select('user_id')
+              .eq('completed', true)
+              .gte('date', since);
+          final rows = res as List;
+          if (rows.isEmpty) return null;
+          final perUser = <String, int>{};
+          for (final r in rows) {
+            final uid = r['user_id'] as String;
+            perUser[uid] = (perUser[uid] ?? 0) + 1;
+          }
+          if (perUser.length < 3) return null; // not enough users for meaningful avg
+          final avgSessions = perUser.values.reduce((a, b) => a + b) / perUser.length;
+          return avgSessions / 4; // per week
+        } catch (_) {
+          return null;
+        }
+      },
+      encode: (v) => v == null ? null : '$v',
+      decode: (s) => s == null ? null : double.tryParse(s),
+    );
+  }
+
   /// Returns kcal burned per session for a specific exercise.
   /// Result: map of date → kcal (sum of kcal_estimated for all sets of that exercise in that session).
   static Future<Map<String, double>> getCaloriesPerExercise(
