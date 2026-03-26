@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -1294,18 +1295,18 @@ class _BodyProgressCard extends StatelessWidget {
     );
   }
 
-  /// Linear regression over historical data → estimated time to reach goal.
+  /// Exponentially weighted OLS → estimated time to reach goal.
+  /// Recent measurements carry more weight (λ = 0.07 per day ≈ half-life ~10d).
   /// Returns null when: < 3 points, flat trend, wrong direction, or > 2 years.
   String? _forecastText(double current) {
     if (target == null) return null;
     final diff = target! - current; // signed: positive = need to grow
     if (diff.abs() < 0.05) return null; // already at goal
 
-    // Use only the last 30 days for regression — avoids old outliers
-    // skewing the slope direction and giving a misleading (or null) forecast.
+    // Only last 30 days — old data is irrelevant for near-term forecasting
     final cutoff = DateTime.now().subtract(const Duration(days: 30));
 
-    // Build (days_offset, value) series for the active metric
+    // Build (x=days_offset, y=value) series, oldest→newest
     final points = <(double, double)>[];
     DateTime? first;
     for (final m in metricsHistory) {
@@ -1321,15 +1322,24 @@ class _BodyProgressCard extends StatelessWidget {
     }
     if (points.length < 3) return null;
 
-    // OLS slope (value-change per day)
-    final n = points.length.toDouble();
-    double sx = 0, sy = 0, sxy = 0, sx2 = 0;
+    // Exponential decay weight: w_i = exp(-λ · (x_max − x_i))
+    // → most recent point always gets w = 1.0; a point 10 days older gets ≈ 0.50
+    const lambda = 0.07;
+    final xMax = points.last.$1;
+
+    double sw = 0, swx = 0, swy = 0, swxy = 0, swx2 = 0;
     for (final p in points) {
-      sx += p.$1; sy += p.$2; sxy += p.$1 * p.$2; sx2 += p.$1 * p.$1;
+      final w = math.exp(-lambda * (xMax - p.$1));
+      sw   += w;
+      swx  += w * p.$1;
+      swy  += w * p.$2;
+      swxy += w * p.$1 * p.$2;
+      swx2 += w * p.$1 * p.$1;
     }
-    final det = n * sx2 - sx * sx;
-    if (det.abs() < 1e-9) return null; // all measurements on same day
-    final slope = (n * sxy - sx * sy) / det;
+
+    final det = sw * swx2 - swx * swx;
+    if (det.abs() < 1e-9) return null; // all points on the same day
+    final slope = (sw * swxy - swx * swy) / det;
 
     if (slope.abs() < 0.001) return null; // essentially flat
     if (diff > 0 && slope <= 0) return null; // need to grow, but declining
