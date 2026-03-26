@@ -1301,6 +1301,10 @@ class _BodyProgressCard extends StatelessWidget {
     final diff = target! - current; // signed: positive = need to grow
     if (diff.abs() < 0.05) return null; // already at goal
 
+    // Use only the last 30 days for regression — avoids old outliers
+    // skewing the slope direction and giving a misleading (or null) forecast.
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+
     // Build (days_offset, value) series for the active metric
     final points = <(double, double)>[];
     DateTime? first;
@@ -1310,7 +1314,7 @@ class _BodyProgressCard extends StatelessWidget {
       final dateStr = m['date'] as String?;
       if (dateStr == null || dateStr.length < 10) continue;
       final dt = DateTime.tryParse(dateStr);
-      if (dt == null) continue;
+      if (dt == null || dt.isBefore(cutoff)) continue;
       first ??= dt;
       final x = dt.difference(first).inHours / 24.0;
       points.add((x, (raw as num).toDouble()));
