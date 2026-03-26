@@ -56,6 +56,14 @@ class _Body3DWidgetState extends State<Body3DWidget> {
   }
 
   Future<void> _init() async {
+    // WebView file loading is only reliable on Android, iOS and macOS.
+    // On Windows (desktop) webview_flutter does not support loadFile(),
+    // so fall back to the silhouette widget immediately.
+    if (Platform.isWindows || Platform.isLinux) {
+      if (mounted) setState(() { _modelMissing = true; _initializing = false; });
+      return;
+    }
+
     // 1. Check model asset exists
     ByteData? glbData;
     try {
