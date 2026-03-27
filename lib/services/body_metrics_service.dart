@@ -1,10 +1,15 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class BodyMetricsService {
   static SupabaseClient get _client => Supabase.instance.client;
+
+  /// Incremented whenever body metrics data is written (upsert / logWeight).
+  /// Screens can listen to this to force a refresh without waiting for cache TTL.
+  static final ValueNotifier<int> version = ValueNotifier(0);
 
   static Future<void> upsert({
     double? weightKg,
@@ -30,6 +35,7 @@ class BodyMetricsService {
 
     // Invalidate local cache so screen refreshes immediately
     await AppCache.invalidate('body_metrics:$userId');
+    version.value++;
 
     await _client.from('body_metrics').upsert(
       {

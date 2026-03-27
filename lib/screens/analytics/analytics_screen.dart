@@ -112,12 +112,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _load();
+    BodyMetricsService.version.addListener(_onBodyMetricsChanged);
   }
 
   @override
   void dispose() {
+    BodyMetricsService.version.removeListener(_onBodyMetricsChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _onBodyMetricsChanged() {
+    if (mounted) _refreshFresh();
   }
 
   Future<void> _load() async {
