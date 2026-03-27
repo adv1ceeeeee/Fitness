@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -533,7 +534,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _goalStartDate = g?.start;
       });
     } catch (e) {
-      debugPrint('[HomeScreen] _loadGoalPrefs error: $e');
+      if (kDebugMode) debugPrint('[HomeScreen] _loadGoalPrefs error: $e');
     }
   }
 
@@ -592,7 +593,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }).eq('id', userId);
       } catch (_) {}
     } catch (e) {
-      debugPrint('[HomeScreen] _saveGoalTarget error: $e');
+      if (kDebugMode) debugPrint('[HomeScreen] _saveGoalTarget error: $e');
     }
   }
 

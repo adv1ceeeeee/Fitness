@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback, SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -246,7 +247,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       }
     }
     } catch (e, st) {
-      debugPrint('_loadSession error: $e\n$st');
+      if (kDebugMode) debugPrint('_loadSession error: $e\n$st');
       if (mounted) setState(() { _loading = false; _loadError = true; });
     }
   }

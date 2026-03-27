@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -390,7 +391,9 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     );
     if (confirmed != true || !mounted) return;
     _exitInactiveDeleteMode();
-    for (final w in selected) await widget.onDelete(w.id);
+    for (final w in selected) {
+      await widget.onDelete(w.id);
+    }
   }
 
   void _toggleSelect(String id) {
@@ -547,7 +550,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         );
       }
     } catch (e) {
-      debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
+      if (kDebugMode) debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
     }
   }
 
@@ -628,7 +631,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         w.id, picked, plannedTime: pickedTime,
       );
     } catch (e) {
-      debugPrint('[WorkoutsScreen] _scheduleOneTime error: $e');
+      if (kDebugMode) debugPrint('[WorkoutsScreen] _scheduleOneTime error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Не удалось запланировать тренировку')),
@@ -652,7 +655,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           minutesBefore: minutesBefore,
         );
       } catch (e) {
-        debugPrint('[WorkoutsScreen] notification scheduling failed: $e');
+        if (kDebugMode) debugPrint('[WorkoutsScreen] notification scheduling failed: $e');
       }
     }
 
@@ -1169,7 +1172,6 @@ class _SwipeableCard extends StatefulWidget {
   final VoidCallback onArchive;
 
   const _SwipeableCard({
-    super.key,
     required this.workout,
     required this.index,
     required this.isHidden,

@@ -53,7 +53,7 @@ class ExportService {
       subject: 'Экспорт данных Sportify',
     );
 
-    debugPrint('[ExportService] exported $fileName (${bytes.length} bytes)');
+    if (kDebugMode) debugPrint('[ExportService] exported $fileName (${bytes.length} bytes)');
   }
 
   static String _csvField(String s) {
@@ -123,6 +123,6 @@ class ExportService {
       subject: 'Экспорт данных Sportify',
     );
 
-    debugPrint('[ExportService] exported $fileName (${bytes.length} bytes)');
+    if (kDebugMode) debugPrint('[ExportService] exported $fileName (${bytes.length} bytes)');
   }
 }

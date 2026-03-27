@@ -1530,7 +1530,7 @@ class AnalyticsService {
           .eq('user_id', userId);
       return (res as List).length;
     } catch (e) {
-      debugPrint('[AnalyticsService] getTotalPrCount error: $e');
+      if (kDebugMode) debugPrint('[AnalyticsService] getTotalPrCount error: $e');
       return 0;
     }
   }
@@ -1556,7 +1556,7 @@ class AnalyticsService {
       }
       return total;
     } catch (e) {
-      debugPrint('[AnalyticsService] getTotalVolumeKg error: $e');
+      if (kDebugMode) debugPrint('[AnalyticsService] getTotalVolumeKg error: $e');
       return 0;
     }
   }

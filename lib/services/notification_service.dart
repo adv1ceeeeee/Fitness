@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show debugPrint, defaultTargetPlatform, kDebugMode, TargetPlatform;
 
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -41,9 +41,9 @@ class NotificationService {
       );
       _initialized = true;
     } on UnimplementedError catch (e) {
-      debugPrint('[NotifService] initialize: platform not supported — $e');
+      if (kDebugMode) debugPrint('[NotifService] initialize: platform not supported — $e');
     } catch (e) {
-      debugPrint('[NotifService] initialize error: $e');
+      if (kDebugMode) debugPrint('[NotifService] initialize error: $e');
     }
   }
 
@@ -68,7 +68,7 @@ class NotificationService {
         .eq('user_id', userId)
         .eq('notif_id', notifId)
         .isFilter('tapped_at', null)
-        .then((_) {}, onError: (e) => debugPrint('[NotifService] markTapped: $e'));
+        .then((_) {}, onError: (e) { if (kDebugMode) debugPrint('[NotifService] markTapped: $e'); });
   }
 
   /// Fire-and-forget: log a scheduled notification to Supabase.
@@ -86,7 +86,7 @@ class NotificationService {
       'notif_id': notifId,
       if (scheduledFor != null) 'scheduled_for': scheduledFor.toUtc().toIso8601String(),
       if (sessionId != null) 'session_id': sessionId,
-    }).then((_) {}, onError: (e) => debugPrint('[NotifService] logScheduled: $e'));
+    }).then((_) {}, onError: (e) { if (kDebugMode) debugPrint('[NotifService] logScheduled: $e'); });
   }
 
   /// Returns true if permission was granted (or already granted).
@@ -485,7 +485,7 @@ class NotificationService {
         streak: data.streak,
         prs: data.prs,
       );
-    }).catchError((e) { debugPrint('[NotifService] refreshWeeklySummary: $e'); });
+    }).catchError((e) { if (kDebugMode) debugPrint('[NotifService] refreshWeeklySummary: $e'); });
   }
 
   static String _weeklySummaryTitle(int workouts) {
@@ -528,7 +528,7 @@ class NotificationService {
     try {
       await _plugin.cancelAll();
     } on UnimplementedError catch (e) {
-      debugPrint('[NotifService] cancelAll not supported on this platform: $e');
+      if (kDebugMode) debugPrint('[NotifService] cancelAll not supported on this platform: $e');
     }
   }
 
@@ -561,7 +561,7 @@ class NotificationService {
         matchDateTimeComponents: matchDateTimeComponents,
       );
     } on UnimplementedError catch (e) {
-      debugPrint('[NotifService] zonedSchedule not supported on this platform: $e');
+      if (kDebugMode) debugPrint('[NotifService] zonedSchedule not supported on this platform: $e');
     }
   }
 

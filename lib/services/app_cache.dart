@@ -139,7 +139,7 @@ class AppCache {
     fetch().then((value) async {
       await _store(prefs, key, encode(value));
     }).catchError((e) {
-      debugPrint('[AppCache] background refetch error for "$key": $e');
+      if (kDebugMode) debugPrint('[AppCache] background refetch error for "$key": $e');
     });
   }
 

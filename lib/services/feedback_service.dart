@@ -136,7 +136,7 @@ class FeedbackService {
         'metadata': metadata ?? {},
       });
     } catch (e) {
-      debugPrint('[FeedbackService] insert error: $e');
+      if (kDebugMode) debugPrint('[FeedbackService] insert error: $e');
     }
   }
 }

@@ -1,12 +1,12 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/services/pin_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
   });
 
   group('PinService — brute-force protection', () {
@@ -68,6 +68,25 @@ void main() {
       await PinService.resetFailed();
 
       expect(await PinService.getFailedAttempts(), 0);
+    });
+
+    test('isLockedOut returns false initially', () async {
+      expect(await PinService.isLockedOut(), false);
+    });
+
+    test('isLockedOut returns true after maxAttempts increments', () async {
+      for (var i = 0; i < PinService.maxAttempts; i++) {
+        await PinService.incrementFailed();
+      }
+      expect(await PinService.isLockedOut(), true);
+    });
+
+    test('isLockedOut returns false after resetFailed', () async {
+      for (var i = 0; i < PinService.maxAttempts; i++) {
+        await PinService.incrementFailed();
+      }
+      await PinService.resetFailed();
+      expect(await PinService.isLockedOut(), false);
     });
   });
 }

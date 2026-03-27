@@ -15,6 +15,12 @@ class WellnessService {
     if (userId == null) return;
     final today = DateTime.now().toIso8601String().split('T')[0];
 
+    sleepHours = sleepHours?.clamp(0.0, 24.0);
+    stress = stress?.clamp(1, 10);
+    energy = energy?.clamp(1, 10);
+    sleepQuality = sleepQuality?.clamp(1, 5);
+    soreness = soreness?.clamp(1, 5);
+
     await _client.from('wellness_logs').upsert(
       {
         'user_id': userId,

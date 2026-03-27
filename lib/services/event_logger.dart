@@ -71,7 +71,7 @@ class EventLogger {
     _client.from('user_events').insert(batch).then(
       (_) => _loadAndRetryOffline(),
       onError: (e) {
-        debugPrint('[EventLogger] flush failed: $e');
+        if (kDebugMode) debugPrint('[EventLogger] flush failed: $e');
         _persistOffline(batch);
       },
     );
@@ -90,7 +90,7 @@ class EventLogger {
       await _client.from('user_events').insert(batch);
       await _loadAndRetryOffline();
     } catch (e) {
-      debugPrint('[EventLogger] flushOnExit failed: $e');
+      if (kDebugMode) debugPrint('[EventLogger] flushOnExit failed: $e');
       await _persistOffline(batch);
     }
   }
@@ -114,7 +114,7 @@ class EventLogger {
       final trimmed = stored.length > 500 ? stored.sublist(stored.length - 500) : stored;
       await prefs.setString(_offlineKey, jsonEncode(trimmed));
     } catch (e) {
-      debugPrint('[EventLogger] persistOffline failed: $e');
+      if (kDebugMode) debugPrint('[EventLogger] persistOffline failed: $e');
     }
   }
 
@@ -130,9 +130,9 @@ class EventLogger {
       final batch = stored.cast<Map<String, dynamic>>();
       await prefs.remove(_offlineKey);
       await _client.from('user_events').insert(batch);
-      debugPrint('[EventLogger] retried ${batch.length} offline events');
+      if (kDebugMode) debugPrint('[EventLogger] retried ${batch.length} offline events');
     } catch (e) {
-      debugPrint('[EventLogger] offline retry failed: $e');
+      if (kDebugMode) debugPrint('[EventLogger] offline retry failed: $e');
     }
   }
 

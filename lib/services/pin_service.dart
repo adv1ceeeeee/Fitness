@@ -1,14 +1,15 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class PinService {
   static const _keyHash = 'pin_hash';
   static const _keyUserId = 'pin_user_id';
   static const _keyFails = 'pin_failed_attempts';
+  static const _keyLockoutUntil = 'pin_lockout_until';
 
   static const int maxAttempts = 5;
+  static const int lockoutMinutes = 15;
 
   static const _secure = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -47,19 +48,47 @@ class PinService {
   // ── Brute-force protection ────────────────────────────────────────────────
 
   static Future<int> getFailedAttempts() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_keyFails) ?? 0;
+    final val = await _secure.read(key: _keyFails);
+    return int.tryParse(val ?? '0') ?? 0;
   }
 
   static Future<void> incrementFailed() async {
-    final prefs = await SharedPreferences.getInstance();
-    final current = prefs.getInt(_keyFails) ?? 0;
-    await prefs.setInt(_keyFails, current + 1);
+    final current = await getFailedAttempts();
+    final next = current + 1;
+    await _secure.write(key: _keyFails, value: '$next');
+    if (next >= maxAttempts) {
+      final until = DateTime.now()
+          .add(const Duration(minutes: lockoutMinutes))
+          .millisecondsSinceEpoch;
+      await _secure.write(key: _keyLockoutUntil, value: '$until');
+    }
   }
 
   static Future<void> resetFailed() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyFails);
+    await _secure.delete(key: _keyFails);
+    await _secure.delete(key: _keyLockoutUntil);
+  }
+
+  /// Returns true if the PIN is currently locked out.
+  static Future<bool> isLockedOut() async {
+    final val = await _secure.read(key: _keyLockoutUntil);
+    if (val == null) return false;
+    final until = int.tryParse(val);
+    if (until == null) return false;
+    if (DateTime.now().millisecondsSinceEpoch < until) return true;
+    await resetFailed();
+    return false;
+  }
+
+  /// Returns remaining lockout minutes (0 if not locked).
+  static Future<int> getLockoutRemainingMinutes() async {
+    final val = await _secure.read(key: _keyLockoutUntil);
+    if (val == null) return 0;
+    final until = int.tryParse(val);
+    if (until == null) return 0;
+    final remaining = until - DateTime.now().millisecondsSinceEpoch;
+    if (remaining <= 0) return 0;
+    return (remaining / 60000).ceil();
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────

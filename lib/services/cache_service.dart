@@ -19,7 +19,7 @@ class CacheService {
       final data = workouts.map((w) => w.toJson()).toList();
       await file.writeAsString(jsonEncode(data));
     } catch (e) {
-      debugPrint('CacheService.saveWorkouts error: $e');
+      if (kDebugMode) debugPrint('CacheService.saveWorkouts error: $e');
     }
   }
 
@@ -32,7 +32,7 @@ class CacheService {
           .map((e) => Workout.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      debugPrint('CacheService.loadWorkouts error: $e');
+      if (kDebugMode) debugPrint('CacheService.loadWorkouts error: $e');
       return [];
     }
   }
@@ -48,7 +48,7 @@ class CacheService {
       }
       await file.writeAsString(jsonEncode(data));
     } catch (e) {
-      debugPrint('CacheService.saveTodayWorkout error: $e');
+      if (kDebugMode) debugPrint('CacheService.saveTodayWorkout error: $e');
     }
   }
 
@@ -58,7 +58,7 @@ class CacheService {
       if (!await file.exists()) return null;
       return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     } catch (e) {
-      debugPrint('CacheService.loadTodayWorkout error: $e');
+      if (kDebugMode) debugPrint('CacheService.loadTodayWorkout error: $e');
       return null;
     }
   }

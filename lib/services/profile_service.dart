@@ -10,6 +10,13 @@ class ProfileService {
 
   static String _cacheKey(String userId) => 'profile:$userId';
 
+  static const _allowedProfileFields = {
+    'nickname', 'full_name', 'gender', 'goal', 'level', 'birth_date',
+    'weight_kg', 'height_cm', 'training_start_date', 'avatar_url', 'email',
+  };
+
+  static const _maxAvatarBytes = 5 * 1024 * 1024; // 5 MB
+
   static Future<Profile?> getProfile() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
@@ -49,8 +56,14 @@ class ProfileService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
 
+    final safe = {
+      for (final e in updates.entries)
+        if (_allowedProfileFields.contains(e.key)) e.key: e.value,
+    };
+    if (safe.isEmpty) return;
+
     await _client.from('profiles').update({
-      ...updates,
+      ...safe,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', userId);
 
@@ -82,6 +95,17 @@ class ProfileService {
   /// Загружает аватарку в Supabase Storage и возвращает публичный URL.
   /// Требует bucket "avatars" с публичным доступом в Supabase Dashboard.
   static Future<String> uploadAvatar(Uint8List bytes) async {
+    if (bytes.length > _maxAvatarBytes) {
+      throw Exception('Файл слишком большой (максимум 5 МБ)');
+    }
+    // JPEG magic bytes: FF D8 FF
+    if (bytes.length < 3 ||
+        bytes[0] != 0xFF ||
+        bytes[1] != 0xD8 ||
+        bytes[2] != 0xFF) {
+      throw Exception('Недопустимый формат файла. Загружайте только JPEG.');
+    }
+
     final userId = AuthService.currentUser!.id;
     final path = '$userId.jpg';
 

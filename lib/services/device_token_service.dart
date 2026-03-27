@@ -41,9 +41,9 @@ class DeviceTokenService {
         },
         onConflict: 'user_id, token',
       );
-      debugPrint('[DeviceTokenService] token registered');
+      if (kDebugMode) debugPrint('[DeviceTokenService] token registered');
     } catch (e) {
-      debugPrint('[DeviceTokenService] registration error: $e');
+      if (kDebugMode) debugPrint('[DeviceTokenService] registration error: $e');
     }
   }
 
@@ -58,7 +58,7 @@ class DeviceTokenService {
           .eq('user_id', userId)
           .eq('token', token);
     } catch (e) {
-      debugPrint('[DeviceTokenService] unregister error: $e');
+      if (kDebugMode) debugPrint('[DeviceTokenService] unregister error: $e');
     }
   }
 }

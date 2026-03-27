@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/training_session.dart';
@@ -94,7 +94,7 @@ class TrainingService {
       }
       return TrainingSession.fromJson(res);
     } catch (e) {
-      debugPrint('[TrainingService.getOrCreateTodaySession] error: $e');
+      if (kDebugMode) debugPrint('[TrainingService.getOrCreateTodaySession] error: $e');
       return null;
     }
   }
@@ -105,11 +105,19 @@ class TrainingService {
     String? notes,
     int? sessionRpe,
   }) async {
+    final safeDuration = durationSeconds != null && durationSeconds >= 0
+        ? durationSeconds
+        : null;
+    final safeRpe = sessionRpe?.clamp(1, 10);
+    final safeNotes = notes != null && notes.length > 1000
+        ? notes.substring(0, 1000)
+        : notes;
+
     await _client.from('training_sessions').update({
       'completed': true,
-      if (durationSeconds != null) 'duration_seconds': durationSeconds,
-      'notes': notes,
-      if (sessionRpe != null) 'session_rpe': sessionRpe,
+      if (safeDuration != null) 'duration_seconds': safeDuration,
+      'notes': safeNotes,
+      if (safeRpe != null) 'session_rpe': safeRpe,
     }).eq('id', sessionId);
   }
 
@@ -174,7 +182,7 @@ class TrainingService {
           }));
       return true;
     } catch (e) {
-      debugPrint('[TrainingService.saveSet] error: $e — queuing for offline retry');
+      if (kDebugMode) debugPrint('[TrainingService.saveSet] error: $e — queuing for offline retry');
       await OfflineQueueService.enqueue(
         sessionId: sessionId,
         workoutExerciseId: workoutExerciseId,
@@ -210,7 +218,7 @@ class TrainingService {
           .update({'kcal_total': double.parse(total.toStringAsFixed(1))})
           .eq('id', sessionId);
     } catch (e) {
-      debugPrint('[TrainingService.saveSessionKcal] error: $e');
+      if (kDebugMode) debugPrint('[TrainingService.saveSessionKcal] error: $e');
     }
   }
 
@@ -264,7 +272,7 @@ class TrainingService {
           .update({'volume_kg': double.parse(total.toStringAsFixed(2))})
           .eq('id', sessionId);
     } catch (e) {
-      debugPrint('[TrainingService.saveSessionVolume] error: $e');
+      if (kDebugMode) debugPrint('[TrainingService.saveSessionVolume] error: $e');
     }
   }
 
@@ -510,7 +518,7 @@ class TrainingService {
       }
       return result;
     } catch (e) {
-      debugPrint('[TrainingService.getUpcomingSessionsForWorkouts] error: $e');
+      if (kDebugMode) debugPrint('[TrainingService.getUpcomingSessionsForWorkouts] error: $e');
       return {};
     }
   }

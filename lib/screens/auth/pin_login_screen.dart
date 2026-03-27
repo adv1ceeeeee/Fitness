@@ -27,7 +27,19 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
   @override
   void initState() {
     super.initState();
+    _checkLockout();
     _initBiometric();
+  }
+
+  Future<void> _checkLockout() async {
+    final locked = await PinService.isLockedOut();
+    if (locked && mounted) {
+      final mins = await PinService.getLockoutRemainingMinutes();
+      setState(() {
+        _blocked = true;
+        _errorText = 'PIN заблокирован на $mins мин. Войдите с паролем.';
+      });
+    }
   }
 
   Future<void> _initBiometric() async {

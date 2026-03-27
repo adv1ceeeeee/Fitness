@@ -85,7 +85,7 @@ class OfflineQueueService {
       restSeconds: restSeconds,
     ).toJson()));
     await prefs.setStringList(_key, raw);
-    debugPrint('[OfflineQueue] enqueued set, queue size=${raw.length}');
+    if (kDebugMode) debugPrint('[OfflineQueue] enqueued set, queue size=${raw.length}');
   }
 
   /// Attempt to flush all pending sets. Stops on first failure.
@@ -93,7 +93,7 @@ class OfflineQueueService {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
     if (raw.isEmpty) return;
-    debugPrint('[OfflineQueue] flushing ${raw.length} pending set(s)');
+    if (kDebugMode) debugPrint('[OfflineQueue] flushing ${raw.length} pending set(s)');
 
     final remaining = <String>[];
     for (final item in raw) {
@@ -111,13 +111,13 @@ class OfflineQueueService {
         );
         if (!ok) remaining.add(item); // still failing — keep it
       } catch (e) {
-        debugPrint('[OfflineQueue] flush error: $e');
+        if (kDebugMode) debugPrint('[OfflineQueue] flush error: $e');
         remaining.add(item);
       }
     }
 
     await prefs.setStringList(_key, remaining);
-    debugPrint('[OfflineQueue] flushed, ${remaining.length} item(s) left');
+    if (kDebugMode) debugPrint('[OfflineQueue] flushed, ${remaining.length} item(s) left');
   }
 
   /// Number of items currently queued.

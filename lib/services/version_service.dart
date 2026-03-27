@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -49,7 +50,7 @@ class VersionService {
       }
       return false;
     } catch (e) {
-      debugPrint('[VersionService] check failed: $e');
+      if (kDebugMode) debugPrint('[VersionService] check failed: $e');
       return true; // при ошибке сети не блокируем
     }
   }

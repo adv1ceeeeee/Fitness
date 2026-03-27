@@ -46,7 +46,7 @@ Future<void> _initFcm() async {
     );
   } catch (e) {
     // Firebase not configured yet — app works fine with local notifications
-    debugPrint('[FCM] init skipped: $e');
+    if (kDebugMode) debugPrint('[FCM] init skipped: $e');
   }
 }
 
@@ -61,7 +61,7 @@ void _setupErrorHandlers() {
     }
   };
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('[Uncaught] $error\n$stack');
+    if (kDebugMode) debugPrint('[Uncaught] $error\n$stack');
     if (AppConfig.sentryDsn.isNotEmpty) {
       Sentry.captureException(error, stackTrace: stack);
     }

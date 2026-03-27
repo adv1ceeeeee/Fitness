@@ -15,7 +15,7 @@ Future<T> retryWithBackoff<T>(
     } catch (e) {
       if (attempt == maxAttempts) rethrow;
       final delay = baseDelay * pow(2, attempt - 1).toInt();
-      debugPrint('[retry] attempt $attempt failed: $e — retrying in ${delay.inSeconds}s');
+      if (kDebugMode) debugPrint('[retry] attempt $attempt failed: $e — retrying in ${delay.inSeconds}s');
       await Future.delayed(delay);
     }
   }

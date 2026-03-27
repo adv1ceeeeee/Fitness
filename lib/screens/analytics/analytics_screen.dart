@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/rendering.dart';
@@ -421,7 +422,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       setState(() => _profile = _profile?.copyWith(goal: picked));
       EventLogger.log('training_goal_set', props: {'goal': picked});
     } catch (e) {
-      debugPrint('[AnalyticsScreen] _changeGoal error: $e');
+      if (kDebugMode) debugPrint('[AnalyticsScreen] _changeGoal error: $e');
     }
   }
 

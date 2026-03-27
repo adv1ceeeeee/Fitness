@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/services/auth_service.dart';
@@ -14,11 +15,44 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const _maxAttempts = 5;
+  static const _lockoutMinutes = 15;
+  static const _keyAttempts = 'login_failed_attempts';
+  static const _keyLockoutUntil = 'login_lockout_until';
+
   final _formKey = GlobalKey<FormState>();
   final _loginController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+
+  Future<bool> _isLockedOut() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lockoutUntil = prefs.getInt(_keyLockoutUntil);
+    if (lockoutUntil == null) return false;
+    if (DateTime.now().millisecondsSinceEpoch < lockoutUntil) return true;
+    await prefs.remove(_keyLockoutUntil);
+    await prefs.remove(_keyAttempts);
+    return false;
+  }
+
+  Future<void> _recordFailedAttempt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final attempts = (prefs.getInt(_keyAttempts) ?? 0) + 1;
+    await prefs.setInt(_keyAttempts, attempts);
+    if (attempts >= _maxAttempts) {
+      final until = DateTime.now()
+          .add(const Duration(minutes: _lockoutMinutes))
+          .millisecondsSinceEpoch;
+      await prefs.setInt(_keyLockoutUntil, until);
+    }
+  }
+
+  Future<void> _clearAttempts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyAttempts);
+    await prefs.remove(_keyLockoutUntil);
+  }
 
   @override
   void dispose() {
@@ -37,6 +71,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
+      if (await _isLockedOut()) {
+        setState(() => _errorMessage =
+            'Слишком много неудачных попыток. Подождите $_lockoutMinutes минут.');
+        return;
+      }
+
       setState(() {
         _isLoading = true;
         _errorMessage = null;
@@ -55,14 +95,19 @@ class _LoginScreenState extends State<LoginScreen> {
           email,
           _passwordController.text,
         );
+        await _clearAttempts();
         EventLogger.resetSession();
         EventLogger.userLoggedIn();
         EventLogger.appOpened(source: 'login');
         if (mounted) context.go('/onboarding-check');
       } catch (e) {
+        await _recordFailedAttempt();
+        final locked = await _isLockedOut();
         final msg = e.toString();
         String userMsg;
-        if (msg.contains('Email not confirmed') || msg.contains('not confirmed')) {
+        if (locked) {
+          userMsg = 'Слишком много неудачных попыток. Подождите $_lockoutMinutes минут.';
+        } else if (msg.contains('Email not confirmed') || msg.contains('not confirmed')) {
           userMsg = 'Email не подтверждён. Проверьте почту и спам.';
         } else if (msg.contains('Ник не найден')) {
           userMsg = 'Ник не найден. Попробуйте email или зарегистрируйтесь.';
