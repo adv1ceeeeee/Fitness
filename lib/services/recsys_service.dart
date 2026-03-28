@@ -309,3 +309,63 @@ String _weeksLabel(int n) {
     default: return '$n недель';
   }
 }
+
+// ─── Wellness ↔ performance correlation ───────────────────────────────────────
+
+class WellnessCorrelationRec {
+  final String exerciseName;
+  final double goodSleepAvgKg;
+  final double badSleepAvgKg;
+  /// Percentage drop: (goodAvg - badAvg) / goodAvg * 100
+  final double dropPct;
+  final int sessionCount;
+  final String message;
+
+  const WellnessCorrelationRec({
+    required this.exerciseName,
+    required this.goodSleepAvgKg,
+    required this.badSleepAvgKg,
+    required this.dropPct,
+    required this.sessionCount,
+    required this.message,
+  });
+}
+
+/// Picks the most notable sleep → performance correlation from pre-computed data.
+///
+/// [data] — output of AnalyticsService.getWellnessPerformanceCorrelation():
+///   [{exerciseName, goodSleepAvgKg, badSleepAvgKg, dropPct, sessionCount}]
+///
+/// Returns null when no meaningful correlation was found.
+WellnessCorrelationRec? evaluateWellnessCorrelation(
+    List<Map<String, dynamic>> data) {
+  if (data.isEmpty) return null;
+
+  // data is already sorted by dropPct desc — take the top entry
+  final top = data.first;
+
+  final name     = top['exerciseName'] as String;
+  final goodAvg  = (top['goodSleepAvgKg'] as num).toDouble();
+  final badAvg   = (top['badSleepAvgKg']  as num).toDouble();
+  final dropPct  = (top['dropPct']         as num).toDouble();
+  final count    = top['sessionCount'] as int;
+
+  final goodStr = goodAvg % 1 == 0
+      ? '${goodAvg.toInt()} кг'
+      : '${goodAvg.toStringAsFixed(1)} кг';
+  final badStr  = badAvg % 1 == 0
+      ? '${badAvg.toInt()} кг'
+      : '${badAvg.toStringAsFixed(1)} кг';
+  final pctStr  = dropPct.round().toString();
+
+  return WellnessCorrelationRec(
+    exerciseName:    name,
+    goodSleepAvgKg:  goodAvg,
+    badSleepAvgKg:   badAvg,
+    dropPct:         dropPct,
+    sessionCount:    count,
+    message: 'Замечено: когда ты спишь меньше 6ч, результаты в «$name» '
+        'падают в среднем на $pctStr% ($badStr vs $goodStr при хорошем сне). '
+        'На основе $count сессий.',
+  );
+}

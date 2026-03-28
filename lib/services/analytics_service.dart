@@ -1998,4 +1998,158 @@ class AnalyticsService {
 
     return result;
   }
+
+  /// Compares average best weight on exercises between good-sleep (≥ [goodSleepH] h)
+  /// and bad-sleep (< [badSleepH] h) sessions over the last [days] days.
+  ///
+  /// Returns exercises where both groups have ≥ [minSessionsPerGroup] data points
+  /// and the bad-sleep average is at least [minDropPct]% lower than the good-sleep
+  /// average. Sorted by largest drop first.
+  ///
+  /// Each entry: { exerciseId, exerciseName, goodSleepAvgKg, badSleepAvgKg,
+  ///               dropPct, sessionCount }
+  static Future<List<Map<String, dynamic>>> getWellnessPerformanceCorrelation({
+    int days = 90,
+    double goodSleepH = 7.0,
+    double badSleepH  = 6.0,
+    int minSessionsPerGroup = 3,
+    double minDropPct = 5.0,
+  }) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final cutoff = DateTime.now()
+        .subtract(Duration(days: days))
+        .toIso8601String()
+        .split('T')[0];
+
+    // 1. Completed sessions in window
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', cutoff);
+
+    final sessions = (sessRes as List).cast<Map<String, dynamic>>();
+    if (sessions.isEmpty) return [];
+
+    final sessionIds = sessions.map((s) => s['id'] as String).toList();
+
+    // 2. Wellness logs in window
+    final wellRes = await _client
+        .from('wellness_logs')
+        .select('date, sleep_hours')
+        .eq('user_id', userId)
+        .gte('date', cutoff);
+
+    final sleepByDate = <String, double>{};
+    for (final row in wellRes as List) {
+      final sleep = (row['sleep_hours'] as num?)?.toDouble();
+      if (sleep != null) sleepByDate[row['date'] as String] = sleep;
+    }
+
+    // Categorise sessions by sleep quality
+    final goodSessions = <String>{};
+    final badSessions  = <String>{};
+    for (final s in sessions) {
+      final id   = s['id']   as String;
+      final date = s['date'] as String;
+      final sleep = sleepByDate[date];
+      if (sleep == null) continue;
+      if (sleep >= goodSleepH) goodSessions.add(id);
+      if (sleep < badSleepH)  badSessions.add(id);
+    }
+
+    if (goodSessions.isEmpty || badSessions.isEmpty) return [];
+
+    // 3. Completed working sets for all sessions in window
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id, training_session_id, weight')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false)
+        .not('weight', 'is', null)
+        .gt('weight', 0);
+
+    final weIds = (setsRes as List)
+        .map((s) => s['workout_exercise_id'] as String)
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return [];
+
+    // 4. Resolve workout_exercise_id → exercise
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(id, name, name_ru)')
+        .inFilter('id', weIds);
+
+    final weToExercise = <String, Map<String, dynamic>>{};
+    for (final row in weRes as List) {
+      final ex = row['exercises'] as Map<String, dynamic>?;
+      if (ex != null) weToExercise[row['id'] as String] = ex;
+    }
+
+    // 5. Best weight per (exercise_id, session_id)
+    final bestWeight   = <String, Map<String, double>>{}; // exId → {sessId → maxWeight}
+    final exerciseMeta = <String, Map<String, dynamic>>{};
+
+    for (final set in setsRes as List) {
+      final weId   = set['workout_exercise_id'] as String;
+      final sessId = set['training_session_id'] as String;
+      final weight = (set['weight'] as num).toDouble();
+      final ex = weToExercise[weId];
+      if (ex == null) continue;
+      final exId = ex['id'] as String;
+      exerciseMeta[exId] = ex;
+      bestWeight.putIfAbsent(exId, () => {});
+      final cur = bestWeight[exId]![sessId] ?? 0.0;
+      if (weight > cur) bestWeight[exId]![sessId] = weight;
+    }
+
+    // 6. Compute correlation per exercise
+    final result = <Map<String, dynamic>>[];
+
+    for (final entry in bestWeight.entries) {
+      final exId = entry.key;
+      final sessWeights = entry.value;
+
+      final goodW = <double>[];
+      final badW  = <double>[];
+      for (final e in sessWeights.entries) {
+        if (goodSessions.contains(e.key)) goodW.add(e.value);
+        if (badSessions.contains(e.key))  badW.add(e.value);
+      }
+
+      if (goodW.length < minSessionsPerGroup ||
+          badW.length  < minSessionsPerGroup) {
+        continue;
+      }
+
+      final goodAvg = goodW.reduce((a, b) => a + b) / goodW.length;
+      final badAvg  = badW.reduce((a, b) => a + b) / badW.length;
+
+      if (goodAvg <= 0) continue;
+      final dropPct = (goodAvg - badAvg) / goodAvg * 100;
+      if (dropPct < minDropPct) continue;
+
+      final ex = exerciseMeta[exId]!;
+      result.add({
+        'exerciseId':     exId,
+        'exerciseName':   (ex['name_ru'] as String?)?.isNotEmpty == true
+            ? ex['name_ru'] as String
+            : ex['name'] as String,
+        'goodSleepAvgKg': goodAvg,
+        'badSleepAvgKg':  badAvg,
+        'dropPct':        dropPct,
+        'sessionCount':   goodW.length + badW.length,
+      });
+    }
+
+    result.sort((a, b) =>
+        (b['dropPct'] as double).compareTo(a['dropPct'] as double));
+
+    return result;
+  }
 }
