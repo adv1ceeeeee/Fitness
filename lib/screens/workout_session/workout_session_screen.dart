@@ -1182,6 +1182,12 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                         final suggestIncrease = topReps != null && r >= topReps && w > 0;
                         final strongSuggest = _autoProgressSuggestions.contains(we.exerciseId);
                         final suggestWeight = useKg ? w + 2.5 : (w + 2.5) * 2.20462;
+                        // RecSys takes priority: suppress old increase chips when
+                        // RPE data says to maintain or decrease load.
+                        final progRec = evaluateProgression(_lastSets[we.exerciseId]);
+                        final recsysBlocks = progRec != null &&
+                            (progRec.direction == ProgressionDirection.maintain ||
+                             progRec.direction == ProgressionDirection.decrease);
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1190,7 +1196,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                               style: const TextStyle(
                                   fontSize: 12, color: AppColors.accent),
                             ),
-                            if (strongSuggest) ...[
+                            if (strongSuggest && !recsysBlocks) ...[
                               GestureDetector(
                                 onTap: () {
                                   final suggestWeightKg = w + 2.5;
@@ -1225,7 +1231,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                   ),
                                 ),
                               ),
-                            ] else if (suggestIncrease) ...[
+                            ] else if (suggestIncrease && !recsysBlocks) ...[
                               GestureDetector(
                                 onTap: () {
                                   final suggestWeightKg = w + 2.5;
@@ -1262,11 +1268,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                               ),
                             ],
                             // ── RecSys progression chip ───────────────────
-                            Builder(builder: (_) {
-                              final progRec = evaluateProgression(
-                                  _lastSets[we.exerciseId]);
-                              if (progRec == null) return const SizedBox.shrink();
-                              // Skip increase if already shown by existing chips
+                            if (progRec != null) Builder(builder: (_) {
+                              // Skip increase if old chips already show it
                               if (progRec.direction == ProgressionDirection.increase &&
                                   (strongSuggest || suggestIncrease)) {
                                 return const SizedBox.shrink();
