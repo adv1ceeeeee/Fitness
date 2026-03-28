@@ -18,6 +18,7 @@ import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/streak_freeze_service.dart';
 import 'package:sportwai/widgets/skeleton.dart';
 
@@ -2867,6 +2868,17 @@ class _InsightsSection extends StatelessWidget {
         color: const Color(0xFFBF5AF2),
         title: 'Самая тренируемая группа',
         body: '$label лидирует по объёму подходов за последние 30 дней (${top.value} подходов). Следите за балансом.',
+      ));
+    }
+
+    // 3b. Muscle imbalance (RecSys heuristic)
+    final imbalanceRec = evaluateMuscleBalance(muscleBalance);
+    if (imbalanceRec != null) {
+      cards.add(_InsightCard(
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFFF9F0A),
+        title: 'Дисбаланс мышц',
+        body: imbalanceRec.message,
       ));
     }
 

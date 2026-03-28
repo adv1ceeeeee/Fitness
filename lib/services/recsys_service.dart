@@ -173,3 +173,78 @@ ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
 
   return null; // данных недостаточно или всё нормально
 }
+
+// ─── Muscle balance recommendation ────────────────────────────────────────────
+
+class MuscleImbalanceRec {
+  /// Human-readable name of the undertrained group.
+  final String weakLabel;
+  /// Human-readable name of the overtrained group.
+  final String strongLabel;
+  /// Ratio of weak/strong (0..1). Lower = bigger imbalance.
+  final double ratio;
+  final String message;
+
+  const MuscleImbalanceRec({
+    required this.weakLabel,
+    required this.strongLabel,
+    required this.ratio,
+    required this.message,
+  });
+}
+
+// Antagonist pairs to check: (dominant, antagonist) category keys.
+const _antagonistPairs = [
+  ('chest', 'back'),
+  ('back', 'chest'),
+];
+
+const _muscleRuLabels = {
+  'chest':     'Грудь',
+  'back':      'Спина',
+  'shoulders': 'Плечи',
+  'arms':      'Руки',
+  'legs':      'Ноги',
+  'core':      'Пресс',
+  'cardio':    'Кардио',
+};
+
+/// Checks antagonist muscle pairs for significant imbalance (last 30 days).
+///
+/// [balance] — {categoryKey: completedSets} from getMuscleGroupBalance().
+/// Returns the worst imbalance found, or null if everything is within range.
+MuscleImbalanceRec? evaluateMuscleBalance(Map<String, int> balance) {
+  if (balance.isEmpty) return null;
+
+  const minSetsThreshold = 6; // ignore groups with too little data
+  const imbalanceRatio   = 0.6; // weak must be < 60 % of strong to flag
+
+  MuscleImbalanceRec? worst;
+
+  for (final (a, b) in _antagonistPairs) {
+    final setsA = balance[a] ?? 0;
+    final setsB = balance[b] ?? 0;
+    // Need enough data on the stronger side
+    final stronger = setsA > setsB ? setsA : setsB;
+    final weaker   = setsA > setsB ? setsB : setsA;
+    final weakKey  = setsA > setsB ? b : a;
+    final strongKey = setsA > setsB ? a : b;
+    if (stronger < minSetsThreshold) continue;
+    final ratio = weaker / stronger;
+    if (ratio >= imbalanceRatio) continue;
+    if (worst != null && ratio >= worst.ratio) continue;
+
+    final weakLabel   = _muscleRuLabels[weakKey]   ?? weakKey;
+    final strongLabel = _muscleRuLabels[strongKey] ?? strongKey;
+    final pct = ((1 - ratio) * 100).round();
+    worst = MuscleImbalanceRec(
+      weakLabel: weakLabel,
+      strongLabel: strongLabel,
+      ratio: ratio,
+      message: '$strongLabel тренируется на $pct% чаще чем $weakLabel '
+          'за последние 30 дней — добавь больше упражнений на $weakLabel.',
+    );
+  }
+
+  return worst;
+}
