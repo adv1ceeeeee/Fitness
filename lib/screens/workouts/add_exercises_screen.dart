@@ -187,36 +187,35 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
-    final wFuture = WorkoutService.getWorkout(widget.workoutId);
-    final exFuture = WorkoutService.getWorkoutExercises(widget.workoutId);
-    final allFuture = ExerciseService.getExercises();
-    // Load sort data in parallel (non-blocking — failures silently ignored)
-    final ormsF = ExerciseService.getBest1RMs();
-    final popF = ExerciseService.getPopularity();
-    final w = await wFuture;
-    final ex = await exFuture;
-    final all = await allFuture;
-    final orms = await ormsF;
-    final pop = await popF;
+    final results = await Future.wait([
+      WorkoutService.getWorkout(widget.workoutId),
+      WorkoutService.getWorkoutExercises(widget.workoutId),
+      ExerciseService.getExercises(),
+    ]);
+    final w = results[0] as Workout?;
+    final ex = results[1] as List<WorkoutExercise>;
+    final all = results[2] as List<Exercise>;
     // If this is a section of a multi-section program, load siblings too.
     final sections = (w?.groupId != null)
         ? await WorkoutService.getSectionsByGroupId(w!.groupId!)
         : <Workout>[];
-    if (mounted) {
-      setState(() {
-        _workout = w;
-        _programExercises = ex;
-        _allExercises = all;
-        _groupSections = sections;
-        _userBest1RMs = orms;
-        _popularity = pop;
-        _loading = false;
-        // Auto-select when only one day in this section
-        if (w != null && w.days.length == 1) {
-          _selectedDay = w.days.first;
-        }
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _workout = w;
+      _programExercises = ex;
+      _allExercises = all;
+      _groupSections = sections;
+      _loading = false;
+      // Auto-select when only one day in this section
+      if (w != null && w.days.length == 1) _selectedDay = w.days.first;
+    });
+    // Load sort data in background — only needed when user switches sort mode.
+    ExerciseService.getBest1RMs().then((orms) {
+      if (mounted) setState(() => _userBest1RMs = orms);
+    }).catchError((_) {});
+    ExerciseService.getPopularity().then((pop) {
+      if (mounted) setState(() => _popularity = pop);
+    }).catchError((_) {});
   }
 
   /// Returns label like "A1", "A2", "B1"... for exercises in a superset, or null.

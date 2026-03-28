@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/exercise.dart';
+import 'package:sportwai/services/app_cache.dart';
 
 class ExerciseService {
   static SupabaseClient get _client => Supabase.instance.client;
@@ -10,6 +12,35 @@ class ExerciseService {
   }) async {
     final userId = _client.auth.currentUser?.id;
 
+    // Searched/filtered requests bypass cache (dynamic results).
+    if (search != null && search.isNotEmpty) {
+      return _fetchExercises(userId: userId, search: search,
+          favoritesOnly: favoritesOnly);
+    }
+
+    // Full list is cached per user (stale-while-revalidate, 15 min TTL).
+    final cacheKey = 'exercises_all:${userId ?? 'anon'}';
+    final all = await AppCache.get<List<Exercise>>(
+      key: cacheKey,
+      ttl: const Duration(minutes: 15),
+      fetch: () => _fetchExercises(userId: userId),
+      encode: (list) => jsonEncode(list.map((e) => e.toJson()).toList()),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List)
+              .map((e) => Exercise.fromJson(e as Map<String, dynamic>))
+              .toList(),
+    );
+
+    if (favoritesOnly) return all.where((e) => e.isFavorite).toList();
+    return all;
+  }
+
+  static Future<List<Exercise>> _fetchExercises({
+    required String? userId,
+    String? search,
+    bool favoritesOnly = false,
+  }) async {
     // Join with favorites to get is_favorite flag per user
     var query = _client.from('exercises').select(
           userId != null
@@ -31,9 +62,7 @@ class ExerciseService {
       return Exercise.fromJson({...map, 'is_favorite': isFav});
     }).where((e) => e.isStandard || e.userId == userId).toList();
 
-    if (favoritesOnly) {
-      return exercises.where((e) => e.isFavorite).toList();
-    }
+    if (favoritesOnly) return exercises.where((e) => e.isFavorite).toList();
     return exercises;
   }
 
@@ -54,11 +83,13 @@ class ExerciseService {
       'user_id': userId,
     }).select().single();
 
+    await AppCache.invalidatePrefix('exercises_all:');
     return Exercise.fromJson(res);
   }
 
   static Future<void> deleteExercise(String id) async {
     await _client.from('exercises').delete().eq('id', id);
+    await AppCache.invalidatePrefix('exercises_all:');
   }
 
   /// Returns best estimated 1RM (Epley: w*(1+r/30)) per exercise_id
@@ -126,5 +157,7 @@ class ExerciseService {
           .eq('user_id', userId)
           .eq('exercise_id', exerciseId);
     }
+    // Invalidate so next open reflects updated isFavorite flags.
+    await AppCache.invalidate('exercises_all:$userId');
   }
 }
