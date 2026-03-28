@@ -764,22 +764,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     }),
                   ),
                   _SettingsRow(
-                    label: 'Шаг гантельного ряда',
+                    label: 'Шаг увеличения веса',
                     last: true,
                     trailing: Builder(builder: (context) {
-                      final inc    = ref.watch(dumbbellIncrementProvider);
-                      final useKg  = ref.watch(useKgProvider);
-                      return Wrap(
-                        spacing: 6,
-                        children: _dumbbellOptions(useKg).map((o) {
-                          return ChoiceChip(
-                            label: Text(o.label),
-                            selected: (inc - o.kg).abs() < 0.01,
-                            onSelected: (_) => ref
-                                .read(dumbbellIncrementProvider.notifier)
-                                .setIncrement(o.kg),
-                          );
-                        }).toList(),
+                      final inc   = ref.watch(dumbbellIncrementProvider);
+                      final useKg = ref.watch(useKgProvider);
+                      final opts  = _dumbbellOptions(useKg);
+                      final cur   = opts.firstWhere(
+                        (o) => (o.kg - inc).abs() < 0.01,
+                        orElse: () => opts.first,
+                      );
+                      return PopupMenuButton<double>(
+                        onSelected: (v) => ref
+                            .read(dumbbellIncrementProvider.notifier)
+                            .setIncrement(v),
+                        color: AppColors.card,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        itemBuilder: (_) => opts
+                            .map((o) => PopupMenuItem(
+                                  value: o.kg,
+                                  child: Text(o.label),
+                                ))
+                            .toList(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                cur.label,
+                                style: const TextStyle(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.arrow_drop_down,
+                                  color: AppColors.accent, size: 18),
+                            ],
+                          ),
+                        ),
                       );
                     }),
                   ),

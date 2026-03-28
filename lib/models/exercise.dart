@@ -60,10 +60,16 @@ class Exercise {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'name_ru': nameRu,
         'category': category,
         'description': description,
+        'description_ru': descriptionRu,
         'image_url': imageUrl,
         'is_standard': isStandard,
+        'is_favorite': isFavorite,
+        'gif_url': gifUrl,
+        'movement_type': movementType,
+        'difficulty': difficulty,
         if (userId != null) 'user_id': userId,
       };
 

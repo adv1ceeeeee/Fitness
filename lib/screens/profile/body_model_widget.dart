@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shelf/shelf_io.dart' as shelf_io;
+import 'package:shelf_static/shelf_static.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/screens/profile/body_silhouette_widget.dart';
@@ -46,6 +48,7 @@ class Body3DWidget extends StatefulWidget {
 class _Body3DWidgetState extends State<Body3DWidget> {
   BodyPose _pose = BodyPose.relaxed;
   WebViewController? _controller;
+  HttpServer? _server;
   bool _modelMissing = false;
   bool _initializing = true;
 
@@ -55,52 +58,39 @@ class _Body3DWidgetState extends State<Body3DWidget> {
     _init();
   }
 
-  Future<void> _init() async {
-    // WebView file loading is only reliable on Android, iOS and macOS.
-    // On Windows (desktop) webview_flutter does not support loadFile(),
-    // so fall back to the silhouette widget immediately.
-    if (Platform.isWindows || Platform.isLinux) {
-      if (mounted) setState(() { _modelMissing = true; _initializing = false; });
-      return;
-    }
+  @override
+  void dispose() {
+    _server?.close(force: true);
+    super.dispose();
+  }
 
+  Future<void> _init() async {
     // 1. Check model asset exists
     ByteData? glbData;
     try {
       glbData = await rootBundle.load(Body3DWidget._modelAsset);
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _modelMissing = true;
-          _initializing = false;
-        });
-      }
+      if (mounted) setState(() { _modelMissing = true; _initializing = false; });
       return;
     }
 
-    // 2. Prepare temp directory with all 3 files side-by-side
-    //    WKWebView's loadFile() grants read access to the whole directory,
-    //    so model-viewer.js and perfect_human_body.glb are reachable via relative paths.
+    // 2. Write files to a temp directory
     final tempDir = await getTemporaryDirectory();
     final webDir = Directory('${tempDir.path}/sportify_3d');
     await webDir.create(recursive: true);
 
-    // Write GLB (skip if already cached with same size)
     final glbFile = File('${webDir.path}/perfect_human_body.glb');
     final glbBytes = glbData.buffer.asUint8List();
-    if (!glbFile.existsSync() ||
-        await glbFile.length() != glbBytes.length) {
+    if (!glbFile.existsSync() || await glbFile.length() != glbBytes.length) {
       await glbFile.writeAsBytes(glbBytes, flush: true);
     }
 
-    // Write model-viewer.min.js (skip if already cached)
     final jsFile = File('${webDir.path}/model-viewer.min.js');
     if (!jsFile.existsSync()) {
       final jsData = await rootBundle.load(Body3DWidget._jsAsset);
       await jsFile.writeAsBytes(jsData.buffer.asUint8List(), flush: true);
     }
 
-    // Write HTML — simple relative src paths, no inline base64 needed
     const html = '''<!DOCTYPE html>
 <html>
 <head>
@@ -131,16 +121,19 @@ model-viewer {
 </model-viewer>
 </body>
 </html>''';
+    await File('${webDir.path}/index.html').writeAsString(html, flush: true);
 
-    final htmlFile = File('${webDir.path}/index.html');
-    await htmlFile.writeAsString(html, flush: true);
+    // 3. Start a local HTTP server serving the directory.
+    //    Works on all platforms (Windows, Linux, Android, iOS) —
+    //    avoids loadFile() which is unsupported on Windows/Linux.
+    final handler = createStaticHandler(webDir.path, defaultDocument: 'index.html');
+    _server = await shelf_io.serve(handler, InternetAddress.loopbackIPv4, 0);
+    final port = _server!.port;
 
-    // 3. Load via loadFile — this calls loadFileURL:allowingReadAccessToURL:
-    //    giving the page a real file:// origin with access to the whole webDir
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(AppColors.background)
-      ..loadFile(htmlFile.path);
+      ..loadRequest(Uri.parse('http://127.0.0.1:$port/'));
 
     if (mounted) {
       setState(() {
@@ -391,7 +384,7 @@ class _NoModelPlaceholder extends StatelessWidget {
                   color: AppColors.accent.withValues(alpha: 0.6)),
               const SizedBox(height: 16),
               const Text(
-                '3D модель не добавлена',
+                '3D просмотр недоступен',
                 style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 16,
@@ -399,7 +392,7 @@ class _NoModelPlaceholder extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Добавь файл assets/models/perfect_human_body.glb\nчтобы включить 3D просмотр.',
+                '3D модель доступна в мобильном приложении.',
                 style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,

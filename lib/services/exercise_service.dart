@@ -19,7 +19,8 @@ class ExerciseService {
     }
 
     // Full list is cached per user (stale-while-revalidate, 15 min TTL).
-    final cacheKey = 'exercises_all:${userId ?? 'anon'}';
+    // v2: bumped to invalidate old cache missing name_ru / gif_url fields.
+    final cacheKey = 'exercises_all_v2:${userId ?? 'anon'}';
     final all = await AppCache.get<List<Exercise>>(
       key: cacheKey,
       ttl: const Duration(minutes: 15),
@@ -83,13 +84,13 @@ class ExerciseService {
       'user_id': userId,
     }).select().single();
 
-    await AppCache.invalidatePrefix('exercises_all:');
+    await AppCache.invalidatePrefix('exercises_all_v2:');
     return Exercise.fromJson(res);
   }
 
   static Future<void> deleteExercise(String id) async {
     await _client.from('exercises').delete().eq('id', id);
-    await AppCache.invalidatePrefix('exercises_all:');
+    await AppCache.invalidatePrefix('exercises_all_v2:');
   }
 
   /// Returns best estimated 1RM (Epley: w*(1+r/30)) per exercise_id
@@ -158,6 +159,6 @@ class ExerciseService {
           .eq('exercise_id', exerciseId);
     }
     // Invalidate so next open reflects updated isFavorite flags.
-    await AppCache.invalidate('exercises_all:$userId');
+    await AppCache.invalidate('exercises_all_v2:$userId');
   }
 }

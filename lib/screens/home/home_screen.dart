@@ -691,6 +691,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   plannedTime: _todayPlannedTime,
                   streak: _streak,
                 ),
+
+                // ── RecSys recommendations (energy + wellness) ────────────
+                if (_energyState != null) ...[
+                  const SizedBox(height: 12),
+                  _EnergyReadinessCard(state: _energyState!),
+                ],
+                if (_wellnessRec != null) ...[
+                  const SizedBox(height: 8),
+                  _WellnessRecBanner(
+                    rec: _wellnessRec!,
+                    onDismiss: () => setState(() => _wellnessRec = null),
+                  ),
+                ],
+
                 const SizedBox(height: 24),
                 _TodayCard(
                   workout: _overrideWorkout ?? _todayWorkout,
@@ -745,40 +759,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _WellnessCard(
                     onSaved: () async {
                       final log = await WellnessService.getTodayLog();
-                      if (mounted) setState(() {
-                        _wellnessLogged = true;
-                        _todayWellness = log;
-                        _wellnessRec = evaluateWellness(log);
-                      });
+                      if (mounted) {
+                        setState(() {
+                          _wellnessLogged = true;
+                          _todayWellness = log;
+                          _wellnessRec = evaluateWellness(log);
+                        });
+                      }
                     },
                   ),
-                ],
-
-                // ── Wellness advice ───────────────────────────────────────
-                if (_todayWellness != null) ...[
-                  const SizedBox(height: 16),
-                  _WellnessAdviceCard(wellness: _todayWellness!),
                 ],
 
                 // ── Achievement card ──────────────────────────────────────
                 if (_insight != null) ...[
                   const SizedBox(height: 16),
                   _AchievementCard(insight: _insight!),
-                ],
-
-                // ── Wellness recommendation ───────────────────────────────
-                if (_wellnessRec != null) ...[
-                  const SizedBox(height: 16),
-                  _WellnessRecBanner(
-                    rec: _wellnessRec!,
-                    onDismiss: () => setState(() => _wellnessRec = null),
-                  ),
-                ],
-
-                // ── Energy readiness card ─────────────────────────────────
-                if (_energyState != null) ...[
-                  const SizedBox(height: 16),
-                  _EnergyReadinessCard(state: _energyState!),
                 ],
 
                 // ── Measurement reminder ──────────────────────────────────
@@ -993,10 +988,10 @@ class _EnergyReadinessCard extends StatelessWidget {
     final Color color;
     final IconData icon;
     if (bucket <= 2) {
-      color = const Color(0xFF30D158); // green
+      color = AppColors.accent; // blue — peak
       icon  = Icons.bolt_rounded;
     } else if (bucket <= 4) {
-      color = const Color(0xFF30D158);
+      color = AppColors.accent;
       icon  = Icons.fitness_center_rounded;
     } else if (bucket <= 6) {
       color = const Color(0xFFFF9F0A); // amber
@@ -1042,7 +1037,7 @@ class _EnergyReadinessCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Готовность: ${state.label} ($pct%) · бакет $bucket/10',
+                    'Готовность: ${state.label} ($pct%)',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -2287,71 +2282,6 @@ class _TodayCard extends StatelessWidget {
   }
 }
 
-// ─── Wellness advice card ─────────────────────────────────────────────────────
-
-class _WellnessAdviceCard extends StatelessWidget {
-  final Map<String, dynamic> wellness;
-  const _WellnessAdviceCard({required this.wellness});
-
-  String get _advice {
-    final energy = wellness['energy'] as int?;
-    final stress = wellness['stress'] as int?;
-    final sleep = (wellness['sleep_hours'] as num?)?.toDouble();
-    final soreness = wellness['soreness'] as int?;
-
-    if (energy != null && energy <= 3) return 'Низкий уровень энергии — лучше отдохни или сделай лёгкую растяжку.';
-    if (stress != null && stress >= 8) return 'Высокий стресс — избегай перегрузок, сфокусируйся на восстановлении.';
-    if (sleep != null && sleep < 5.0) return 'Мало сна — организм не восстановился, избегай интенсивных нагрузок.';
-    if (soreness != null && soreness >= 4) return 'Высокая крепатура — потренируй другие группы мышц или возьми день отдыха.';
-    if (energy != null && energy <= 5) return 'Умеренный уровень энергии — подойдёт тренировка средней интенсивности.';
-    if (sleep != null && sleep < 6.5) return 'Маловато сна — снизь интенсивность тренировки сегодня.';
-    return 'Отличное состояние — хороший день для интенсивной тренировки!';
-  }
-
-  IconData get _icon {
-    final energy = wellness['energy'] as int?;
-    final stress = wellness['stress'] as int?;
-    final sleep = (wellness['sleep_hours'] as num?)?.toDouble();
-    final soreness = wellness['soreness'] as int?;
-    final isBad = (energy != null && energy <= 3) ||
-        (stress != null && stress >= 8) ||
-        (sleep != null && sleep < 5.0) ||
-        (soreness != null && soreness >= 4);
-    final isMid = (energy != null && energy <= 5) || (sleep != null && sleep < 6.5);
-    if (isBad) return Icons.bedtime_rounded;
-    if (isMid) return Icons.trending_flat_rounded;
-    return Icons.bolt_rounded;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(_icon, color: AppColors.accent, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _advice,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ─── Wellness check-in card ───────────────────────────────────────────────────
 

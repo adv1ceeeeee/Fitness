@@ -59,6 +59,22 @@
 
 ## Функциональность
 
+### Социальная авторизация (OAuth)
+**Где:** `WelcomeScreen` / `LoginScreen` / `RegisterScreen`
+**Текущее состояние:** Только email + пароль.
+**Приоритет для РФ:**
+1. **Яндекс ID** — custom OIDC provider в Supabase Dashboard; самый широкий охват
+2. **Apple Sign In** — обязателен на iOS при наличии любого другого соц. входа (App Store Guideline 4.8)
+3. **Google** — из коробки в Supabase (`signInWithOAuth`), но не работает на устройствах без GMS
+4. **VK ID** — факультативно, если целевая аудитория 18–35
+**Что нужно:**
+- Supabase Dashboard: OAuth client ID + secret для каждого провайдера
+- Flutter: `supabase.auth.signInWithOAuth()` + пакет `google_sign_in` для Google; custom deep link для Яндекс
+- Onboarding-флаг: новый пользователь через OAuth → редирект на `/onboarding` если профиль не заполнен
+- `profiles.nickname` / `full_name` автозаполняются из данных провайдера при первом входе
+
+---
+
 ### Верификация контактного email (OTP-код)
 **Где:** `EditProfileScreen`
 **Текущее состояние:** Email меняется без подтверждения — можно указать чужой адрес.

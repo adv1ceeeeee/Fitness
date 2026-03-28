@@ -343,14 +343,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         }
       }).timeout(const Duration(seconds: 15));
     } catch (e) {
+      debugPrint('Analytics _refreshFresh error: $e');
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Не удалось загрузить статистику'),
-            action: SnackBarAction(label: 'Повторить', onPressed: _load),
-          ),
-        );
+        // Only show snackbar if we have no data at all (cache miss + network fail).
+        // If cached data is already displayed, fail silently.
+        if (_totalWorkouts == 0 && _weeklyVolume.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Не удалось загрузить статистику'),
+              action: SnackBarAction(label: 'Повторить', onPressed: _load),
+            ),
+          );
+        }
       }
     } finally {
       _refreshing = false;
