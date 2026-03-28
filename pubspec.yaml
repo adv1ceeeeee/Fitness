@@ -38,6 +38,7 @@ dependencies:
   confetti: ^0.8.0
   google_fonts: ^6.2.1
   in_app_review: ^2.0.10
+  window_manager: ^0.4.3
   flutter_svg: ^2.0.10+1
   webview_flutter: ^4.0.0
   model_viewer_plus: ^1.10.0

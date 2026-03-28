@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -69,8 +70,28 @@ void _setupErrorHandlers() {
   };
 }
 
+Future<void> _initWindowForDesktop() async {
+  if (defaultTargetPlatform != TargetPlatform.windows) return;
+  await windowManager.ensureInitialized();
+  await windowManager.waitUntilReadyToShow(
+    const WindowOptions(
+      size: Size(393, 852),       // iPhone 14 logical pixels
+      minimumSize: Size(393, 852),
+      maximumSize: Size(393, 852),
+      center: true,
+      title: 'Sportify',
+      backgroundColor: Colors.transparent,
+    ),
+    () async {
+      await windowManager.show();
+      await windowManager.focus();
+    },
+  );
+}
+
 Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _initWindowForDesktop();
   _setupErrorHandlers();
   await initializeDateFormatting('ru_RU', null);
 
