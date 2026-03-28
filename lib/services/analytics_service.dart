@@ -45,10 +45,12 @@ class AnalyticsService {
   static Future<void> invalidateStatsCache() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
-    await AppCache.invalidatePrefix('total_workouts:$userId');
-    await AppCache.invalidatePrefix('best_streak:$userId');
-    await AppCache.invalidatePrefix('workouts_week:$userId');
-    await AppCache.invalidatePrefix('volume_week:$userId');
+    await Future.wait([
+      AppCache.invalidatePrefix('total_workouts:$userId'),
+      AppCache.invalidatePrefix('best_streak:$userId'),
+      AppCache.invalidatePrefix('workouts_week:$userId'),
+      AppCache.invalidatePrefix('volume_week:$userId'),
+    ]);
     statsVersion.value++;
   }
 
@@ -63,7 +65,8 @@ class AnalyticsService {
         .select('date')
         .eq('user_id', userId)
         .eq('completed', true)
-        .order('date', ascending: false);
+        .order('date', ascending: false)
+        .limit(365);
 
     final dates = (res as List)
         .map((e) => DateTime.parse(e['date'] as String))
@@ -208,11 +211,16 @@ class AnalyticsService {
     final weIds = (weRes as List).map((e) => e['id'] as String).toList();
     if (weIds.isEmpty) return [];
 
+    final twoYearsAgo = DateTime.now()
+        .subtract(const Duration(days: 730))
+        .toIso8601String()
+        .split('T')[0];
     final sessRes = await _client
         .from('training_sessions')
         .select('id, date')
         .eq('user_id', userId)
         .eq('completed', true)
+        .gte('date', twoYearsAgo)
         .order('date', ascending: true);
 
     final sessionIds = (sessRes as List).map((e) => e['id'] as String).toList();
@@ -268,36 +276,24 @@ class AnalyticsService {
 
     final cutoff = DateTime.now().subtract(Duration(hours: hours)).toUtc().toIso8601String();
 
-    final setsRes = await _client
-        .from('sets')
-        .select('workout_exercise_id')
-        .eq('completed', true)
-        .not('workout_exercise_id', 'is', null)
-        .gte('performed_at', cutoff);
+    // Run sets and sessions queries in parallel
+    final parallel = await Future.wait([
+      _client
+          .from('sets')
+          .select('workout_exercise_id, training_session_id')
+          .eq('completed', true)
+          .not('workout_exercise_id', 'is', null)
+          .gte('performed_at', cutoff),
+      _client
+          .from('training_sessions')
+          .select('id')
+          .eq('user_id', userId)
+          .gte('created_at', cutoff),
+    ]);
 
-    final weIds = (setsRes as List)
-        .map((e) => e['workout_exercise_id'] as String?)
-        .whereType<String>()
-        .toSet()
-        .toList();
-    if (weIds.isEmpty) return {};
+    final userSessIds = (parallel[1] as List).map((e) => e['id'] as String).toSet();
 
-    // Filter by user's sessions
-    final sessRes = await _client
-        .from('training_sessions')
-        .select('id')
-        .eq('user_id', userId)
-        .gte('created_at', cutoff);
-    final userSessIds = (sessRes as List).map((e) => e['id'] as String).toSet();
-
-    final setsWithSession = await _client
-        .from('sets')
-        .select('workout_exercise_id, training_session_id')
-        .inFilter('workout_exercise_id', weIds)
-        .eq('completed', true)
-        .gte('performed_at', cutoff);
-
-    final userWeIds = (setsWithSession as List)
+    final userWeIds = (parallel[0] as List)
         .where((e) => userSessIds.contains(e['training_session_id'] as String))
         .map((e) => e['workout_exercise_id'] as String?)
         .whereType<String>()

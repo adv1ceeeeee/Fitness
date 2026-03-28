@@ -122,10 +122,12 @@ class AppCache {
     final keys = prefs.getKeys()
         .where((k) => k.startsWith('cache:$prefix'))
         .toList();
-    for (final k in keys) {
-      await prefs.remove(k);
-      await prefs.remove(k.replaceFirst('cache:', 'cache_at:'));
-    }
+    await Future.wait([
+      for (final k in keys) ...[
+        prefs.remove(k),
+        prefs.remove(k.replaceFirst('cache:', 'cache_at:')),
+      ],
+    ]);
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────────
@@ -146,8 +148,9 @@ class AppCache {
   static Future<void> _store(
       SharedPreferences prefs, String key, String? encoded) async {
     if (encoded == null) return;
-    await prefs.setString('cache:$key', encoded);
-    await prefs.setInt(
-        'cache_at:$key', DateTime.now().millisecondsSinceEpoch);
+    await Future.wait([
+      prefs.setString('cache:$key', encoded),
+      prefs.setInt('cache_at:$key', DateTime.now().millisecondsSinceEpoch),
+    ]);
   }
 }

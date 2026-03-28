@@ -262,51 +262,58 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     if (!mounted) return;
     try {
       await AppCache.withForceRefresh(() async {
-        final profile = await ProfileService.getProfile();
-        final total = await AnalyticsService.getTotalWorkouts();
-        final streak = await AnalyticsService.getBestStreak();
-        final weekCount = await AnalyticsService.getWorkoutsThisWeek();
-        final volume = await AnalyticsService.getVolumeThisWeek();
-        final tracked = await AnalyticsService.getTrackedExercises();
-        final bodyHistory = await BodyMetricsService.getHistory();
-        final achievements = await AchievementService.getAchievements();
-        final weeklyVol = await AnalyticsService.getWeeklyVolumeHistory();
-        final muscleBalance = await AnalyticsService.getMuscleGroupBalance();
-        final muscleFreq = await AnalyticsService.getMuscleGroupFrequency();
-        final caloriesPerSession = await AnalyticsService.getCaloriesPerSession();
-        final communityAvgVol = await AnalyticsService.getCommunityAvgWeeklyVolume();
-        final communityAvgFreq = await AnalyticsService.getCommunityAvgWorkoutsPerWeek();
-        final weekCmp = await AnalyticsService.getWeekComparison();
-        final heatmap = await AnalyticsService.getWorkoutHeatmap();
-        final topExercises = await AnalyticsService.getTopExercisesByVolume();
-        final wellnessHistory = await AnalyticsService.getWellnessHistory();
-        final sessionDurations = await AnalyticsService.getSessionDurationHistory();
-        final sessionRpes = await AnalyticsService.getSessionRpeHistory();
-        final exerciseProgressList = await AnalyticsService.getTopExercisesByProgress();
+        final results = await Future.wait([
+          ProfileService.getProfile(),
+          AnalyticsService.getTotalWorkouts(),
+          AnalyticsService.getBestStreak(),
+          AnalyticsService.getWorkoutsThisWeek(),
+          AnalyticsService.getVolumeThisWeek(),
+          AnalyticsService.getTrackedExercises(),
+          BodyMetricsService.getHistory(),
+          AchievementService.getAchievements(),
+          AnalyticsService.getWeeklyVolumeHistory(),
+          AnalyticsService.getMuscleGroupBalance(),
+          AnalyticsService.getMuscleGroupFrequency(),
+          AnalyticsService.getCaloriesPerSession(),
+          AnalyticsService.getCommunityAvgWeeklyVolume(),
+          AnalyticsService.getCommunityAvgWorkoutsPerWeek(),
+          AnalyticsService.getWeekComparison(),
+          AnalyticsService.getWorkoutHeatmap(),
+          AnalyticsService.getTopExercisesByVolume(),
+          AnalyticsService.getWellnessHistory(),
+          AnalyticsService.getSessionDurationHistory(),
+          AnalyticsService.getSessionRpeHistory(),
+          AnalyticsService.getTopExercisesByProgress(),
+        ]);
 
         if (mounted) {
           setState(() {
-            _profile = profile;
-            _totalWorkouts = total;
-            _bestStreak = streak;
-            _workoutsThisWeek = weekCount;
-            _volumeThisWeek = volume;
-            _trackedExercises = tracked;
-            _bodyHistory = bodyHistory;
-            _achievements = achievements;
-            _weeklyVolume = weeklyVol;
-            _muscleBalance = muscleBalance;
-            _muscleFrequency = muscleFreq;
-            _caloriesPerSession = caloriesPerSession;
-            _communityAvgWeeklyVolume = communityAvgVol;
-            _communityAvgWorkoutsPerWeek = communityAvgFreq;
-            _weekComparison = weekCmp;
-            _heatmapData = heatmap;
-            _topExercises = topExercises;
-            _wellnessHistory = wellnessHistory;
-            _sessionDurations = sessionDurations;
-            _sessionRpes = sessionRpes;
-            _exerciseProgressList = exerciseProgressList;
+            _profile = results[0] as Profile?;
+            _totalWorkouts = results[1] as int;
+            _bestStreak = results[2] as int;
+            _workoutsThisWeek = results[3] as int;
+            _volumeThisWeek = results[4] as double;
+            _trackedExercises = results[5] as List<Map<String, dynamic>>;
+            _bodyHistory = results[6] as List<Map<String, dynamic>>;
+            _achievements = results[7] as List<Achievement>;
+            _weeklyVolume = results[8] as List<Map<String, dynamic>>;
+            _muscleBalance = results[9] as Map<String, int>;
+            _muscleFrequency = results[10] as Map<String, double>;
+            _caloriesPerSession = results[11] as List<Map<String, dynamic>>;
+            _communityAvgWeeklyVolume = results[12] as double?;
+            _communityAvgWorkoutsPerWeek = results[13] as double?;
+            _weekComparison = results[14] as ({
+              double volumeThisWeek,
+              double volumeLastWeek,
+              int sessionsThisWeek,
+              int sessionsLastWeek,
+            })?;
+            _heatmapData = results[15] as Map<DateTime, double>;
+            _topExercises = results[16] as List<Map<String, dynamic>>;
+            _wellnessHistory = results[17] as List<Map<String, dynamic>>;
+            _sessionDurations = results[18] as List<Map<String, dynamic>>;
+            _sessionRpes = results[19] as List<Map<String, dynamic>>;
+            _exerciseProgressList = results[20] as List<Map<String, dynamic>>;
             _loading = false;
           });
         }
