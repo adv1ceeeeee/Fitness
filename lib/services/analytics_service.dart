@@ -1999,6 +1999,25 @@ class AnalyticsService {
     return result;
   }
 
+  /// Returns volume_kg of the last [limit] completed sessions, newest first.
+  /// volume_kg is computed server-side by fn_complete_session trigger.
+  static Future<List<double>> getRecentSessionVolumes({int limit = 10}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    final res = await _client
+        .from('training_sessions')
+        .select('volume_kg')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .not('volume_kg', 'is', null)
+        .order('date', ascending: false)
+        .limit(limit);
+    return (res as List)
+        .map((r) => (r['volume_kg'] as num).toDouble())
+        .where((v) => v > 0)
+        .toList();
+  }
+
   /// Compares average best weight on exercises between good-sleep (≥ [goodSleepH] h)
   /// and bad-sleep (< [badSleepH] h) sessions over the last [days] days.
   ///

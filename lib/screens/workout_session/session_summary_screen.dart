@@ -9,6 +9,8 @@ import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
+import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
@@ -35,6 +37,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
   bool _saving = false;
   double _totalVolume = 0;
   int? _sessionRpe;
+  List<PostSessionInsight> _postInsights = [];
 
   // Grouped exercise data: exerciseName → list of _SetRow
   final List<_ExerciseGroup> _groups = [];
@@ -107,7 +110,34 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
       });
       _confettiController.play();
       _checkNewAchievements();
+      _loadInsights(vol, sorted);
     }
+  }
+
+  Future<void> _loadInsights(
+      double sessionVolume, List<_ExerciseGroup> groups) async {
+    try {
+      final results = await Future.wait([
+        AnalyticsService.getCurrentStreak(),
+        AnalyticsService.getRecentSessionVolumes(),
+      ]);
+      final streak = results[0] as int;
+      final recentVolumes = results[1] as List<double>;
+      final recentAvg = recentVolumes.isEmpty
+          ? null
+          : recentVolumes.reduce((a, b) => a + b) / recentVolumes.length;
+      final workingSets = groups.fold<int>(
+        0,
+        (sum, g) => sum + g.sets.where((s) => !s.isWarmup).length,
+      );
+      final insights = evaluatePostSession(
+        streak: streak,
+        sessionVolume: sessionVolume,
+        recentAvgVolume: recentAvg,
+        workingSetsCount: workingSets,
+      );
+      if (mounted) setState(() => _postInsights = insights);
+    } catch (_) {}
   }
 
   Future<void> _checkNewAchievements() async {
@@ -316,6 +346,11 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                     totalVolume: _totalVolume,
                   ),
                   const SizedBox(height: 20),
+                  // ── Post-session insights ──────────────────────────────
+                  if (_postInsights.isNotEmpty) ...[
+                    ..._postInsights.map((ins) => _InsightChip(insight: ins)),
+                    const SizedBox(height: 16),
+                  ],
                   // ── Exercise groups ────────────────────────────────────
                   ..._groups.map((group) => _ExerciseCard(group: group)),
                   const SizedBox(height: 16),
@@ -959,6 +994,47 @@ class _AchievementUnlockSheet extends StatelessWidget {
             icon: const Icon(Icons.share_rounded, size: 16),
             label: const Text('Поделиться'),
             style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Post-session insight chip ────────────────────────────────────────────────
+
+class _InsightChip extends StatelessWidget {
+  final PostSessionInsight insight;
+
+  const _InsightChip({required this.insight});
+
+  static const _kindStyle = {
+    PostSessionInsightKind.streak:     (Icons.local_fire_department_rounded, Color(0xFFFF9F0A)),
+    PostSessionInsightKind.volumeUp:   (Icons.trending_up_rounded,           Color(0xFF32D74B)),
+    PostSessionInsightKind.volumeDown: (Icons.trending_down_rounded,         Color(0xFF8E8E93)),
+    PostSessionInsightKind.setsCount:  (Icons.check_circle_rounded,          Color(0xFF0A84FF)),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color) = _kindStyle[insight.kind]!;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              insight.message,
+              style: TextStyle(
+                  fontSize: 13, color: color, fontWeight: FontWeight.w500),
+            ),
           ),
         ],
       ),

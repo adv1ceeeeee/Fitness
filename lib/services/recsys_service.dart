@@ -337,6 +337,74 @@ class WellnessCorrelationRec {
 ///   [{exerciseName, goodSleepAvgKg, badSleepAvgKg, dropPct, sessionCount}]
 ///
 /// Returns null when no meaningful correlation was found.
+// ─── Post-session contextual insights ─────────────────────────────────────────
+
+enum PostSessionInsightKind { streak, volumeUp, volumeDown, setsCount }
+
+class PostSessionInsight {
+  final PostSessionInsightKind kind;
+  final String message;
+
+  const PostSessionInsight({required this.kind, required this.message});
+}
+
+/// Generates contextual insights to show on the post-session summary screen.
+///
+/// [streak]          — current training streak after this session.
+/// [sessionVolume]   — total working volume (kg × reps) of this session.
+/// [recentAvgVolume] — avg volume of last N completed sessions (null = unknown).
+/// [workingSetsCount]— number of non-warmup completed sets this session.
+List<PostSessionInsight> evaluatePostSession({
+  required int streak,
+  required double sessionVolume,
+  double? recentAvgVolume,
+  required int workingSetsCount,
+}) {
+  final insights = <PostSessionInsight>[];
+
+  // 1. Streak
+  if (streak >= 2) {
+    final msg = _streakMessage(streak);
+    insights.add(PostSessionInsight(kind: PostSessionInsightKind.streak, message: msg));
+  }
+
+  // 2. Volume vs recent average
+  if (recentAvgVolume != null && recentAvgVolume > 0 && sessionVolume > 0) {
+    final diffPct = (sessionVolume - recentAvgVolume) / recentAvgVolume * 100;
+    if (diffPct >= 10) {
+      insights.add(PostSessionInsight(
+        kind: PostSessionInsightKind.volumeUp,
+        message: 'Объём на ${diffPct.round()}% выше обычного — сильная сессия!',
+      ));
+    } else if (diffPct <= -15) {
+      insights.add(PostSessionInsight(
+        kind: PostSessionInsightKind.volumeDown,
+        message: 'Объём на ${diffPct.round().abs()}% ниже среднего — лёгкое восстановление.',
+      ));
+    }
+  }
+
+  // 3. High set count
+  if (workingSetsCount >= 12) {
+    insights.add(PostSessionInsight(
+      kind: PostSessionInsightKind.setsCount,
+      message: '$workingSetsCount рабочих подходов — высокий объём!',
+    ));
+  }
+
+  return insights;
+}
+
+String _streakMessage(int streak) {
+  if (streak == 2) return '2 тренировки подряд — отличное начало!';
+  if (streak == 3) return '3 тренировки подряд — войдите в ритм!';
+  if (streak % 10 == 0) return '🔥 $streak тренировок подряд — невероятно!';
+  if (streak % 5 == 0) return '🔥 $streak тренировок подряд — так держать!';
+  return '$streak тренировок подряд';
+}
+
+// ─── Wellness ↔ performance correlation ───────────────────────────────────────
+
 WellnessCorrelationRec? evaluateWellnessCorrelation(
     List<Map<String, dynamic>> data) {
   if (data.isEmpty) return null;
