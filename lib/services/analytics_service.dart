@@ -50,6 +50,11 @@ class AnalyticsService {
       AppCache.invalidatePrefix('best_streak:$userId'),
       AppCache.invalidatePrefix('workouts_week:$userId'),
       AppCache.invalidatePrefix('volume_week:$userId'),
+      AppCache.invalidatePrefix('streak:$userId'),
+      AppCache.invalidatePrefix('last_sets:$userId'),
+      AppCache.invalidatePrefix('session_volumes:$userId'),
+      AppCache.invalidatePrefix('stagnant_exercises:$userId'),
+      AppCache.invalidatePrefix('wellness_correlation:$userId'),
     ]);
     statsVersion.value++;
   }
@@ -59,7 +64,16 @@ class AnalyticsService {
   static Future<int> getCurrentStreak() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
+    return AppCache.get<int>(
+      key: 'streak:$userId',
+      ttl: const Duration(minutes: 5),
+      fetch: () => _fetchCurrentStreak(userId),
+      encode: (v) => '$v',
+      decode: (s) => s == null ? 0 : (int.tryParse(s) ?? 0),
+    );
+  }
 
+  static Future<int> _fetchCurrentStreak(String userId) async {
     final res = await _client
         .from('training_sessions')
         .select('date')
@@ -446,6 +460,21 @@ class AnalyticsService {
     if (exerciseIds.isEmpty) return {};
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
+    final sortedIds = [...exerciseIds]..sort();
+    return AppCache.get<Map<String, Map<String, dynamic>>>(
+      key: 'last_sets:$userId:${sortedIds.join(',')}',
+      ttl: const Duration(minutes: 15),
+      fetch: () => _fetchLastSetsForExercises(userId, exerciseIds),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {}
+          : (jsonDecode(s) as Map<String, dynamic>).map(
+              (k, v) => MapEntry(k, (v as Map<String, dynamic>))),
+    );
+  }
+
+  static Future<Map<String, Map<String, dynamic>>> _fetchLastSetsForExercises(
+      String userId, List<String> exerciseIds) async {
 
     final weRes = await _client
         .from('workout_exercises')
@@ -1895,6 +1924,18 @@ class AnalyticsService {
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'stagnant_exercises:$userId:$minWeeks',
+      ttl: const Duration(minutes: 30),
+      fetch: () => _fetchStagnantExercises(userId, minWeeks),
+      encode: (v) => jsonEncode(v),
+      decode: (s) =>
+          s == null ? [] : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchStagnantExercises(
+      String userId, int minWeeks) async {
 
     final cutoff = DateTime.now()
         .subtract(Duration(days: (minWeeks + 1) * 7))
@@ -2004,18 +2045,28 @@ class AnalyticsService {
   static Future<List<double>> getRecentSessionVolumes({int limit = 10}) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
-    final res = await _client
-        .from('training_sessions')
-        .select('volume_kg')
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .not('volume_kg', 'is', null)
-        .order('date', ascending: false)
-        .limit(limit);
-    return (res as List)
-        .map((r) => (r['volume_kg'] as num).toDouble())
-        .where((v) => v > 0)
-        .toList();
+    return AppCache.get<List<double>>(
+      key: 'session_volumes:$userId:$limit',
+      ttl: const Duration(minutes: 15),
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select('volume_kg')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .not('volume_kg', 'is', null)
+            .order('date', ascending: false)
+            .limit(limit);
+        return (res as List)
+            .map((r) => (r['volume_kg'] as num).toDouble())
+            .where((v) => v > 0)
+            .toList();
+      },
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? []
+          : (jsonDecode(s) as List).map((e) => (e as num).toDouble()).toList(),
+    );
   }
 
   /// Compares average best weight on exercises between good-sleep (≥ [goodSleepH] h)
@@ -2036,6 +2087,31 @@ class AnalyticsService {
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
+    return AppCache.get<List<Map<String, dynamic>>>(
+      key: 'wellness_correlation:$userId',
+      ttl: const Duration(hours: 1),
+      fetch: () => _fetchWellnessPerformanceCorrelation(
+        userId: userId,
+        days: days,
+        goodSleepH: goodSleepH,
+        badSleepH: badSleepH,
+        minSessionsPerGroup: minSessionsPerGroup,
+        minDropPct: minDropPct,
+      ),
+      encode: (v) => jsonEncode(v),
+      decode: (s) =>
+          s == null ? [] : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
+    );
+  }
+
+  static Future<List<Map<String, dynamic>>> _fetchWellnessPerformanceCorrelation({
+    required String userId,
+    required int days,
+    required double goodSleepH,
+    required double badSleepH,
+    required int minSessionsPerGroup,
+    required double minDropPct,
+  }) async {
 
     final cutoff = DateTime.now()
         .subtract(Duration(days: days))
