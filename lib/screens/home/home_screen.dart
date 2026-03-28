@@ -24,6 +24,7 @@ import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
+import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/data/standard_programs.dart';
@@ -112,6 +113,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _loadingWorkout = true;
   bool _wellnessLogged = true;
   Map<String, dynamic>? _todayWellness;
+  WellnessRec? _wellnessRec;
 
   WorkoutInsight? _insight;
   List<Map<String, dynamic>> _bodyMetricsHistory = [];
@@ -376,6 +378,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _loadingWorkout = false;
         _wellnessLogged = results[2] != null;
         _todayWellness = results[2] as Map<String, dynamic>?;
+        _wellnessRec = evaluateWellness(_todayWellness);
         _insight = results[3] as WorkoutInsight?;
         _bodyMetricsHistory = metricsHistory;
         _showMeasurementReminder = showReminder;
@@ -736,7 +739,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _WellnessCard(
                     onSaved: () async {
                       final log = await WellnessService.getTodayLog();
-                      if (mounted) setState(() { _wellnessLogged = true; _todayWellness = log; });
+                      if (mounted) setState(() {
+                        _wellnessLogged = true;
+                        _todayWellness = log;
+                        _wellnessRec = evaluateWellness(log);
+                      });
                     },
                   ),
                 ],
@@ -751,6 +758,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 if (_insight != null) ...[
                   const SizedBox(height: 16),
                   _AchievementCard(insight: _insight!),
+                ],
+
+                // ── Wellness recommendation ───────────────────────────────
+                if (_wellnessRec != null) ...[
+                  const SizedBox(height: 16),
+                  _WellnessRecBanner(
+                    rec: _wellnessRec!,
+                    onDismiss: () => setState(() => _wellnessRec = null),
+                  ),
                 ],
 
                 // ── Measurement reminder ──────────────────────────────────
@@ -946,6 +962,70 @@ class _AchievementCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Wellness Recommendation Banner ──────────────────────────────────────────
+
+class _WellnessRecBanner extends StatelessWidget {
+  final WellnessRec rec;
+  final VoidCallback onDismiss;
+
+  const _WellnessRecBanner({required this.rec, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, icon) = switch (rec.severity) {
+      RecSeverity.critical => (const Color(0xFFFF453A), Icons.warning_rounded),
+      RecSeverity.warning  => (const Color(0xFFFF9F0A), Icons.info_outline_rounded),
+      RecSeverity.info     => (AppColors.accent,        Icons.info_outline_rounded),
+    };
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    rec.title,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    rec.message,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+              onPressed: onDismiss,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -14,6 +14,8 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/version_service.dart';
+import 'package:sportwai/services/recsys_service.dart';
+import 'package:sportwai/services/wellness_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
 class MainShell extends ConsumerStatefulWidget {
@@ -279,6 +281,48 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     ));
   }
 
+  Future<bool> _showWellnessWarning(WellnessRec rec) async {
+    final (color, icon) = switch (rec.severity) {
+      RecSeverity.critical => (const Color(0xFFFF453A), Icons.warning_rounded),
+      RecSeverity.warning  => (const Color(0xFFFF9F0A), Icons.info_outline_rounded),
+      RecSeverity.info     => (AppColors.accent,        Icons.info_outline_rounded),
+    };
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                rec.title,
+                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          rec.message,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отменить'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Всё равно начать'),
+          ),
+        ],
+      ),
+    );
+    return proceed ?? false;
+  }
+
   Future<void> _onPlayTap() async {
     final cyclicWorkout = await TrainingService.getTodayWorkout();
     final todaySessions = await TrainingService.getTodayIncompleteSessions();
@@ -317,6 +361,14 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
           isCyclic: false,
         ));
       }
+    }
+
+    // ── Wellness check before starting ──────────────────────────────────────
+    final wellness = await WellnessService.getTodayLog();
+    final rec = evaluateWellness(wellness);
+    if (rec != null && mounted) {
+      final proceed = await _showWellnessWarning(rec);
+      if (!proceed || !mounted) return;
     }
 
     // Show sheet (even if empty — user can pick free workout)
