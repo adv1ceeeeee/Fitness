@@ -11,16 +11,16 @@ void main() {
       expect(estimateSetKcal(category: 'chest', reps: -5), 0.0);
     });
 
-    test('clamps result to minimum 0.3 kcal', () {
-      // 1 rep at low RPE, light bodyweight -> still at least 0.3
+    test('clamps result to minimum 0.5 kcal', () {
+      // 1 rep at low RPE, light bodyweight -> still at least 0.5
       final result = estimateSetKcal(category: 'arms', reps: 1, rpe: 1, userWeightKg: 40.0);
-      expect(result, greaterThanOrEqualTo(0.3));
+      expect(result, greaterThanOrEqualTo(0.5));
     });
 
-    test('clamps result to maximum 50 kcal', () {
+    test('clamps result to maximum 60 kcal', () {
       // extreme: 200 reps, heavy bodyweight, max RPE
       final result = estimateSetKcal(category: 'legs', reps: 200, rpe: 10, userWeightKg: 200.0);
-      expect(result, lessThanOrEqualTo(50.0));
+      expect(result, lessThanOrEqualTo(60.0));
     });
 
     test('uses fallback MET 4.5 for unknown category', () {
