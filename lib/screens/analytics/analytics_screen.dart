@@ -106,6 +106,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   List<Map<String, dynamic>> _sessionDurations = [];
   List<Map<String, dynamic>> _sessionRpes = [];
   List<Map<String, dynamic>> _exerciseProgressList = [];
+  List<Map<String, dynamic>> _stagnantExercises = [];
 
   late final TabController _tabController;
 
@@ -287,6 +288,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           AnalyticsService.getSessionDurationHistory(),
           AnalyticsService.getSessionRpeHistory(),
           AnalyticsService.getTopExercisesByProgress(),
+          AnalyticsService.getStagnantExercises(),
         ]);
 
         if (mounted) {
@@ -317,6 +319,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             _sessionDurations = results[18] as List<Map<String, dynamic>>;
             _sessionRpes = results[19] as List<Map<String, dynamic>>;
             _exerciseProgressList = results[20] as List<Map<String, dynamic>>;
+            _stagnantExercises = results[21] as List<Map<String, dynamic>>;
             _loading = false;
           });
         }
@@ -584,6 +587,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     weeklyVolume: _weeklyVolume,
                     muscleBalance: _muscleBalance,
                     wellnessHistory: _wellnessHistory,
+                    stagnantExercises: _stagnantExercises,
                     communityAvgWeeklyVolume: _communityAvgWeeklyVolume,
                     communityAvgWorkoutsPerWeek: _communityAvgWorkoutsPerWeek,
                     sharing: _sharing,
@@ -1679,6 +1683,7 @@ class _InsightsTab extends StatelessWidget {
   final List<Map<String, dynamic>> weeklyVolume;
   final Map<String, int> muscleBalance;
   final List<Map<String, dynamic>> wellnessHistory;
+  final List<Map<String, dynamic>> stagnantExercises;
   final double? communityAvgWeeklyVolume;
   final double? communityAvgWorkoutsPerWeek;
   final bool sharing;
@@ -1696,6 +1701,7 @@ class _InsightsTab extends StatelessWidget {
     required this.weeklyVolume,
     required this.muscleBalance,
     required this.wellnessHistory,
+    required this.stagnantExercises,
     this.communityAvgWeeklyVolume,
     this.communityAvgWorkoutsPerWeek,
     required this.sharing,
@@ -1732,6 +1738,7 @@ class _InsightsTab extends StatelessWidget {
               weeklyVolume: weeklyVolume,
               muscleBalance: muscleBalance,
               wellnessHistory: wellnessHistory,
+              stagnantExercises: stagnantExercises,
               bestStreak: bestStreak,
               totalWorkouts: totalWorkouts,
               communityAvgWeeklyVolume: communityAvgWeeklyVolume,
@@ -2788,6 +2795,7 @@ class _InsightsSection extends StatelessWidget {
   final List<Map<String, dynamic>> weeklyVolume;
   final Map<String, int> muscleBalance;
   final List<Map<String, dynamic>> wellnessHistory;
+  final List<Map<String, dynamic>> stagnantExercises;
   final int bestStreak;
   final int totalWorkouts;
   final double? communityAvgWeeklyVolume;
@@ -2798,6 +2806,7 @@ class _InsightsSection extends StatelessWidget {
     required this.weeklyVolume,
     required this.muscleBalance,
     required this.wellnessHistory,
+    required this.stagnantExercises,
     required this.bestStreak,
     required this.totalWorkouts,
     this.communityAvgWeeklyVolume,
@@ -2879,6 +2888,17 @@ class _InsightsSection extends StatelessWidget {
         color: const Color(0xFFFF9F0A),
         title: 'Дисбаланс мышц',
         body: imbalanceRec.message,
+      ));
+    }
+
+    // 3c. Plateau detection (RecSys heuristic)
+    final plateauRec = evaluatePlateau(stagnantExercises);
+    if (plateauRec != null) {
+      cards.add(_InsightCard(
+        icon: Icons.trending_flat_rounded,
+        color: const Color(0xFF64D2FF),
+        title: 'Застой в прогрессе',
+        body: plateauRec.message,
       ));
     }
 

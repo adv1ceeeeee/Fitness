@@ -1885,4 +1885,117 @@ class AnalyticsService {
           s == null ? [] : (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
     );
   }
+
+  /// Returns exercises where max weight hasn't increased for [minWeeks] weeks.
+  ///
+  /// Each entry: { exerciseId, exerciseName, currentWeightKg, weeksStagnant }
+  /// Only includes exercises trained at least once per week over [minWeeks].
+  static Future<List<Map<String, dynamic>>> getStagnantExercises({
+    int minWeeks = 3,
+  }) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+
+    final cutoff = DateTime.now()
+        .subtract(Duration(days: (minWeeks + 1) * 7))
+        .toIso8601String()
+        .split('T')[0];
+
+    // Completed sessions in window
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', cutoff)
+        .order('date', ascending: true);
+
+    final sessionIds = (sessRes as List).map((e) => e['id'] as String).toList();
+    if (sessionIds.isEmpty) return [];
+    final dateBySession = {
+      for (final s in sessRes as List) s['id'] as String: s['date'] as String,
+    };
+
+    // Max weight per (workout_exercise_id, session_id)
+    final setsRes = await _client
+        .from('sets')
+        .select('workout_exercise_id, training_session_id, weight')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false)
+        .not('weight', 'is', null)
+        .gt('weight', 0);
+
+    // Map workout_exercise_id → exercise_id
+    final weIds = (setsRes as List)
+        .map((s) => s['workout_exercise_id'] as String)
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return [];
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercise_id, exercises(id, name, name_ru)')
+        .inFilter('id', weIds);
+
+    final weToExercise = <String, Map<String, dynamic>>{};
+    for (final row in weRes as List) {
+      final ex = row['exercises'] as Map<String, dynamic>?;
+      if (ex != null) weToExercise[row['id'] as String] = ex;
+    }
+
+    // Aggregate max weight per (exerciseId, week)
+    // week key = ISO date of Monday
+    final byExerciseWeek = <String, Map<String, double>>{};
+    final exerciseMeta  = <String, Map<String, dynamic>>{};
+
+    for (final set in setsRes as List) {
+      final weId   = set['workout_exercise_id'] as String;
+      final sessId = set['training_session_id'] as String;
+      final weight = (set['weight'] as num).toDouble();
+      final ex     = weToExercise[weId];
+      if (ex == null) continue;
+
+      final exId   = ex['id'] as String;
+      exerciseMeta[exId] = ex;
+
+      final date   = DateTime.parse(dateBySession[sessId]!);
+      final monday = date.subtract(Duration(days: date.weekday - 1));
+      final weekKey = monday.toIso8601String().split('T')[0];
+
+      byExerciseWeek.putIfAbsent(exId, () => {});
+      final cur = byExerciseWeek[exId]![weekKey] ?? 0.0;
+      if (weight > cur) byExerciseWeek[exId]![weekKey] = weight;
+    }
+
+    final result = <Map<String, dynamic>>[];
+
+    for (final entry in byExerciseWeek.entries) {
+      final exId = entry.key;
+      final weekMap = entry.value;
+
+      // Need data in at least minWeeks distinct weeks
+      final weeks = weekMap.keys.toList()..sort();
+      if (weeks.length < minWeeks) continue;
+
+      // Check last minWeeks weeks for weight stagnation (within 2.5 kg tolerance)
+      final lastWeeks = weeks.reversed.take(minWeeks).toList().reversed.toList();
+      final maxInLast = lastWeeks.map((w) => weekMap[w]!).toList();
+      final ceiling = maxInLast.reduce((a, b) => a > b ? a : b);
+      final floor   = maxInLast.reduce((a, b) => a < b ? a : b);
+      if (ceiling - floor > 2.5) continue; // weight DID change → not a plateau
+
+      final ex = exerciseMeta[exId]!;
+      result.add({
+        'exerciseId':    exId,
+        'exerciseName':  (ex['name_ru'] as String?)?.isNotEmpty == true
+            ? ex['name_ru'] as String
+            : ex['name'] as String,
+        'currentWeightKg': ceiling,
+        'weeksStagnant': lastWeeks.length,
+      });
+    }
+
+    return result;
+  }
 }

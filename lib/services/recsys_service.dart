@@ -248,3 +248,64 @@ MuscleImbalanceRec? evaluateMuscleBalance(Map<String, int> balance) {
 
   return worst;
 }
+
+// ─── Plateau recommendation ────────────────────────────────────────────────────
+
+class PlateauRec {
+  /// Exercise with the longest stagnation.
+  final String exerciseName;
+  /// Current working weight (kg).
+  final double weightKg;
+  /// How many consecutive weeks the weight hasn't changed.
+  final int weeksStagnant;
+  final String message;
+
+  const PlateauRec({
+    required this.exerciseName,
+    required this.weightKg,
+    required this.weeksStagnant,
+    required this.message,
+  });
+}
+
+/// Returns the most notable plateau from a list of stagnant exercises.
+///
+/// [stagnant] — output of AnalyticsService.getStagnantExercises():
+///   [{exerciseId, exerciseName, currentWeightKg, weeksStagnant}]
+///
+/// Returns null when the list is empty (no detected plateaus).
+PlateauRec? evaluatePlateau(List<Map<String, dynamic>> stagnant) {
+  if (stagnant.isEmpty) return null;
+
+  // Pick the exercise with the most weeks of stagnation
+  final worst = stagnant.reduce((a, b) =>
+      (a['weeksStagnant'] as int) >= (b['weeksStagnant'] as int) ? a : b);
+
+  final name   = worst['exerciseName'] as String;
+  final weight = (worst['currentWeightKg'] as num).toDouble();
+  final weeks  = worst['weeksStagnant'] as int;
+
+  final weightStr = weight % 1 == 0
+      ? '${weight.toInt()} кг'
+      : '${weight.toStringAsFixed(1)} кг';
+  final weeksStr = _weeksLabel(weeks);
+
+  return PlateauRec(
+    exerciseName: name,
+    weightKg: weight,
+    weeksStagnant: weeks,
+    message: '$name — $weightStr уже $weeksStr. '
+        'Попробуй изменить схему подходов, темп или взять неделю deload.',
+  );
+}
+
+String _weeksLabel(int n) {
+  if (n % 100 >= 11 && n % 100 <= 19) return '$n недель';
+  switch (n % 10) {
+    case 1: return '$n неделю';
+    case 2:
+    case 3:
+    case 4: return '$n недели';
+    default: return '$n недель';
+  }
+}
