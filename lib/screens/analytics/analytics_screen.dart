@@ -113,16 +113,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     _tabController = TabController(length: 4, vsync: this);
     _load();
     BodyMetricsService.version.addListener(_onBodyMetricsChanged);
+    AnalyticsService.statsVersion.addListener(_onStatsChanged);
   }
 
   @override
   void dispose() {
     BodyMetricsService.version.removeListener(_onBodyMetricsChanged);
+    AnalyticsService.statsVersion.removeListener(_onStatsChanged);
     _tabController.dispose();
     super.dispose();
   }
 
   void _onBodyMetricsChanged() {
+    if (mounted) _refreshFresh();
+  }
+
+  void _onStatsChanged() {
     if (mounted) _refreshFresh();
   }
 

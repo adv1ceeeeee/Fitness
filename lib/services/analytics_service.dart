@@ -18,6 +18,10 @@ typedef WorkoutInsight = ({
 class AnalyticsService {
   static SupabaseClient get _client => Supabase.instance.client;
 
+  /// Incremented whenever workout stats are invalidated (session completed).
+  /// Analytics screen subscribes to refresh without waiting for cache TTL.
+  static final ValueNotifier<int> statsVersion = ValueNotifier(0);
+
   static Future<int> getTotalWorkouts() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
@@ -45,6 +49,7 @@ class AnalyticsService {
     await AppCache.invalidatePrefix('best_streak:$userId');
     await AppCache.invalidatePrefix('workouts_week:$userId');
     await AppCache.invalidatePrefix('volume_week:$userId');
+    statsVersion.value++;
   }
 
   /// Current consecutive workout streak ending today or yesterday.
