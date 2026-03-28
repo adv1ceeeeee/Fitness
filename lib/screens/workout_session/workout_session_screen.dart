@@ -13,6 +13,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/calorie_service.dart';
 import 'package:sportwai/services/event_logger.dart';
@@ -1260,6 +1261,43 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                 ),
                               ),
                             ],
+                            // ── RecSys progression chip ───────────────────
+                            Builder(builder: (_) {
+                              final progRec = evaluateProgression(
+                                  _lastSets[we.exerciseId]);
+                              if (progRec == null) return const SizedBox.shrink();
+                              // Skip increase if already shown by existing chips
+                              if (progRec.direction == ProgressionDirection.increase &&
+                                  (strongSuggest || suggestIncrease)) {
+                                return const SizedBox.shrink();
+                              }
+                              final (color, icon) = switch (progRec.direction) {
+                                ProgressionDirection.increase => (AppColors.success, Icons.trending_up),
+                                ProgressionDirection.maintain => (const Color(0xFFFF9F0A), Icons.trending_flat),
+                                ProgressionDirection.decrease => (AppColors.error, Icons.trending_down),
+                              };
+                              return Container(
+                                margin: const EdgeInsets.only(top: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(icon, size: 14, color: color),
+                                    const SizedBox(width: 5),
+                                    Flexible(
+                                      child: Text(
+                                        progRec.message,
+                                        style: TextStyle(fontSize: 12, color: color),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
                           ],
                         );
                       }),

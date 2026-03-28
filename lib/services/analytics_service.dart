@@ -476,32 +476,60 @@ class AnalyticsService {
 
     final setsRes = await _client
         .from('sets')
-        .select('workout_exercise_id, weight, reps, training_session_id')
+        .select('workout_exercise_id, weight, reps, reps_target, rpe, training_session_id')
         .inFilter('workout_exercise_id', weToExercise.keys.toList())
         .inFilter('training_session_id', sessionIds)
         .eq('completed', true)
         .not('weight', 'is', null);
 
-    final setsBySession = <String, List<Map<String, dynamic>>>{};
+    // Group sets by session; within a session keep max-weight set per exercise.
+    final bestBySessionAndExercise =
+        <String, Map<String, Map<String, dynamic>>>{};
     for (final set in setsRes as List) {
       final sessId = set['training_session_id'] as String;
-      setsBySession.putIfAbsent(sessId, () => []).add(set as Map<String, dynamic>);
-    }
-
-    final result = <String, Map<String, dynamic>>{};
-    for (final sessionId in sessionIds) {
-      if (result.length == exerciseIds.length) break;
-      for (final set in setsBySession[sessionId] ?? []) {
-        final weId = set['workout_exercise_id'] as String;
-        final exId = weToExercise[weId];
-        if (exId == null || result.containsKey(exId)) continue;
-        result[exId] = {
-          'weight': (set['weight'] as num).toDouble(),
-          'reps': (set['reps'] as int?) ?? 0,
-          'date': sessionDates[sessionId] ?? '',
-        };
+      final weId  = set['workout_exercise_id'] as String;
+      final exId  = weToExercise[weId];
+      if (exId == null) continue;
+      final w = (set['weight'] as num).toDouble();
+      final existing = bestBySessionAndExercise
+          .putIfAbsent(sessId, () => {})
+          .putIfAbsent(exId, () => set as Map<String, dynamic>);
+      if (w > ((existing['weight'] as num?)?.toDouble() ?? 0)) {
+        bestBySessionAndExercise[sessId]![exId] = set as Map<String, dynamic>;
       }
     }
+
+    // Walk sessions newest-first; for each exercise collect up to 2 sessions.
+    final result = <String, Map<String, dynamic>>{};
+    final prev   = <String, Map<String, dynamic>>{};
+    for (final sessionId in sessionIds) {
+      final byEx = bestBySessionAndExercise[sessionId];
+      if (byEx == null) continue;
+      for (final entry in byEx.entries) {
+        final exId = entry.key;
+        final set  = entry.value;
+        final row = {
+          'weight':      (set['weight'] as num).toDouble(),
+          'reps':        (set['reps']   as int?) ?? 0,
+          'reps_target': set['reps_target'] as int?,
+          'rpe':         set['rpe']        as int?,
+          'date':        sessionDates[sessionId] ?? '',
+        };
+        if (!result.containsKey(exId)) {
+          result[exId] = row;
+        } else if (!prev.containsKey(exId)) {
+          prev[exId] = row;
+        }
+      }
+      if (result.length == exerciseIds.length &&
+          prev.length == exerciseIds.length) { break; }
+    }
+
+    // Attach previous session data under 'prev' key.
+    for (final exId in result.keys) {
+      if (prev.containsKey(exId)) result[exId]!['prev'] = prev[exId];
+    }
+
     return result;
   }
 

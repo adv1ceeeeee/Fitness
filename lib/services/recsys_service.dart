@@ -95,3 +95,81 @@ WellnessRec? evaluateWellness(Map<String, dynamic>? wellness) {
 
   return null; // всё в норме
 }
+
+// ─── Progression recommendation ───────────────────────────────────────────────
+
+enum ProgressionDirection { increase, maintain, decrease }
+
+class ProgressionRec {
+  final ProgressionDirection direction;
+  final String message;
+
+  const ProgressionRec({required this.direction, required this.message});
+}
+
+/// Evaluates whether the user should increase, maintain, or decrease weight
+/// for an exercise, based on the last 1–2 session results.
+///
+/// [last] — most recent session: {weight, reps, reps_target?, rpe?, prev?}
+/// [prev] — previous session (optional, nested inside last['prev'])
+///
+/// Returns null when data is insufficient to make a recommendation.
+ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
+  if (last == null) return null;
+
+  final lastReps       = last['reps']        as int?;
+  final lastRepsTarget = last['reps_target'] as int?;
+  final lastRpe        = last['rpe']         as int?;
+  final lastWeight     = (last['weight'] as num?)?.toDouble();
+
+  if (lastWeight == null || lastWeight <= 0) return null;
+
+  final prev = last['prev'] as Map<String, dynamic>?;
+  final prevRpe        = prev?['rpe']         as int?;
+  final prevRepsTarget = prev?['reps_target'] as int?;
+  final prevReps       = prev?['reps']        as int?;
+
+  // ── Maintain: не выполнил целевые повторения (приоритет над decrease) ────
+  if (lastRepsTarget != null && lastReps != null && lastReps < lastRepsTarget) {
+    return ProgressionRec(
+      direction: ProgressionDirection.maintain,
+      message: 'В прошлый раз $lastReps из $lastRepsTarget повт — '
+          'зафиксируй результат ещё на одну сессию.',
+    );
+  }
+
+  // ── Decrease: RPE ≥ 9 в обеих сессиях ───────────────────────────────────
+  if (lastRpe != null && lastRpe >= 9 &&
+      prevRpe  != null && prevRpe  >= 9) {
+    return const ProgressionRec(
+      direction: ProgressionDirection.decrease,
+      message: 'RPE 9+ два раза подряд — попробуй снизить вес или объём.',
+    );
+  }
+
+  // ── Increase: RPE ≤ 7 в обеих сессиях + все повторения выполнены ─────────
+  final lastHitTarget = lastRepsTarget == null ||
+      (lastReps != null && lastReps >= lastRepsTarget);
+  final prevHitTarget = prevRepsTarget == null ||
+      (prevReps != null && prevReps >= prevRepsTarget);
+
+  if (lastRpe != null && lastRpe <= 7 &&
+      prevRpe  != null && prevRpe  <= 7 &&
+      lastHitTarget && prevHitTarget) {
+    return ProgressionRec(
+      direction: ProgressionDirection.increase,
+      message: 'RPE $lastRpe и $prevRpe/10 за последние 2 сессии — '
+          'попробуй +2.5 кг сегодня.',
+    );
+  }
+
+  // ── Increase (одна сессия): RPE ≤ 6 + все повторения выполнены ──────────
+  if (lastRpe != null && lastRpe <= 6 && lastHitTarget) {
+    return ProgressionRec(
+      direction: ProgressionDirection.increase,
+      message: 'RPE $lastRpe/10 в прошлый раз — хорошее время попробовать +2.5 кг.',
+    );
+  }
+
+  return null; // данных недостаточно или всё нормально
+}
