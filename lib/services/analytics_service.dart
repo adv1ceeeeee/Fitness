@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/streak_freeze_service.dart';
 
 /// Compact data about one notable improvement vs the previous session.
@@ -55,6 +56,10 @@ class AnalyticsService {
       AppCache.invalidatePrefix('session_volumes:$userId'),
       AppCache.invalidatePrefix('stagnant_exercises:$userId'),
       AppCache.invalidatePrefix('wellness_correlation:$userId'),
+      AppCache.invalidatePrefix('energy_state:$userId'),
+      AppCache.invalidatePrefix('1rm:$userId'),
+      AppCache.invalidatePrefix('muscle_trend:$userId'),
+      AppCache.invalidatePrefix('inter_session_days:$userId'),
     ]);
     statsVersion.value++;
   }
@@ -509,6 +514,7 @@ class AnalyticsService {
         .inFilter('workout_exercise_id', weToExercise.keys.toList())
         .inFilter('training_session_id', sessionIds)
         .eq('completed', true)
+        .eq('is_warmup', false)
         .not('weight', 'is', null);
 
     // Group sets by session; within a session keep max-weight set per exercise.
@@ -977,17 +983,30 @@ class AnalyticsService {
   }
 
   /// Returns weekly training volume (kg×reps) for the past [weeks] weeks.
-  /// Result: list of {label: 'DD.MM', volume: double}, oldest first.
   /// Returns true if the user has trained 4+ consecutive weeks above their
   /// personal average volume — signal to suggest a deload week.
-  /// Requires at least 6 weeks of data (4 recent + 2 baseline).
   static Future<bool> shouldSuggestDeload() async {
+    final metrics = await getDeloadMetrics();
+    if (metrics == null) return false;
+    return metrics['overloadPct'] as double >= 10.0 &&
+        (metrics['consecutiveWeeks'] as int) >= 3;
+  }
+
+  /// Returns raw deload metrics for use by [evaluateDeload] in recsys_service.
+  ///
+  /// Returns a map with keys:
+  ///   recentAvgVolume    — average kg×reps/week over the last 4 complete weeks
+  ///   baselineAvgVolume  — average over prior baseline weeks
+  ///   consecutiveWeeks   — how many complete weeks above baseline
+  ///   overloadPct        — (recent − baseline) / baseline × 100
+  ///
+  /// Returns null when there is insufficient history (< 5 complete weeks).
+  static Future<Map<String, dynamic>?> getDeloadMetrics() async {
     final userId = AuthService.currentUser?.id;
-    if (userId == null) return false;
+    if (userId == null) return null;
 
     final now = DateTime.now();
     final thisMonday = now.subtract(Duration(days: now.weekday - 1));
-    // Fetch 8 weeks of sessions
     final earliest = thisMonday.subtract(const Duration(days: 7 * 8));
     final earliestStr = earliest.toIso8601String().split('T')[0];
 
@@ -997,7 +1016,7 @@ class AnalyticsService {
         .eq('user_id', userId)
         .gte('date', earliestStr);
 
-    if ((sessRes as List).length < 3) return false;
+    if ((sessRes as List).length < 3) return null;
 
     final sessionDates = {for (final s in sessRes) s['id'] as String: s['date'] as String};
     final sessionIds = sessionDates.keys.toList();
@@ -1009,7 +1028,6 @@ class AnalyticsService {
         .eq('completed', true)
         .eq('is_warmup', false);
 
-    // Bucket volume by ISO week (Monday)
     final weekVolume = <String, double>{};
     for (final set in setsRes as List) {
       final sid = set['training_session_id'] as String?;
@@ -1024,24 +1042,34 @@ class AnalyticsService {
       weekVolume[key] = (weekVolume[key] ?? 0) + w * r;
     }
 
-    if (weekVolume.length < 5) return false;
+    if (weekVolume.length < 5) return null;
 
     final sorted = weekVolume.keys.toList()..sort();
-    // Exclude current (possibly incomplete) week
     final current = thisMonday.toIso8601String().split('T')[0];
     final complete = sorted.where((k) => k != current).toList();
-    if (complete.length < 5) return false;
+    if (complete.length < 5) return null;
 
-    // Last 4 complete weeks vs older weeks as baseline
-    final recent4 = complete.sublist(complete.length - 4);
-    final baseline = complete.sublist(0, complete.length - 4);
+    final recent4   = complete.sublist(complete.length - 4);
+    final baseline  = complete.sublist(0, complete.length - 4);
 
-    final recentAvg = recent4.fold(0.0, (s, k) => s + (weekVolume[k] ?? 0)) / 4;
+    final recentAvg   = recent4.fold(0.0, (s, k) => s + (weekVolume[k] ?? 0)) / 4;
     final baselineAvg = baseline.fold(0.0, (s, k) => s + (weekVolume[k] ?? 0)) / baseline.length;
 
-    // Suggest deload if recent avg >= 110% of baseline and all 4 weeks > 0
-    return recentAvg >= baselineAvg * 1.1 &&
-        recent4.every((k) => (weekVolume[k] ?? 0) > 0);
+    if (baselineAvg <= 0) return null;
+
+    // Count how many of the last 4 complete weeks are above baseline
+    final consecutiveWeeks = recent4
+        .where((k) => (weekVolume[k] ?? 0) > baselineAvg)
+        .length;
+
+    final overloadPct = (recentAvg - baselineAvg) / baselineAvg * 100;
+
+    return {
+      'recentAvgVolume':   recentAvg,
+      'baselineAvgVolume': baselineAvg,
+      'consecutiveWeeks':  consecutiveWeeks,
+      'overloadPct':       overloadPct,
+    };
   }
 
   static Future<List<Map<String, dynamic>>> getWeeklyVolumeHistory(
@@ -1176,28 +1204,67 @@ class AnalyticsService {
 
     final weRes = await _client
         .from('workout_exercises')
-        .select('id, exercises(category)')
+        .select('id, exercises(category, movement_type, name, name_ru)')
         .inFilter('id', weIds);
 
-    // Build weId -> category map
-    final weCategory = <String, String>{};
+    // Build weId -> exercise metadata map
+    final weData = <String, Map<String, dynamic>>{};
     for (final we in weRes as List) {
       final ex = we['exercises'] as Map<String, dynamic>?;
-      if (ex != null) {
-        weCategory[we['id'] as String] = ex['category'] as String? ?? 'other';
-      }
+      if (ex != null) weData[we['id'] as String] = ex;
     }
 
     final balance = <String, int>{};
     for (final set in setsRes) {
       final weId = set['workout_exercise_id'] as String?;
       if (weId == null) continue;
-      final cat = weCategory[weId];
-      if (cat != null) {
-        balance[cat] = (balance[cat] ?? 0) + 1;
-      }
+      final ex = weData[weId];
+      if (ex == null) continue;
+      final cat = ex['category'] as String? ?? 'other';
+      // Top-level category (used by charts and "most trained" display)
+      balance[cat] = (balance[cat] ?? 0) + 1;
+      // Sub-category (used by antagonist pair checks in evaluateMuscleBalance)
+      final subCat = _muscleSubCategory(
+        cat,
+        ex['movement_type'] as String?,
+        ex['name']    as String?,
+        ex['name_ru'] as String?,
+      );
+      if (subCat != null) balance[subCat] = (balance[subCat] ?? 0) + 1;
     }
     return balance;
+  }
+
+  /// Derives a fine-grained sub-category key from exercise metadata.
+  /// Returns null for categories that have no meaningful sub-split.
+  /// Sub-category keys use the convention 'category:sub' (colon separator).
+  static String? _muscleSubCategory(
+      String category, String? movementType, String? name, String? nameRu) {
+    final m = movementType ?? '';
+    switch (category) {
+      case 'legs':
+        // Hamstring-dominant: leg curl, Romanian DL, Nordic curl, etc.
+        if (m == 'curl') return 'legs:hamstring';
+        // Keyword fallback for exercises without movement_type set
+        final n = '${nameRu ?? ''} ${name ?? ''}'.toLowerCase();
+        if (n.contains('сгибани') || n.contains('curl')     ||
+            n.contains('румынск') || n.contains('romanian') ||
+            n.contains('мертвая') || n.contains('мёртвая')  ||
+            n.contains('nordic')  || n.contains('hamstring')) {
+          return 'legs:hamstring';
+        }
+        // Everything else (squats, leg press, lunges, leg extension) → quad
+        return 'legs:quad';
+
+      case 'shoulders':
+        // Rear-delt isolation: reverse fly, face pull, rear delt row
+        if (m == 'fly') return 'shoulders:rear';
+        // Everything else (overhead press, lateral raise, upright row) → push/front
+        return 'shoulders:push';
+
+      default:
+        return null;
+    }
   }
 
   /// Returns the all-time personal best (max weight) per exercise.
@@ -2247,4 +2314,498 @@ class AnalyticsService {
 
     return result;
   }
+
+  // ── Energy state ─────────────────────────────────────────────────────────
+
+  /// Returns the current inter-session energy state for the authenticated user.
+  ///
+  /// Reads the last completed session's [energy_end] checkpoint from the DB,
+  /// fetches the worst wellness log between that session and now, then calls
+  /// [computeEnergyStart] to derive the starting reserve via exponential recovery.
+  ///
+  /// Result is cached for 30 minutes — sufficient freshness for home-screen
+  /// display without hammering the DB on every navigation.
+  static Future<EnergyState> getEnergyState() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return const EnergyState(reserve: 100);
+
+    return AppCache.get<EnergyState>(
+      key: 'energy_state:$userId',
+      ttl: const Duration(minutes: 30),
+      fetch: () async {
+        // 1. Last completed session with energy checkpoint.
+        final sessions = await _client
+            .from('training_sessions')
+            .select('id, date, session_rpe, duration_seconds, energy_end')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .order('date', ascending: false)
+            .limit(1);
+
+        if (sessions.isEmpty) return const EnergyState(reserve: 100);
+
+        final last         = sessions.first;
+        final lastEnergyEnd = (last['energy_end'] as num?)?.toDouble();
+        final lastRpe       = last['session_rpe'] as int?;
+        final lastDateStr   = last['date'] as String?;
+
+        // If no energy_end checkpoint yet (pre-feature sessions), start fresh.
+        if (lastEnergyEnd == null || lastDateStr == null) {
+          return const EnergyState(reserve: 100);
+        }
+
+        final lastDate = DateTime.parse(lastDateStr);
+        final now      = DateTime.now();
+        final hours    = now.difference(lastDate).inMinutes / 60.0;
+
+        // 2. Training experience from profile (months since training_start_date).
+        int trainingMonths = 12; // fallback: intermediate
+        try {
+          final profile = await _client
+              .from('profiles')
+              .select('training_start_date')
+              .eq('id', userId)
+              .maybeSingle();
+          if (profile != null && profile['training_start_date'] != null) {
+            final start = DateTime.parse(profile['training_start_date'] as String);
+            trainingMonths = now.difference(start).inDays ~/ 30;
+          }
+        } catch (_) {}
+
+        // 3. Worst wellness log since last session (captures recovery quality).
+        Map<String, dynamic>? worstWellness;
+        try {
+          final logs = await _client
+              .from('wellness_logs')
+              .select('sleep_hours, stress, energy')
+              .eq('user_id', userId)
+              .gte('date', lastDateStr)
+              .order('date', ascending: false);
+
+          if (logs.isNotEmpty) {
+            // Pick the row with the worst composite score (lowest sleep,
+            // highest stress, lowest energy).
+            worstWellness = (logs as List<dynamic>).cast<Map<String, dynamic>>()
+                .reduce((a, b) {
+              final scoreA = _wellnessScore(a);
+              final scoreB = _wellnessScore(b);
+              return scoreA <= scoreB ? a : b;
+            });
+          }
+        } catch (_) {}
+
+        return computeEnergyStart(
+          lastEnergyEnd:    lastEnergyEnd,
+          hoursSinceLast:   hours,
+          lastSessionRpe:   lastRpe,
+          trainingMonths:   trainingMonths,
+          wellnessSinceLast: worstWellness,
+        );
+      },
+      encode: (s) => '${s.reserve}',
+      decode: (raw) => raw == null
+          ? const EnergyState(reserve: 100)
+          : EnergyState(reserve: double.tryParse(raw) ?? 100),
+    );
+  }
+
+  /// Saves the final energy reserve at session end.
+  /// Called when a session is completed so the next session can start from
+  /// this checkpoint instead of recomputing from scratch.
+  static Future<void> saveEnergyEnd(String sessionId, double energyEnd) async {
+    try {
+      await _client
+          .from('training_sessions')
+          .update({'energy_end': energyEnd.clamp(0.0, 100.0)})
+          .eq('id', sessionId);
+
+      // Bust the cache so the home screen reflects the new state immediately.
+      final userId = AuthService.currentUser?.id;
+      if (userId != null) {
+        await AppCache.invalidatePrefix('energy_state:$userId');
+      }
+    } catch (e) {
+      debugPrint('saveEnergyEnd error: $e');
+    }
+  }
+
+  /// Returns the user's empirical average inter-set rest duration (seconds)
+  /// for a given exercise, computed from `performed_at` timestamps of
+  /// consecutive sets within the same session.
+  ///
+  /// Only considers sets where both the current and next set have `performed_at`
+  /// and belong to the same training session.  Returns null when there is
+  /// insufficient data (< 3 measured rest intervals).
+  static Future<int?> getAvgRestSeconds(String exerciseId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+
+    return AppCache.get<int?>(
+      key: 'avg_rest:$userId:$exerciseId',
+      ttl: const Duration(minutes: 30),
+      fetch: () => _fetchAvgRestSeconds(userId, exerciseId),
+      encode: (v) => v?.toString() ?? '',
+      decode: (s) => (s == null || s.isEmpty) ? null : int.tryParse(s),
+    );
+  }
+
+  static Future<int?> _fetchAvgRestSeconds(
+      String userId, String exerciseId) async {
+    // Fetch the 10 most recent sessions that include this exercise.
+    final sessionsRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(10);
+
+    if ((sessionsRes as List).isEmpty) return null;
+    final sessionIds =
+        sessionsRes.map((e) => e['id'] as String).toList();
+
+    final setsRes = await _client
+        .from('sets')
+        .select(
+            'training_session_id, set_number, performed_at, workout_exercise_id')
+        .filter('training_session_id', 'in', '(${sessionIds.map((id) => '"$id"').join(',')})')
+        .eq('completed', true)
+        .not('performed_at', 'is', null)
+        .order('training_session_id')
+        .order('set_number');
+
+    // Filter to only sets belonging to this exercise via workout_exercise_id →
+    // the sets table stores workout_exercise_id, not exercise_id directly, so we
+    // need to cross-reference with what we loaded in getLastSetsForExercises.
+    // Instead, fetch workout_exercise ids for this exercise in one shot.
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id')
+        .eq('exercise_id', exerciseId);
+    final weIds = (weRes as List).map((e) => e['id'] as String).toSet();
+
+    final intervals = <int>[];
+    final bySession = <String, List<Map<String, dynamic>>>{};
+    for (final s in (setsRes as List)) {
+      final sid = s['training_session_id'] as String;
+      final weId = s['workout_exercise_id'] as String;
+      if (!weIds.contains(weId)) continue;
+      bySession.putIfAbsent(sid, () => []).add(s);
+    }
+
+    for (final sets in bySession.values) {
+      sets.sort((a, b) =>
+          (a['set_number'] as int).compareTo(b['set_number'] as int));
+      for (int i = 1; i < sets.length; i++) {
+        final prev = DateTime.tryParse(sets[i - 1]['performed_at'] as String);
+        final curr = DateTime.tryParse(sets[i]['performed_at'] as String);
+        if (prev == null || curr == null) continue;
+        final diff = curr.difference(prev).inSeconds;
+        // Sanity-check: ignore outliers < 10s or > 20 min
+        if (diff >= 10 && diff <= 1200) intervals.add(diff);
+      }
+    }
+
+    if (intervals.length < 3) return null;
+    return (intervals.reduce((a, b) => a + b) / intervals.length).round();
+  }
+
+  /// Composite wellness score — lower = worse recovery.
+  static double _wellnessScore(Map<String, dynamic> w) {
+    final sleep  = (w['sleep_hours'] as num?)?.toDouble() ?? 7.0;
+    final stress = (w['stress']      as num?)?.toDouble() ?? 5.0;
+    final energy = (w['energy']      as num?)?.toDouble() ?? 5.0;
+    // Normalise to [0,1] where 0 = worst. Sleep 0–12, stress 1–10, energy 1–10.
+    return (sleep / 12.0) + (1 - stress / 10.0) + (energy / 10.0);
+  }
+
+  // ─── Task #1: Personal best 1RM per exercise (Epley) ──────────────────────
+
+  /// Returns the all-time best estimated 1RM (Epley) per exercise, batched.
+  /// Queries personal_records (weight_kg + reps) for all given exercises.
+  static Future<Map<String, double>> getPersonalBest1RMForExercises(
+      List<String> exerciseIds) async {
+    if (exerciseIds.isEmpty) return {};
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+    final sortedIds = [...exerciseIds]..sort();
+    return AppCache.get<Map<String, double>>(
+      key: '1rm:$userId:${sortedIds.join(',')}',
+      ttl: const Duration(minutes: 30),
+      fetch: () => _fetchPersonalBest1RMForExercises(userId, exerciseIds),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {}
+          : (jsonDecode(s) as Map<String, dynamic>)
+              .map((k, v) => MapEntry(k, (v as num).toDouble())),
+    );
+  }
+
+  static Future<Map<String, double>> _fetchPersonalBest1RMForExercises(
+      String userId, List<String> exerciseIds) async {
+    final res = await _client
+        .from('personal_records')
+        .select('exercise_id, weight_kg, reps')
+        .eq('user_id', userId)
+        .inFilter('exercise_id', exerciseIds);
+
+    final best1RM = <String, double>{};
+    for (final row in res as List) {
+      final exId = row['exercise_id'] as String?;
+      if (exId == null) continue;
+      final weight = (row['weight_kg'] as num?)?.toDouble() ?? 0;
+      final reps = (row['reps'] as num?)?.toInt() ?? 1;
+      final orm = weight * (1 + reps / 30.0).clamp(1.0, double.infinity);
+      if (!best1RM.containsKey(exId) || orm > best1RM[exId]!) {
+        best1RM[exId] = orm;
+      }
+    }
+    return best1RM;
+  }
+
+  // ─── Task #5: RPE calibration offset ──────────────────────────────────────
+
+  /// Returns the user's RPE calibration offset.
+  /// Positive offset means user reports higher RPE than average → their RPE is higher than typical.
+  /// Applied to shift signal thresholds: if offset = +1.5, treat their RPE 8 as 6.5.
+  /// Returns 0.0 when insufficient data.
+  static Future<double> getRpeCalibrationOffset() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0.0;
+    return AppCache.get<double>(
+      key: 'rpe_calibration:$userId',
+      ttl: const Duration(hours: 6),
+      fetch: () => _fetchRpeCalibrationOffset(userId),
+      encode: (v) => v.toString(),
+      decode: (s) => double.tryParse(s ?? '') ?? 0.0,
+    );
+  }
+
+  static Future<double> _fetchRpeCalibrationOffset(String userId) async {
+    // Get RPE values from last 60 completed working sets
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(20);
+    if ((sessRes as List).isEmpty) return 0.0;
+    final sessionIds = sessRes.map((e) => e['id'] as String).toList();
+
+    final setsRes = await _client
+        .from('sets')
+        .select('rpe')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false)
+        .not('rpe', 'is', null);
+
+    final rpes = (setsRes as List)
+        .map((s) => (s['rpe'] as num).toDouble())
+        .toList();
+    if (rpes.length < 10) return 0.0; // not enough data
+
+    rpes.sort();
+    final median = rpes[rpes.length ~/ 2];
+    return (median - 7.0).clamp(-2.0, 2.0);
+  }
+
+  // ─── Task #6: 8-week volume trend per muscle group ─────────────────────────
+
+  /// Returns 8-week volume trend per muscle group.
+  /// Result: Map of muscleGroup → {recentAvg: double, prevAvg: double, trend: double (pct change)}
+  static Future<Map<String, Map<String, double>>> getMuscleGroupVolumeTrend() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+    return AppCache.get<Map<String, Map<String, double>>>(
+      key: 'muscle_trend:$userId',
+      ttl: const Duration(minutes: 20),
+      fetch: () => _fetchMuscleGroupVolumeTrend(userId),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {}
+          : (jsonDecode(s) as Map<String, dynamic>).map((k, v) =>
+              MapEntry(k, (v as Map<String, dynamic>).map((k2, v2) =>
+                  MapEntry(k2, (v2 as num).toDouble())))),
+    );
+  }
+
+  static Future<Map<String, Map<String, double>>> _fetchMuscleGroupVolumeTrend(
+      String userId) async {
+    final now = DateTime.now();
+    final cutoff = now.subtract(const Duration(days: 56)); // 8 weeks
+    final cutoffStr = cutoff.toIso8601String().split('T')[0];
+
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', cutoffStr)
+        .order('date', ascending: true);
+
+    if ((sessRes as List).isEmpty) return {};
+    final sessionIds = sessRes.map((e) => e['id'] as String).toList();
+    final sessionDates = <String, String>{
+      for (final s in sessRes) s['id'] as String: s['date'] as String,
+    };
+
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, weight, reps, workout_exercise_id')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false)
+        .not('weight', 'is', null);
+
+    final weIds = (setsRes as List)
+        .map((s) => s['workout_exercise_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return {};
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(category)')
+        .inFilter('id', weIds);
+
+    final weCategory = <String, String>{};
+    for (final we in weRes as List) {
+      final cat = (we['exercises'] as Map<String, dynamic>?)?['category'] as String?;
+      if (cat != null) weCategory[we['id'] as String] = cat;
+    }
+
+    final midpoint = now.subtract(const Duration(days: 28));
+    final midStr = midpoint.toIso8601String().split('T')[0];
+
+    final recentVol = <String, double>{};
+    final prevVol = <String, double>{};
+
+    for (final set in setsRes) {
+      final sid = set['training_session_id'] as String;
+      final weId = set['workout_exercise_id'] as String?;
+      if (weId == null) continue;
+      final cat = weCategory[weId];
+      if (cat == null || cat == 'cardio') continue;
+      final w = (set['weight'] as num?)?.toDouble() ?? 0;
+      final r = (set['reps'] as num?)?.toInt() ?? 0;
+      final vol = w * r;
+      final date = sessionDates[sid] ?? '';
+      if (date.compareTo(midStr) >= 0) {
+        recentVol[cat] = (recentVol[cat] ?? 0) + vol;
+      } else {
+        prevVol[cat] = (prevVol[cat] ?? 0) + vol;
+      }
+    }
+
+    final result = <String, Map<String, double>>{};
+    for (final cat in {...recentVol.keys, ...prevVol.keys}) {
+      final recent = recentVol[cat] ?? 0;
+      final prev = prevVol[cat] ?? 0;
+      if (prev == 0) continue;
+      result[cat] = {
+        'recentAvg': recent,
+        'prevAvg': prev,
+        'trend': (recent - prev) / prev * 100,
+      };
+    }
+    return result;
+  }
+
+  // ─── Task #9: Average days between sessions per muscle group ───────────────
+
+  /// Returns empirical average days between sessions per muscle group.
+  /// Based on last 8 weeks of completed sessions.
+  static Future<Map<String, double>> getAvgDaysBetweenSessionsByMuscle() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+    return AppCache.get<Map<String, double>>(
+      key: 'inter_session_days:$userId',
+      ttl: const Duration(hours: 2),
+      fetch: () => _fetchAvgDaysBetweenSessionsByMuscle(userId),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? {}
+          : (jsonDecode(s) as Map<String, dynamic>)
+              .map((k, v) => MapEntry(k, (v as num).toDouble())),
+    );
+  }
+
+  static Future<Map<String, double>> _fetchAvgDaysBetweenSessionsByMuscle(
+      String userId) async {
+    final cutoffStr = DateTime.now()
+        .subtract(const Duration(days: 56))
+        .toIso8601String()
+        .split('T')[0];
+
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date')
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .gte('date', cutoffStr)
+        .order('date', ascending: true);
+
+    if ((sessRes as List).length < 4) return {};
+
+    final sessionIds = sessRes.map((e) => e['id'] as String).toList();
+    final sessionDates = <String, String>{
+      for (final s in sessRes) s['id'] as String: s['date'] as String,
+    };
+
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, workout_exercise_id')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false);
+
+    final weIds = (setsRes as List)
+        .map((s) => s['workout_exercise_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    if (weIds.isEmpty) return {};
+
+    final weRes = await _client
+        .from('workout_exercises')
+        .select('id, exercises(category)')
+        .inFilter('id', weIds);
+
+    final weCategory = <String, String>{};
+    for (final we in weRes as List) {
+      final cat = (we['exercises'] as Map<String, dynamic>?)?['category'] as String?;
+      if (cat != null && cat != 'cardio') weCategory[we['id'] as String] = cat;
+    }
+
+    final muscleDates = <String, List<DateTime>>{};
+    for (final set in setsRes) {
+      final sid = set['training_session_id'] as String;
+      final weId = set['workout_exercise_id'] as String?;
+      if (weId == null) continue;
+      final cat = weCategory[weId];
+      if (cat == null) continue;
+      final dateStr = sessionDates[sid];
+      if (dateStr == null) continue;
+      final date = DateTime.tryParse(dateStr);
+      if (date == null) continue;
+      final list = muscleDates.putIfAbsent(cat, () => []);
+      if (list.isEmpty || !list.last.isAtSameMomentAs(date)) list.add(date);
+    }
+
+    final result = <String, double>{};
+    for (final entry in muscleDates.entries) {
+      final dates = entry.value..sort();
+      if (dates.length < 3) continue;
+      final gaps = <int>[];
+      for (int i = 1; i < dates.length; i++) {
+        gaps.add(dates[i].difference(dates[i - 1]).inDays);
+      }
+      result[entry.key] = gaps.reduce((a, b) => a + b) / gaps.length;
+    }
+    return result;
+  }
+
 }

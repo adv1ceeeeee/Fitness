@@ -34,7 +34,7 @@ enum BodyPose {
 class Body3DWidget extends StatefulWidget {
   final Map<String, dynamic>? measurements;
 
-  static const String _modelAsset = 'assets/models/body.glb';
+  static const String _modelAsset = 'assets/models/perfect_human_body.glb';
   static const String _jsAsset = 'assets/models/model-viewer.min.js';
 
   const Body3DWidget({super.key, this.measurements});
@@ -80,13 +80,13 @@ class _Body3DWidgetState extends State<Body3DWidget> {
 
     // 2. Prepare temp directory with all 3 files side-by-side
     //    WKWebView's loadFile() grants read access to the whole directory,
-    //    so model-viewer.js and body.glb are reachable via relative paths.
+    //    so model-viewer.js and perfect_human_body.glb are reachable via relative paths.
     final tempDir = await getTemporaryDirectory();
     final webDir = Directory('${tempDir.path}/sportify_3d');
     await webDir.create(recursive: true);
 
     // Write GLB (skip if already cached with same size)
-    final glbFile = File('${webDir.path}/body.glb');
+    final glbFile = File('${webDir.path}/perfect_human_body.glb');
     final glbBytes = glbData.buffer.asUint8List();
     if (!glbFile.existsSync() ||
         await glbFile.length() != glbBytes.length) {
@@ -121,7 +121,7 @@ model-viewer {
 <body>
 <model-viewer
   id="mv"
-  src="body.glb"
+  src="perfect_human_body.glb"
   camera-controls
   camera-orbit="0deg 90deg 105%"
   min-camera-orbit="auto 60deg auto"
@@ -399,7 +399,7 @@ class _NoModelPlaceholder extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Добавь файл assets/models/body.glb\nчтобы включить 3D просмотр.',
+                'Добавь файл assets/models/perfect_human_body.glb\nчтобы включить 3D просмотр.',
                 style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,

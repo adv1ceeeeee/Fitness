@@ -108,6 +108,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   List<Map<String, dynamic>> _exerciseProgressList = [];
   List<Map<String, dynamic>> _stagnantExercises = [];
   List<Map<String, dynamic>> _wellnessCorrelation = [];
+  Map<String, dynamic>? _deloadMetrics;
+  Map<String, Map<String, double>>? _muscleVolumeTrend;
+  Map<String, double>? _muscleRecoveryDays;
 
   late final TabController _tabController;
 
@@ -325,6 +328,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             _wellnessCorrelation = results[22] as List<Map<String, dynamic>>;
             _loading = false;
           });
+          // Load deload metrics independently (doesn't block main render).
+          AnalyticsService.getDeloadMetrics().then((m) {
+            if (mounted) setState(() => _deloadMetrics = m);
+          }).catchError((_) {});
+          // Load 8-week muscle volume trend (non-blocking).
+          AnalyticsService.getMuscleGroupVolumeTrend().then((t) {
+            if (mounted) setState(() => _muscleVolumeTrend = t);
+          }).catchError((_) {});
+          // Load inter-session recovery days per muscle (non-blocking).
+          AnalyticsService.getAvgDaysBetweenSessionsByMuscle().then((d) {
+            if (mounted) setState(() => _muscleRecoveryDays = d);
+          }).catchError((_) {});
         }
       }).timeout(const Duration(seconds: 15));
     } catch (e) {
@@ -378,6 +393,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
+  }
+
+  // Compute body weight delta: average weight in last 4 weeks vs 4 weeks before
+  double? _computeBodyWeightDelta(List<Map<String, dynamic>> bodyHistory) {
+    if (bodyHistory.length < 4) return null;
+    final now = DateTime.now();
+    final cutoff4w = now.subtract(const Duration(days: 28));
+    final cutoff8w = now.subtract(const Duration(days: 56));
+
+    final recent = bodyHistory.where((b) {
+      final d = DateTime.tryParse(b['date'] as String? ?? '');
+      return d != null && d.isAfter(cutoff4w);
+    }).map((b) => (b['weight_kg'] as num?)?.toDouble()).whereType<double>().toList();
+
+    final prev = bodyHistory.where((b) {
+      final d = DateTime.tryParse(b['date'] as String? ?? '');
+      return d != null && d.isAfter(cutoff8w) && !d.isAfter(cutoff4w);
+    }).map((b) => (b['weight_kg'] as num?)?.toDouble()).whereType<double>().toList();
+
+    if (recent.isEmpty || prev.isEmpty) return null;
+    final recentAvg = recent.reduce((a, b) => a + b) / recent.length;
+    final prevAvg = prev.reduce((a, b) => a + b) / prev.length;
+    return recentAvg - prevAvg; // positive = weight gained, negative = weight lost
   }
 
   static const _goalOptions = <String, String>{
@@ -596,6 +634,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     communityAvgWorkoutsPerWeek: _communityAvgWorkoutsPerWeek,
                     sharing: _sharing,
                     onShare: _shareAsImage,
+                    deloadMetrics: _deloadMetrics,
+                    muscleVolumeTrend: _muscleVolumeTrend,
+                    muscleRecoveryDays: _muscleRecoveryDays,
+                    bodyWeightDelta: _computeBodyWeightDelta(_bodyHistory),
                   ),
                 ],
               ),
@@ -1693,6 +1735,10 @@ class _InsightsTab extends StatelessWidget {
   final double? communityAvgWorkoutsPerWeek;
   final bool sharing;
   final VoidCallback onShare;
+  final Map<String, dynamic>? deloadMetrics;
+  final Map<String, Map<String, double>>? muscleVolumeTrend;
+  final Map<String, double>? muscleRecoveryDays;
+  final double? bodyWeightDelta;
 
   const _InsightsTab({
     required this.onRefresh,
@@ -1712,6 +1758,10 @@ class _InsightsTab extends StatelessWidget {
     this.communityAvgWorkoutsPerWeek,
     required this.sharing,
     required this.onShare,
+    this.deloadMetrics,
+    this.muscleVolumeTrend,
+    this.muscleRecoveryDays,
+    this.bodyWeightDelta,
   });
 
   @override
@@ -1750,6 +1800,10 @@ class _InsightsTab extends StatelessWidget {
               totalWorkouts: totalWorkouts,
               communityAvgWeeklyVolume: communityAvgWeeklyVolume,
               communityAvgWorkoutsPerWeek: communityAvgWorkoutsPerWeek,
+              deloadMetrics: deloadMetrics,
+              muscleVolumeTrend: muscleVolumeTrend,
+              muscleRecoveryDays: muscleRecoveryDays,
+              bodyWeightDelta: bodyWeightDelta,
             ),
             const SizedBox(height: 28),
             const Text(
@@ -2738,12 +2792,14 @@ class _InsightCard extends StatelessWidget {
   final Color color;
   final String title;
   final String body;
+  final double confidence;
 
   const _InsightCard({
     required this.icon,
     required this.color,
     required this.title,
     required this.body,
+    this.confidence = 1.0,
   });
 
   @override
@@ -2808,6 +2864,10 @@ class _InsightsSection extends StatelessWidget {
   final int totalWorkouts;
   final double? communityAvgWeeklyVolume;
   final double? communityAvgWorkoutsPerWeek;
+  final Map<String, dynamic>? deloadMetrics;
+  final Map<String, Map<String, double>>? muscleVolumeTrend;
+  final Map<String, double>? muscleRecoveryDays;
+  final double? bodyWeightDelta;
 
   const _InsightsSection({
     required this.heatmapData,
@@ -2820,6 +2880,10 @@ class _InsightsSection extends StatelessWidget {
     required this.totalWorkouts,
     this.communityAvgWeeklyVolume,
     this.communityAvgWorkoutsPerWeek,
+    this.deloadMetrics,
+    this.muscleVolumeTrend,
+    this.muscleRecoveryDays,
+    this.bodyWeightDelta,
   });
 
   static const _weekdayNames = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
@@ -2853,6 +2917,7 @@ class _InsightsSection extends StatelessWidget {
           color: AppColors.accent,
           title: 'Лучший день для тренировок',
           body: '${_weekdayNames[bestWd]} — вы тренируетесь в этот день чаще всего ($count раз за последние 6 месяцев).',
+          confidence: 0.6,
         ));
       }
     }
@@ -2866,26 +2931,35 @@ class _InsightsSection extends StatelessWidget {
       if (olderAvg > 0) {
         final pct = ((recentAvg - olderAvg) / olderAvg * 100).round();
         final up = pct >= 0;
+        // Task #7: append body weight note when volume drops and weight also dropped
+        String volumeBody = up
+            ? 'За последние 4 недели ваш объём вырос на $pct% по сравнению с предыдущим периодом. Отлично!'
+            : 'За последние 4 недели объём снизился на ${pct.abs()}%. Попробуйте добавить нагрузку.';
+        if (!up && bodyWeightDelta != null && bodyWeightDelta! < -2) {
+          volumeBody = '$volumeBody Учтите, вы также похудели на ${bodyWeightDelta!.abs().toStringAsFixed(1)} кг — часть снижения объёма естественна.';
+        }
         cards.add(_InsightCard(
           icon: up ? Icons.trending_up_rounded : Icons.trending_down_rounded,
           color: up ? AppColors.success : AppColors.error,
           title: 'Тренд объёма нагрузки',
-          body: up
-              ? 'За последние 4 недели ваш объём вырос на $pct% по сравнению с предыдущим периодом. Отлично!'
-              : 'За последние 4 недели объём снизился на ${pct.abs()}%. Попробуйте добавить нагрузку.',
+          body: volumeBody,
+          confidence: 0.85,
         ));
       }
     }
 
-    // 3. Most trained muscle group
-    if (muscleBalance.isNotEmpty) {
-      final top = muscleBalance.entries.reduce((a, b) => a.value >= b.value ? a : b);
+    // 3. Most trained muscle group (top-level categories only — skip sub-categories)
+    final topLevelBalance = Map.fromEntries(
+        muscleBalance.entries.where((e) => !e.key.contains(':')));
+    if (topLevelBalance.isNotEmpty) {
+      final top = topLevelBalance.entries.reduce((a, b) => a.value >= b.value ? a : b);
       final label = _muscleLabels[top.key] ?? top.key;
       cards.add(_InsightCard(
         icon: Icons.fitness_center_rounded,
         color: const Color(0xFFBF5AF2),
         title: 'Самая тренируемая группа',
         body: '$label лидирует по объёму подходов за последние 30 дней (${top.value} подходов). Следите за балансом.',
+        confidence: 0.8,
       ));
     }
 
@@ -2897,6 +2971,7 @@ class _InsightsSection extends StatelessWidget {
         color: const Color(0xFFFF9F0A),
         title: 'Дисбаланс мышц',
         body: imbalanceRec.message,
+        confidence: 0.8,
       ));
     }
 
@@ -2908,6 +2983,7 @@ class _InsightsSection extends StatelessWidget {
         color: const Color(0xFF64D2FF),
         title: 'Застой в прогрессе',
         body: plateauRec.message,
+        confidence: 0.75,
       ));
     }
 
@@ -2919,6 +2995,7 @@ class _InsightsSection extends StatelessWidget {
         color: const Color(0xFF5E5CE6),
         title: 'Сон влияет на результат',
         body: correlationRec.message,
+        confidence: 0.7,
       ));
     }
 
@@ -2951,6 +3028,7 @@ class _InsightsSection extends StatelessWidget {
           color: AppColors.warning,
           title: 'Регулярность за 12 недель',
           body: '$emoji В $activeWeeks из $totalWeeks недель вы тренировались 2 раза и более — это $pct% активных недель.',
+          confidence: 0.7,
         ));
       }
     }
@@ -2970,7 +3048,6 @@ class _InsightsSection extends StatelessWidget {
         }
       }
       if (goodSleepDays.length >= 5 && allLoggedDays.isNotEmpty) {
-        // Count workout days that had good sleep logged
         int workedWithGoodSleep = 0;
         int workedWithPoorSleep = 0;
         for (final entry in heatmapData.entries) {
@@ -2991,6 +3068,7 @@ class _InsightsSection extends StatelessWidget {
             color: const Color(0xFF34C759),
             title: 'Сон и тренировки',
             body: '$pct% ваших тренировок приходится на дни с 7+ часами сна. Хороший сон помогает тренироваться стабильнее.',
+            confidence: 0.7,
           ));
         }
       }
@@ -2998,14 +3076,12 @@ class _InsightsSection extends StatelessWidget {
 
     // 6. Wellness–volume correlations
     if (wellnessHistory.isNotEmpty && weeklyVolume.isNotEmpty) {
-      // Build week_start → volume map
       final weekVolMap = <String, double>{};
       for (final w in weeklyVolume) {
         final ws = w['week_start'] as String?;
         if (ws != null) weekVolMap[ws] = (w['volume'] as num).toDouble();
       }
 
-      // Helper: ISO Monday for any date string
       String toMonday(String d) {
         try {
           final dt = DateTime.parse(d);
@@ -3016,7 +3092,6 @@ class _InsightsSection extends StatelessWidget {
         }
       }
 
-      // Aggregate wellness metrics by week
       final weekStress = <String, List<double>>{};
       final weekEnergy = <String, List<double>>{};
       for (final row in wellnessHistory) {
@@ -3031,7 +3106,6 @@ class _InsightsSection extends StatelessWidget {
 
       double avg(List<double> l) => l.reduce((a, b) => a + b) / l.length;
 
-      // Stress vs volume
       final stressWeeks = weekStress.entries
           .where((e) => weekVolMap.containsKey(e.key))
           .toList();
@@ -3052,13 +3126,13 @@ class _InsightsSection extends StatelessWidget {
                 body: less
                     ? 'В недели с высоким стрессом (>6/10) ваш объём в среднем на $diff% ниже, чем при низком стрессе.'
                     : 'Высокий стресс практически не снижает ваш объём — вы тренируетесь стабильно в любом состоянии.',
+                confidence: 0.7,
               ));
             }
           }
         }
       }
 
-      // Energy vs volume
       final energyWeeks = weekEnergy.entries
           .where((e) => weekVolMap.containsKey(e.key))
           .toList();
@@ -3078,6 +3152,7 @@ class _InsightsSection extends StatelessWidget {
                 body: diff > 0
                     ? 'В недели с высокой энергией (7+/10) ваш объём на $diff% выше, чем в «тяжёлые» недели. Прислушивайтесь к себе.'
                     : 'Уровень энергии слабо влияет на ваши результаты — отличный показатель дисциплины!',
+                confidence: 0.7,
               ));
             }
           }
@@ -3094,6 +3169,7 @@ class _InsightsSection extends StatelessWidget {
         body: bestStreak >= 7
             ? 'Ваш лучший стрик — $bestStreak дней подряд. Продолжайте в том же духе!'
             : 'Лучший стрик пока $bestStreak дней. Попробуйте не пропускать тренировки несколько недель подряд!',
+        confidence: 0.6,
       ));
     }
 
@@ -3112,6 +3188,7 @@ class _InsightsSection extends StatelessWidget {
             color: const Color(0xFF30D158),
             title: 'Объём vs сообщество',
             body: 'Ваш средний недельный объём за последние 4 недели на $pct% выше среднего по приложению. Отличный результат!',
+            confidence: 0.5,
           ));
         } else if (pct >= 10) {
           cards.add(_InsightCard(
@@ -3119,8 +3196,27 @@ class _InsightsSection extends StatelessWidget {
             color: AppColors.accent,
             title: 'Объём vs сообщество',
             body: 'Ваш средний недельный объём на $pct% ниже среднего по приложению. Есть куда расти — попробуйте постепенно увеличивать нагрузку.',
+            confidence: 0.5,
           ));
         }
+      }
+    }
+
+    // 0. Deload recommendation
+    if (deloadMetrics != null) {
+      final deloadRec = evaluateDeload(
+        recentAvgVolume: (deloadMetrics!['recentAvgVolume'] as num).toDouble(),
+        baselineAvgVolume: (deloadMetrics!['baselineAvgVolume'] as num).toDouble(),
+        consecutiveWeeks: deloadMetrics!['consecutiveWeeks'] as int,
+      );
+      if (deloadRec != null) {
+        cards.add(_InsightCard(
+          icon: Icons.battery_alert_rounded,
+          color: Colors.orange,
+          title: 'Время для дилоада',
+          body: deloadRec.message,
+          confidence: 0.9,
+        ));
       }
     }
 
@@ -3155,6 +3251,7 @@ class _InsightsSection extends StatelessWidget {
               color: const Color(0xFFFFD60A),
               title: 'Частота vs сообщество',
               body: 'Вы тренируетесь в среднем ${userAvgFreq.toStringAsFixed(1)} раз/нед — это больше среднего по приложению (${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} раз/нед). Так держать!',
+              confidence: 0.5,
             ));
           } else {
             cards.add(_InsightCard(
@@ -3162,12 +3259,51 @@ class _InsightsSection extends StatelessWidget {
               color: AppColors.accent,
               title: 'Частота vs сообщество',
               body: 'Среднее по приложению — ${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} тренировок/нед, у вас ${userAvgFreq.toStringAsFixed(1)}. Попробуйте добавить ещё одну тренировку в неделю.',
+              confidence: 0.5,
             ));
           }
         }
       }
     }
 
+    // Task #6: Volume trend per muscle group (8-week)
+    if (muscleVolumeTrend != null && muscleVolumeTrend!.isNotEmpty) {
+      final worst = muscleVolumeTrend!.entries
+          .where((e) => e.value['trend']! < -20)
+          .fold<MapEntry<String, Map<String, double>>?>(null, (prev, e) =>
+              prev == null || e.value['trend']! < prev.value['trend']! ? e : prev);
+      if (worst != null) {
+        final label = _muscleLabels[worst.key] ?? worst.key;
+        final pct = worst.value['trend']!.round().abs();
+        cards.add(_InsightCard(
+          icon: Icons.trending_down_rounded,
+          color: AppColors.error,
+          title: 'Снижение объёма: $label',
+          body: 'За последние 4 недели объём на $label упал на $pct% по сравнению с предыдущим месяцем. Проверьте программу.',
+          confidence: 0.75,
+        ));
+      }
+    }
+
+    // Task #9: Muscle recovery frequency
+    if (muscleRecoveryDays != null) {
+      for (final entry in muscleRecoveryDays!.entries) {
+        if (entry.value < 2.0) {
+          final label = _muscleLabels[entry.key] ?? entry.key;
+          cards.add(_InsightCard(
+            icon: Icons.warning_amber_rounded,
+            color: AppColors.error,
+            title: 'Слишком частые нагрузки: $label',
+            body: 'В среднем вы тренируете $label каждые ${entry.value.toStringAsFixed(1)} дня — мышцам нужно минимум 2-3 дня для восстановления.',
+            confidence: 0.7,
+          ));
+          break; // one insight is enough
+        }
+      }
+    }
+
+    // Task #10: Sort by confidence descending
+    cards.sort((a, b) => b.confidence.compareTo(a.confidence));
     return cards;
   }
 

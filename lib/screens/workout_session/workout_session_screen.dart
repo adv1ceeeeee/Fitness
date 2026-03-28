@@ -20,7 +20,9 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
+import 'package:sportwai/services/wellness_service.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:sportwai/services/profile_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:confetti/confetti.dart';
 
@@ -62,7 +64,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     with WidgetsBindingObserver {
   List<WorkoutExercise> _exercises = [];
   Map<String, double> _personalBests = {};
+  Map<String, double> _personalBests1RM = {};
+  String? _userGoal;
+  double _rpeCalibrationOffset = 0.0;
   Map<String, Map<String, dynamic>> _lastSets = {};
+  final Map<String, int> _avgRestByExercise = {};
   double? _userWeightKg;
   int _completedSetsBefore = 0;
   int _totalExpectedSets = 0;
@@ -88,6 +94,17 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   bool _deloadActive = false;
   Set<String> _fatiguedCategories = {}; // categories trained < 48h ago
   bool _fatigueBannerDismissed = false;
+
+  // Energy / intra-session fatigue RecSys
+  Map<String, dynamic>? _todayWellness;
+  /// Inter-session energy state loaded at session start (from DB checkpoint).
+  EnergyState? _sessionEnergyState;
+  /// Running minimum reserve across all muscle groups — saved as energy_end on complete.
+  double _sessionEnergyEnd = 100.0;
+  // exerciseId → {category, sets[]} accumulated this session
+  final Map<String, Map<String, dynamic>> _sessionHistory = {};
+  FatigueRec? _intraFatigueRec;
+  bool _intraFatigueDismissed = false;
 
   List<_SetData> _sets = [];
   List<TextEditingController> _weightControllers = [];
@@ -166,9 +183,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final pbFutures = ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
     final lastSetsFuture = AnalyticsService.getLastSetsForExercises(exerciseIds);
     final userMetricsFuture = BodyMetricsService.getLatest();
+    final wellnessFuture = WellnessService.getTodayLog();
+    final energyStateFuture = AnalyticsService.getEnergyState();
+    final best1RMFuture = AnalyticsService.getPersonalBest1RMForExercises(exerciseIds);
     final pbValues = await Future.wait(pbFutures);
     final lastSets = await lastSetsFuture;
     final userMetrics = await userMetricsFuture;
+    final todayWellness = await wellnessFuture;
+    final energyState = await energyStateFuture;
+    final personalBests1RM = await best1RMFuture;
 
     // Build topReps map for auto-progress check
     final topRepsMap = <String, int>{};
@@ -205,9 +228,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       setState(() {
         _exercises = ex;
         _personalBests = pbs;
+        _personalBests1RM = personalBests1RM;
         _lastSets = lastSets;
         _autoProgressSuggestions = autoProgress;
         _fatiguedCategories = fatigued;
+        _todayWellness = todayWellness;
+        _sessionEnergyState = energyState;
+        _sessionEnergyEnd = energyState.reserve;
         _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
         _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
         _warmupMinutes = warmupMins;
@@ -226,12 +253,35 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       if (_warmupMinutes > 0) _startPhaseTimer();
       if (_exercises.isNotEmpty) await _maybeRestoreDraft(_exercises[_currentExerciseIndex]);
 
+      // Load avg rest seconds per exercise (non-blocking — used only as a UI hint)
+      Future.wait(ex.map((e) => AnalyticsService.getAvgRestSeconds(e.exerciseId)
+          .then((v) { if (v != null && mounted) setState(() => _avgRestByExercise[e.exerciseId] = v); })
+          .catchError((_) {}))).ignore();
+
+      // Load user goal (non-blocking — defaults to null = 'general')
+      ProfileService.getProfile().then((p) {
+        if (mounted) setState(() => _userGoal = p?.goal);
+      }).catchError((_) {});
+
+      // Load RPE calibration offset (non-blocking)
+      AnalyticsService.getRpeCalibrationOffset().then((offset) {
+        if (mounted) setState(() => _rpeCalibrationOffset = offset);
+      }).catchError((_) {});
+
       // Log RecSys increase suggestions shown to user
       for (final we in ex) {
+        final isDb = we.exercise?.equipmentType == 'dumbbell';
+        final dbIncrement = isDb ? ref.read(dumbbellIncrementProvider) : 2.5;
         final rec = evaluateProgression(
           lastSets[we.exerciseId],
           consecutiveFullReps: autoProgress.contains(we.exerciseId) ? 3 : 0,
           topRepsInRange: _parseTopReps(we.repsRange),
+          weightIncrement: dbIncrement,
+          energyState: energyState,
+          personalBest1RMKg: personalBests1RM[we.exerciseId],
+          userGoal: _userGoal,
+          rpeCalibrationOffset: _rpeCalibrationOffset,
+          isBodyweight: we.exercise?.equipmentType == 'bodyweight',
         );
         if (rec != null && rec.direction == ProgressionDirection.increase) {
           EventLogger.autoProgressSuggestionShown(
@@ -692,10 +742,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final nextIndex = _currentExerciseIndex + 1;
     if (nextIndex < _exercises.length) {
       HapticFeedback.mediumImpact();
-      final next = _exercises[nextIndex];
+      final current = _exercises[_currentExerciseIndex];
+      final next    = _exercises[nextIndex];
+      _saveExerciseToHistory(current);
+      final fatigue = _computeIntraFatigue(next);
       setState(() {
         _completedSetsBefore += _sets.length;
         _currentExerciseIndex = nextIndex;
+        _intraFatigueRec      = fatigue;
+        _intraFatigueDismissed = false;
         _initExercise(next);
       });
       _saveExerciseIndex();
@@ -707,15 +762,55 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final prevIndex = _currentExerciseIndex - 1;
     if (prevIndex >= 0) {
       HapticFeedback.mediumImpact();
-      final prev = _exercises[prevIndex];
+      final current = _exercises[_currentExerciseIndex];
+      final prev    = _exercises[prevIndex];
+      _saveExerciseToHistory(current);
+      final fatigue = _computeIntraFatigue(prev);
       setState(() {
         _completedSetsBefore = (_completedSetsBefore - prev.sets).clamp(0, _totalExpectedSets);
-        _currentExerciseIndex = prevIndex;
+        _currentExerciseIndex  = prevIndex;
+        _intraFatigueRec       = fatigue;
+        _intraFatigueDismissed = false;
         _initExercise(prev);
       });
       _saveExerciseIndex();
       _maybeRestoreDraft(prev);
     }
+  }
+
+  /// Snapshot the current exercise's completed sets into [_sessionHistory].
+  void _saveExerciseToHistory(WorkoutExercise we) {
+    final category = we.exercise?.category;
+    if (category == null) return;
+    _sessionHistory[we.exerciseId] = {
+      'category':      category,
+      'equipmentType': we.exercise?.equipmentType ?? 'other',
+      'movementType':  we.exercise?.effectiveMovementType ?? 'other',
+      'inSuperset':    we.supersetGroup != null,
+      'sets': _sets.map((s) => {
+        'isWarmup':  s.isWarmup,
+        'completed': s.completed,
+        'rpe':       s.rpe?.toDouble(),
+      }).toList(),
+    };
+  }
+
+  /// Runs [evaluateFatigue] for the exercise we're switching to.
+  /// Also updates [_sessionEnergyEnd] (running minimum reserve across all
+  /// muscle groups — persisted as energy_end checkpoint on session complete).
+  FatigueRec? _computeIntraFatigue(WorkoutExercise we) {
+    final category = we.exercise?.category;
+    if (category == null || category == 'cardio') return null;
+    final rec = evaluateFatigue(
+      targetCategory: category,
+      sessionHistory: _sessionHistory.values.toList(),
+      initialState: _sessionEnergyState,
+      wellness: _todayWellness,
+    );
+    if (rec != null && rec.reserve < _sessionEnergyEnd) {
+      _sessionEnergyEnd = rec.reserve;
+    }
+    return rec;
   }
 
   // ─── Draft persistence (survives process kill) ───────────────────────────
@@ -957,6 +1052,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       durationSeconds: durationSeconds,
       setsCount: _sets.where((s) => s.completed).length,
     );
+    // Persist energy checkpoint so next session starts from correct reserve.
+    AnalyticsService.saveEnergyEnd(widget.sessionId, _sessionEnergyEnd);
     // Invalidate cached stats so next screen open shows fresh numbers
     AnalyticsService.invalidateStatsCache();
     // Refresh weekly summary notification with updated stats (fire-and-forget)
@@ -1049,6 +1146,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         }),
         nextExerciseName: nextEx?.displayName,
         nextExerciseGifUrl: nextEx?.gifUrl,
+        avgRestSeconds: _avgRestByExercise[_currentExercise?.exerciseId ?? ''],
       );
     }
 
@@ -1092,12 +1190,16 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             ),
           ],
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(4),
-            child: LinearProgressIndicator(
-              value: _progressValue,
-              backgroundColor: AppColors.surface,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.success),
-              minHeight: 4,
+            preferredSize: const Size.fromHeight(6),
+            child: SizedBox(
+              height: 6,
+              child: CustomPaint(
+                painter: _NeonProgressPainter(
+                  progress: _progressValue,
+                  color: AppColors.success,
+                  background: AppColors.surface,
+                ),
+              ),
             ),
           ),
         ),
@@ -1141,6 +1243,42 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                             GestureDetector(
                               onTap: () => setState(() => _fatigueBannerDismissed = true),
                               child: const Icon(Icons.close, size: 16, color: AppColors.error),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    // Intra-session fatigue RecSys banner
+                    if (_intraFatigueRec != null && !_intraFatigueDismissed) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              _intraFatigueRec!.level == FatigueLevel.high
+                                  ? Icons.local_fire_department_rounded
+                                  : Icons.battery_4_bar_rounded,
+                              color: AppColors.warning,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _intraFatigueRec!.message,
+                                style: const TextStyle(color: AppColors.warning, fontSize: 12),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _intraFatigueDismissed = true),
+                              child: const Icon(Icons.close, size: 16, color: AppColors.warning),
                             ),
                           ],
                         ),
@@ -1247,10 +1385,24 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                             ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
                             : d;
                         // ── Unified RecSys progression chip ──────────────
+                        final isDumbbell = we.exercise?.equipmentType == 'dumbbell';
+                        final increment = isDumbbell
+                            ? ref.read(dumbbellIncrementProvider)
+                            : 2.5;
+                        // Use muscle-specific reserve if available, else session-start state.
+                        final energyForProg = _intraFatigueRec != null
+                            ? EnergyState(reserve: _intraFatigueRec!.reserve)
+                            : _sessionEnergyState;
                         final progRec = evaluateProgression(
                           _lastSets[we.exerciseId],
                           consecutiveFullReps: _autoProgressSuggestions.contains(we.exerciseId) ? 3 : 0,
                           topRepsInRange: _parseTopReps(we.repsRange),
+                          weightIncrement: increment,
+                          energyState: energyForProg,
+                          personalBest1RMKg: _personalBests1RM[we.exerciseId],
+                          userGoal: _userGoal,
+                          rpeCalibrationOffset: _rpeCalibrationOffset,
+                          isBodyweight: we.exercise?.equipmentType == 'bodyweight',
                         );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1957,9 +2109,21 @@ class _PrBannerState extends State<_PrBanner>
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.success.withValues(alpha: 0.5),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
+                          color: Colors.white.withValues(alpha: 0.12),
+                          blurRadius: 6,
+                          spreadRadius: 0,
+                        ),
+                        BoxShadow(
+                          color: AppColors.success.withValues(alpha: 0.8),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 4),
+                        ),
+                        BoxShadow(
+                          color: AppColors.success.withValues(alpha: 0.35),
+                          blurRadius: 52,
+                          spreadRadius: 6,
+                          offset: const Offset(0, 10),
                         ),
                       ],
                     ),
@@ -2217,6 +2381,8 @@ class _RestScreen extends StatelessWidget {
   final ValueChanged<int> onAdjust;
   final String? nextExerciseName;
   final String? nextExerciseGifUrl;
+  /// Empirical average rest duration from `performed_at` history (seconds).
+  final int? avgRestSeconds;
 
   const _RestScreen({
     required this.seconds,
@@ -2226,6 +2392,7 @@ class _RestScreen extends StatelessWidget {
     required this.onAdjust,
     this.nextExerciseName,
     this.nextExerciseGifUrl,
+    this.avgRestSeconds,
   });
 
   @override
@@ -2251,9 +2418,19 @@ class _RestScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
+            Container(
               width: 220,
               height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.accent.withValues(alpha: done ? 0.45 : 0.18),
+                    blurRadius: done ? 52 : 32,
+                    spreadRadius: done ? 8 : 2,
+                  ),
+                ],
+              ),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -2293,6 +2470,13 @@ class _RestScreen extends StatelessWidget {
                 'Отдых',
                 style: TextStyle(fontSize: 20, color: AppColors.textSecondary),
               ),
+            if (avgRestSeconds != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Обычно вы отдыхаете ${avgRestSeconds! ~/ 60}:${(avgRestSeconds! % 60).toString().padLeft(2, '0')}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ],
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2485,4 +2669,39 @@ class _PlateCalcSheet extends StatelessWidget {
     ),
     );
   }
+}
+
+// ─── Неоновый прогресс-бар (CustomPainter) ───────────────────────────────────
+
+class _NeonProgressPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color background;
+
+  const _NeonProgressPainter({
+    required this.progress,
+    required this.color,
+    required this.background,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = background,
+    );
+    if (progress <= 0) return;
+    final filled = Rect.fromLTWH(
+        0, 0, size.width * progress.clamp(0.0, 1.0), size.height);
+    canvas.drawRect(
+      filled,
+      Paint()
+        ..color = color.withValues(alpha: 0.55)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    canvas.drawRect(filled, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_NeonProgressPainter old) => old.progress != progress;
 }

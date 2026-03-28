@@ -11,6 +11,38 @@ Versioning: `MAJOR.MINOR.PATCH+BUILD`
 
 ---
 
+## [1.8.0+22] — 2026-03-28
+
+### Added
+- **RecSys: продвинутая прогрессия** (`evaluateProgression`) — единая функция заменила разрозненные сигналы: 7 условий приоритетом, 1RM PR-сигнал (Эпли ±3%), цель-зависимые пороги (strength vs weight_loss/endurance), поддержка bodyweight-упражнений, RPE-калибровка через персональный медианный RPE (clamp −2…+2)
+- **RecSys: энергетическая модель** — `energy_end` сохраняется в `training_sessions` после каждой сессии; межсессионное восстановление по формуле `E = 100 − (100 − E_end) × exp(−Δt × wellnessMod / (τ × expMod))`; τ=24/36/48ч в зависимости от интенсивности; 10 бакетов готовности
+- **RecSys: внутрисессионная усталость** (`evaluateFatigue`) — суперсеты получают drain × 1.2; warm-up подходы (`is_warmup=true`) исключены из расчёта
+- **RecSys: дилоад** (`evaluateDeload`) — показывается первой карточкой инсайтов при объёме ≥10% выше нормы × ≥3 нед. подряд
+- **RecSys: тренд объёма мышц** — инсайт при падении >20% за последние 4 нед. vs предыдущие 4 нед. (8-недельное окно, `getMuscleGroupVolumeTrend()`)
+- **RecSys: частота нагрузки** — предупреждение при интервале <2 дней на группу мышц (`getAvgDaysBetweenSessionsByMuscle()`, TTL 2ч)
+- **RecSys: корреляция сон→результаты** (`evaluateWellnessCorrelation`) — сравнение среднего веса в «хорошие» (sleep >7ч) vs «плохие» (sleep <6ч) дни; порог показа: разница >5%
+- **RecSys: дисбаланс мышц** (`evaluateMuscleBalance`) — расширены антагонист-пары: добавлены legs:quad↔legs:hamstring и shoulders:push↔shoulders:rear; суб-категории определяются динамически из `movement_type` + имени без изменений БД
+- **RecSys: ranking инсайтов** — поле `confidence` (0–1) у каждой карточки; сортировка по убыванию перед отображением
+- **RPE-калибровка** — `getRpeCalibrationOffset()` (TTL 6ч): медиана RPE пользователя из последних 20 сессий; применяется к порогам прогрессии
+- **Средний отдых** — `getAvgRestSeconds(exerciseId)` (TTL 30 мин); подсказка «Обычно вы отдыхаете X:XX» на экране отдыха
+- **1RM из personal_records** — `getPersonalBest1RMForExercises()` (TTL 30 мин): батч-запрос к `personal_records`, возвращает лучший расчётный 1RM за всю историю
+- **Neon UI: прогресс-бар** — `_NeonProgressPainter` (CustomPainter + `MaskFilter.blur`) вместо `LinearProgressIndicator`
+- **Neon UI: таймер отдыха** — `BoxDecoration(shape: BoxShape.circle, boxShadow: [...])` с нарастающим свечением при завершении таймера
+- **Neon UI: PR-баннер** — 3-слойный `boxShadow` (белый core + ярко-зелёный + широкий ambient)
+- **Neon UI: карточка готовности** (`_EnergyReadinessCard`) — `boxShadow` с цветом энергетического уровня (зелёный/оранжевый/красный, `alpha: 0.22`)
+- **Миграция `053_energy_end.sql`** — добавляет колонку `energy_end double precision` в `training_sessions`
+- **Контекст веса тела в инсайтах** — если вес снизился >2 кг за период, добавляется примечание о возможном влиянии
+
+### Fixed
+- **Warm-up фильтр** — `_fetchLastSetsForExercises()` теперь добавляет `.eq('is_warmup', false)`, исключая разминочные подходы из расчёта прогрессии
+
+### Technical
+- `recsys_service.dart`: унифицирован `evaluateProgression()` — параметры `personalBest1RMKg`, `userGoal`, `rpeCalibrationOffset`, `isBodyweight`, `inSuperset`; `estimatedOneRepMax(weight, reps)` (Эпли); `evaluateFatigue()` с supertset 1.2× drain
+- `analytics_service.dart`: `getPersonalBest1RMForExercises()`, `getRpeCalibrationOffset()`, `getMuscleGroupVolumeTrend()`, `getAvgDaysBetweenSessionsByMuscle()`, `getAvgRestSeconds()` — все в `AppCache`
+- `workout_session_screen.dart`: загружает `_personalBests1RM`, `_userGoal`, `_rpeCalibrationOffset`, `_avgRestByExercise`; передаёт в оба вызова `evaluateProgression()`; `_saveExerciseToHistory()` пишет `inSuperset`; `_NeonProgressPainter` класс
+
+---
+
 ## [1.7.0+21] — 2026-03-26
 
 ### Added

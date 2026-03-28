@@ -1,7 +1,7 @@
 # SportWAI — Database Reference
 
 > **Для аналитиков.** Полное описание схемы PostgreSQL (Supabase).
-> Актуально на: 2026-03-28 · Последняя миграция: `049_revoke_anon_nickname_lookup.sql`
+> Актуально на: 2026-03-28 · Последняя миграция: `053_energy_end.sql`
 
 ---
 
@@ -210,6 +210,7 @@ exercises
 | `kcal_total` | NUMERIC(8,2) | Суммарные калории за сессию (сумма `sets.kcal_estimated`) |
 | `volume_kg` | NUMERIC(10,2) | Суммарный объём = Σ(вес × повторения) только рабочих подходов |
 | `streak_at_start` | INT | Серия тренировок на момент создания сессии (снапшот) |
+| `energy_end` | DOUBLE PRECISION | Уровень энергии (0–100) в конце сессии — чекпоинт энергетической модели RecSys |
 | `notes` | TEXT | Заметки пользователя |
 | `created_at` | TIMESTAMPTZ | |
 

@@ -169,13 +169,13 @@ void main() {
       expect(rec.suggestedWeightKg, isNull);
     });
 
-    test('suggestedWeightKg is null for decrease', () {
+    test('suggestedWeightKg = currentWeight - 2.5 for decrease', () {
       final rec = evaluateProgression({
         'weight': 80.0, 'reps': 10, 'rpe': 9,
         'prev': {'rpe': 9, 'reps': 10},
       });
       expect(rec!.direction, ProgressionDirection.decrease);
-      expect(rec.suggestedWeightKg, isNull);
+      expect(rec.suggestedWeightKg, 77.5);
     });
 
     test('suggestedWeightKg = currentWeight + 2.5 for increase', () {

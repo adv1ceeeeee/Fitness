@@ -63,7 +63,6 @@ class CreateWorkoutScreen extends StatefulWidget {
 class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   final List<_SectionData> _sections = [_SectionData()];
   int _cycleWeeks = 8;
-  bool _noCycle = false;
   bool _isLoading = false;
   String? _error;
   int _shakeCount = 0;
@@ -206,7 +205,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                   name: s.nameController.text.trim(),
                   days: s.selectedDays.toList()..sort(),
                   restDays: s.restDays.toList()..sort(),
-                  cycleWeeks: _noCycle ? 0 : _cycleWeeks,
+                  cycleWeeks: _cycleWeeks,
                   dayTimes: s.dayTimesForDb,
                 ))
             .toList(),
@@ -297,7 +296,9 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
 
   void _applyTemplate(int index) {
     final t = _templates[index];
-    for (final s in _sections) s.dispose();
+    for (final s in _sections) {
+      s.dispose();
+    }
     final newSections = t.sections.map((ts) {
       final s = _SectionData();
       s.nameController.text = ts.name;
@@ -779,12 +780,8 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
         ),
         const SizedBox(height: 4),
         GestureDetector(
-          onDoubleTap: _noCycle ? null : _editCycleManually,
-          child: Opacity(
-            opacity: _noCycle ? 0.35 : 1.0,
-            child: IgnorePointer(
-              ignoring: _noCycle,
-              child: LayoutBuilder(
+          onDoubleTap: _editCycleManually,
+          child: LayoutBuilder(
             builder: (context, constraints) {
               const sliderPadding = 24.0;
               const min = 4.0;
@@ -841,8 +838,6 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               );
             },
           ),
-            ),
-          ),
         ),
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
@@ -865,44 +860,6 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             style: TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary.withValues(alpha: 0.6)),
-          ),
-        ),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => setState(() => _noCycle = !_noCycle),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: _noCycle
-                  ? AppColors.accent.withValues(alpha: 0.15)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: _noCycle
-                    ? AppColors.accent
-                    : AppColors.textSecondary.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.all_inclusive,
-                  size: 18,
-                  color: _noCycle ? AppColors.accent : AppColors.textSecondary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Без цикла',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: _noCycle ? AppColors.accent : AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ],

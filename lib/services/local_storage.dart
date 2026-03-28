@@ -31,6 +31,14 @@ class AppStorage {
   static bool get useCm => _p.getBool('use_cm') ?? true;
   static Future<void> setUseCm(bool v) => _p.setBool('use_cm', v);
 
+  // ── Шаг гантельного ряда ────────────────────────────────────────────────────
+  /// Минимальный шаг увеличения веса для упражнений с гантелями (кг).
+  /// Допустимые значения: 0.5, 1.0, 2.0, 2.5, 5.0
+  static double get dumbbellIncrement =>
+      _p.getDouble('dumbbell_increment') ?? 2.5;
+  static Future<void> setDumbbellIncrement(double v) =>
+      _p.setDouble('dumbbell_increment', v);
+
   // ── Уведомления ─────────────────────────────────────────────────────────────
   static bool get notificationsEnabled =>
       _p.getBool('notifications_enabled') ?? false;

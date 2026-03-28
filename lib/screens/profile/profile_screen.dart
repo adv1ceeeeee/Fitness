@@ -585,10 +585,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         alignment: Alignment.bottomRight,
                         children: [
                           _uploadingAvatar
-                              ? CircleAvatar(
+                              ? const CircleAvatar(
                                   radius: 50,
                                   backgroundColor: AppColors.card,
-                                  child: const SizedBox(
+                                  child: SizedBox(
                                     width: 32,
                                     height: 32,
                                     child: CircularProgressIndicator(
@@ -741,7 +741,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   _SettingsRow(
                     label: 'Единицы длины',
-                    last: true,
                     trailing: Builder(builder: (context) {
                       final useCm = ref.watch(useCmProvider);
                       return Row(
@@ -761,6 +760,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ref.read(useCmProvider.notifier).setUseCm(false),
                           ),
                         ],
+                      );
+                    }),
+                  ),
+                  _SettingsRow(
+                    label: 'Шаг гантельного ряда',
+                    last: true,
+                    trailing: Builder(builder: (context) {
+                      final inc    = ref.watch(dumbbellIncrementProvider);
+                      final useKg  = ref.watch(useKgProvider);
+                      return Wrap(
+                        spacing: 6,
+                        children: _dumbbellOptions(useKg).map((o) {
+                          return ChoiceChip(
+                            label: Text(o.label),
+                            selected: (inc - o.kg).abs() < 0.01,
+                            onSelected: (_) => ref
+                                .read(dumbbellIncrementProvider.notifier)
+                                .setIncrement(o.kg),
+                          );
+                        }).toList(),
                       );
                     }),
                   ),
@@ -1512,4 +1531,34 @@ class _ExportBtn extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Dumbbell increment options ───────────────────────────────────────────────
+
+class _IncrementOption {
+  final String label;
+  /// Value always stored in kg.
+  final double kg;
+  const _IncrementOption(this.label, this.kg);
+}
+
+/// Returns the set of selectable dumbbell-increment options for the given unit.
+/// kg values are the canonical storage values; lbs values are converted exactly.
+List<_IncrementOption> _dumbbellOptions(bool useKg) {
+  if (useKg) {
+    return const [
+      _IncrementOption('0.5 кг', 0.5),
+      _IncrementOption('1 кг',   1.0),
+      _IncrementOption('2 кг',   2.0),
+      _IncrementOption('2.5 кг', 2.5),
+      _IncrementOption('5 кг',   5.0),
+    ];
+  }
+  // lbs options: 1.25 / 2.5 / 5 / 10 lbs, stored as kg (1 lb = 0.453592 kg)
+  return const [
+    _IncrementOption('1.25 lbs', 0.567),   // 1.25 × 0.453592
+    _IncrementOption('2.5 lbs',  1.134),   // 2.5  × 0.453592
+    _IncrementOption('5 lbs',    2.268),   // 5    × 0.453592
+    _IncrementOption('10 lbs',   4.536),   // 10   × 0.453592
+  ];
 }

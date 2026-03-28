@@ -106,6 +106,32 @@ class NotificationsEnabledNotifier extends StateNotifier<bool> {
   }
 }
 
+// ─── Dumbbell increment ───────────────────────────────────────────────────────
+
+final dumbbellIncrementProvider =
+    StateNotifierProvider<DumbbellIncrementNotifier, double>(
+  (ref) => DumbbellIncrementNotifier(),
+);
+
+class DumbbellIncrementNotifier extends StateNotifier<double> {
+  static const _key = 'dumbbell_increment';
+
+  DumbbellIncrementNotifier() : super(2.5) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) state = prefs.getDouble(_key) ?? 2.5;
+  }
+
+  Future<void> setIncrement(double v) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_key, v);
+    state = v;
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Convert kg value to display value + label depending on unit preference.

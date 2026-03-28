@@ -114,6 +114,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _wellnessLogged = true;
   Map<String, dynamic>? _todayWellness;
   WellnessRec? _wellnessRec;
+  EnergyState? _energyState;
 
   WorkoutInsight? _insight;
   List<Map<String, dynamic>> _bodyMetricsHistory = [];
@@ -380,6 +381,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _todayWellness = results[2] as Map<String, dynamic>?;
         _wellnessRec = evaluateWellness(_todayWellness);
         _insight = results[3] as WorkoutInsight?;
+        // Energy state loaded separately (cached 30 min via AppCache).
         _bodyMetricsHistory = metricsHistory;
         _showMeasurementReminder = showReminder;
         _weeklyWorkoutGoal = weeklyGoal;
@@ -393,6 +395,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (plannedTime != null) _startCountdown(plannedTime);
       _maybeShowWeeklySummary(weeklyGoal);
       _maybeShowDeloadSuggestion();
+      // Load energy state independently (cached 30 min — doesn't block main load).
+      AnalyticsService.getEnergyState().then((es) {
+        if (mounted) setState(() => _energyState = es);
+      }).catchError((_) {});
       }); // end withForceRefresh
     } catch (e) {
       if (mounted) {
@@ -769,6 +775,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
 
+                // ── Energy readiness card ─────────────────────────────────
+                if (_energyState != null) ...[
+                  const SizedBox(height: 16),
+                  _EnergyReadinessCard(state: _energyState!),
+                ],
+
                 // ── Measurement reminder ──────────────────────────────────
                 if (_showMeasurementReminder) ...[
                   const SizedBox(height: 16),
@@ -962,6 +974,91 @@ class _AchievementCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Energy Readiness Card ────────────────────────────────────────────────────
+
+class _EnergyReadinessCard extends StatelessWidget {
+  final EnergyState state;
+  const _EnergyReadinessCard({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final bucket = state.bucket;
+
+    // Colour: green for peak, amber for mid, red for depleted
+    final Color color;
+    final IconData icon;
+    if (bucket <= 2) {
+      color = const Color(0xFF30D158); // green
+      icon  = Icons.bolt_rounded;
+    } else if (bucket <= 4) {
+      color = const Color(0xFF30D158);
+      icon  = Icons.fitness_center_rounded;
+    } else if (bucket <= 6) {
+      color = const Color(0xFFFF9F0A); // amber
+      icon  = Icons.show_chart_rounded;
+    } else if (bucket <= 8) {
+      color = const Color(0xFFFF6B35); // orange
+      icon  = Icons.trending_down_rounded;
+    } else {
+      color = const Color(0xFFFF453A); // red
+      icon  = Icons.warning_amber_rounded;
+    }
+
+    final pct = state.reserve.toStringAsFixed(0);
+    final subtitle = switch (bucket) {
+      <= 2 => 'Отличное время для тяжёлой тренировки.',
+      <= 4 => 'Хорошее состояние — тренируйся в обычном режиме.',
+      <= 6 => 'Умеренная усталость — слушай тело, не перегружайся.',
+      <= 8 => 'Организм не восстановился — рассмотри лёгкую тренировку.',
+      _    => 'Критическая усталость — рекомендуется полный отдых.',
+    };
+
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.22),
+            blurRadius: 20,
+            spreadRadius: 0,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Готовность: ${state.label} ($pct%) · бакет $bucket/10',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

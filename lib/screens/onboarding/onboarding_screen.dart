@@ -6,6 +6,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/event_logger.dart';
@@ -29,6 +30,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String? _goal;
   DateTime _trainingStart = DateTime(DateTime.now().year - 1, DateTime.now().month);
   bool _loading = false;
+  double _dumbbellIncrement = 2.5;
+  bool _useKg = true;
 
   @override
   void dispose() {
@@ -98,6 +101,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         birthDate = '$birthYear-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       }
     }
+
+    await AppStorage.setUseKg(_useKg);
+    await AppStorage.setDumbbellIncrement(_dumbbellIncrement);
 
     await ProfileService.updateProfile({
       'gender': _gender,
@@ -259,6 +265,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     trainingStart: _trainingStart,
                     onChanged: (v) => setState(() => _trainingStart = v),
                   ),
+                  _Page4(
+                    useKg: _useKg,
+                    onUseKgChanged: (v) => setState(() => _useKg = v),
+                    dumbbellIncrement: _dumbbellIncrement,
+                    onIncrementChanged: (v) => setState(() => _dumbbellIncrement = v),
+                  ),
                 ],
               ),
             ),
@@ -266,7 +278,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               padding: const EdgeInsets.all(24),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(3, (i) {
+                children: List.generate(4, (i) {
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 4),
                     width: 8,
@@ -290,7 +302,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   onPressed: _loading
                       ? null
                       : () {
-                          if (_currentPage < 2) {
+                          if (_currentPage < 3) {
                             _pageController.nextPage(
                               duration: const Duration(milliseconds: 300),
                               curve: Curves.easeInOut,
@@ -299,7 +311,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             _finish();
                           }
                         },
-                  child: _loading && _currentPage == 2
+                  child: _loading && _currentPage == 3
                       ? const SizedBox(
                           width: 22,
                           height: 22,
@@ -308,7 +320,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : Text(_currentPage < 2 ? 'Далее' : 'Начать'),
+                      : Text(_currentPage < 3 ? 'Далее' : 'Начать'),
                 ),
               ),
             ),
@@ -752,4 +764,135 @@ class _RecommendationSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+class _Page4 extends StatelessWidget {
+  final bool useKg;
+  final ValueChanged<bool> onUseKgChanged;
+  final double dumbbellIncrement;
+  final ValueChanged<double> onIncrementChanged;
+
+  const _Page4({
+    required this.useKg,
+    required this.onUseKgChanged,
+    required this.dumbbellIncrement,
+    required this.onIncrementChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+          const Text(
+            'Настройки',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Настрой единицы и оборудование зала',
+            style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 32),
+
+          // Units
+          const Text('Единицы веса',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              ChoiceChip(
+                label: const Text('кг'),
+                selected: useKg,
+                onSelected: (_) => onUseKgChanged(true),
+              ),
+              const SizedBox(width: 10),
+              ChoiceChip(
+                label: const Text('фунты'),
+                selected: !useKg,
+                onSelected: (_) => onUseKgChanged(false),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Dumbbell increment
+          const Text('Шаг гантельного ряда',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          const SizedBox(height: 4),
+          const Text(
+            'Минимальный шаг между весами гантелей в твоём зале',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _dumbbellIncrementOptions(useKg).map((o) {
+              return ChoiceChip(
+                label: Text(o.label),
+                selected: (dumbbellIncrement - o.kg).abs() < 0.01,
+                onSelected: (_) => onIncrementChanged(o.kg),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: AppColors.accent),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Система будет предлагать именно этот шаг при рекомендации следующего веса для упражнений с гантелями.',
+                    style: TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Dumbbell increment options ───────────────────────────────────────────────
+
+class _IncrOpt {
+  final String label;
+  final double kg;
+  const _IncrOpt(this.label, this.kg);
+}
+
+List<_IncrOpt> _dumbbellIncrementOptions(bool useKg) {
+  if (useKg) {
+    return const [
+      _IncrOpt('0.5 кг', 0.5),
+      _IncrOpt('1 кг',   1.0),
+      _IncrOpt('2 кг',   2.0),
+      _IncrOpt('2.5 кг', 2.5),
+      _IncrOpt('5 кг',   5.0),
+    ];
+  }
+  return const [
+    _IncrOpt('1.25 lbs', 0.567),
+    _IncrOpt('2.5 lbs',  1.134),
+    _IncrOpt('5 lbs',    2.268),
+    _IncrOpt('10 lbs',   4.536),
+  ];
 }
