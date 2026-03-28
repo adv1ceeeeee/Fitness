@@ -1,7 +1,7 @@
 # SportWAI — Database Reference
 
 > **Для аналитиков.** Полное описание схемы PostgreSQL (Supabase).
-> Актуально на: 2026-03-19 · Последняя миграция: `043_feedback.sql`
+> Актуально на: 2026-03-28 · Последняя миграция: `049_revoke_anon_nickname_lookup.sql`
 
 ---
 

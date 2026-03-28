@@ -1105,6 +1105,9 @@ elapsedFormatted   → "MM:SS" или "H:MM:SS"
 | iOS виджеты | — | Требует нативный Swift/WidgetKit код |
 | Paywall (Pro-подписка) | — | Ожидает интеграции RuStore / Google Play Billing |
 | Верификация контактного email | EditProfileScreen | См. ниже — запланировано |
+| 3D-модель тела | BodyMetricsScreen | Нет файла body.glb + 3D-рендерер |
+
+Подробнее — см. [BACKLOG.md](BACKLOG.md).
 
 ---
 
