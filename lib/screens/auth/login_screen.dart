@@ -61,12 +61,16 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<String?> _emailFromNickname(String nickname) async {
-    final res = await Supabase.instance.client
-        .rpc('get_email_by_nickname', params: {'p_nickname': nickname});
-    if (res == null) return null;
-    if (res is String && res.isNotEmpty) return res;
-    return null;
+  /// Login by nickname via Edge Function — email never leaves the server.
+  Future<void> _loginByNickname(String nickname, String password) async {
+    final res = await Supabase.instance.client.functions.invoke(
+      'login-by-nickname',
+      body: {'nickname': nickname, 'password': password},
+    );
+    final data = res.data as Map<String, dynamic>;
+    final refreshToken = data['refresh_token'] as String?;
+    if (refreshToken == null) throw Exception('Ник не найден');
+    await Supabase.instance.client.auth.setSession(refreshToken);
   }
 
   Future<void> _login() async {
@@ -83,18 +87,11 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       try {
         final login = _loginController.text.trim();
-        String email = login;
-        if (!login.contains('@')) {
-          final lookup = await _emailFromNickname(login);
-          if (lookup == null) {
-            throw Exception('Ник не найден');
-          }
-          email = lookup;
+        if (login.contains('@')) {
+          await AuthService.signIn(login, _passwordController.text);
+        } else {
+          await _loginByNickname(login, _passwordController.text);
         }
-        await AuthService.signIn(
-          email,
-          _passwordController.text,
-        );
         await _clearAttempts();
         EventLogger.resetSession();
         EventLogger.userLoggedIn();
@@ -109,8 +106,6 @@ class _LoginScreenState extends State<LoginScreen> {
           userMsg = 'Слишком много неудачных попыток. Подождите $_lockoutMinutes минут.';
         } else if (msg.contains('Email not confirmed') || msg.contains('not confirmed')) {
           userMsg = 'Email не подтверждён. Проверьте почту и спам.';
-        } else if (msg.contains('Ник не найден')) {
-          userMsg = 'Ник не найден. Попробуйте email или зарегистрируйтесь.';
         } else {
           userMsg = 'Неверный логин или пароль. Попробуйте снова.';
         }
