@@ -99,26 +99,24 @@ class TrainingService {
     }
   }
 
+  /// Completes a session and persists kcal_total + volume_kg in one transaction.
+  /// Uses fn_complete_session RPC — replaces the old completeSession +
+  /// saveSessionKcal + saveSessionVolume three-call pattern.
   static Future<void> completeSession(
     String sessionId, {
     int? durationSeconds,
     String? notes,
     int? sessionRpe,
   }) async {
-    final safeDuration = durationSeconds != null && durationSeconds >= 0
-        ? durationSeconds
-        : null;
-    final safeRpe = sessionRpe?.clamp(1, 10);
-    final safeNotes = notes != null && notes.length > 1000
-        ? notes.substring(0, 1000)
-        : notes;
-
-    await _client.from('training_sessions').update({
-      'completed': true,
-      if (safeDuration != null) 'duration_seconds': safeDuration,
-      'notes': safeNotes,
-      if (safeRpe != null) 'session_rpe': safeRpe,
-    }).eq('id', sessionId);
+    await _client.rpc('fn_complete_session', params: {
+      'p_session_id': sessionId,
+      if (durationSeconds != null && durationSeconds >= 0)
+        'p_duration_seconds': durationSeconds,
+      'p_notes': notes != null && notes.length > 1000
+          ? notes.substring(0, 1000)
+          : notes,
+      if (sessionRpe != null) 'p_session_rpe': sessionRpe.clamp(1, 10),
+    });
   }
 
   /// Mark a planned session as skipped with a reason.
@@ -384,10 +382,9 @@ class TrainingService {
         .maybeSingle();
   }
 
-  /// Delete a session and all its sets.
+  /// Delete a session and all its sets atomically via fn_delete_session RPC.
   static Future<void> deleteSession(String sessionId) async {
-    await _client.from('sets').delete().eq('training_session_id', sessionId);
-    await _client.from('training_sessions').delete().eq('id', sessionId);
+    await _client.rpc('fn_delete_session', params: {'p_session_id': sessionId});
   }
 
   /// Returns the personal best weight (kg) for an exercise.

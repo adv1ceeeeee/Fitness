@@ -226,9 +226,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
           rpe: _sessionRpe!,
         );
       }
-      // Aggregate kcal and volume from individual sets and persist
-      await TrainingService.saveSessionKcal(widget.sessionId);
-      await TrainingService.saveSessionVolume(widget.sessionId);
+      // kcal_total and volume_kg are now computed inside fn_complete_session
       // Schedule inactivity reminder (fires in 3 days if no workout)
       NotificationService.scheduleInactivityReminder(daysLater: 3);
       // Clear global session state

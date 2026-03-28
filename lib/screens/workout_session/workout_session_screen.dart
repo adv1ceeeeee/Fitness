@@ -881,8 +881,6 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       durationSeconds: durationSeconds,
       setsCount: _sets.where((s) => s.completed).length,
     );
-    // Aggregate per-set kcal into session total (fire-and-forget, errors logged internally)
-    TrainingService.saveSessionKcal(widget.sessionId);
     // Invalidate cached stats so next screen open shows fresh numbers
     AnalyticsService.invalidateStatsCache();
     // Refresh weekly summary notification with updated stats (fire-and-forget)
