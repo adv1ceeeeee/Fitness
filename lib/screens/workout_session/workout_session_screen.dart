@@ -226,25 +226,18 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       if (_warmupMinutes > 0) _startPhaseTimer();
       if (_exercises.isNotEmpty) await _maybeRestoreDraft(_exercises[_currentExerciseIndex]);
 
-      // Log auto-progress suggestions shown to user
-      for (final exerciseId in autoProgress) {
-        EventLogger.autoProgressSuggestionShown(
-          exerciseId: exerciseId,
-          isStrong: true,
-        );
-      }
-      // Log single-session suggestions (suggestIncrease but not strongSuggest)
+      // Log RecSys increase suggestions shown to user
       for (final we in ex) {
-        if (!autoProgress.contains(we.exerciseId)) {
-          final top = _parseTopReps(we.repsRange);
-          final lastReps = lastSets[we.exerciseId]?['reps'] as int?;
-          final lastWeight = lastSets[we.exerciseId]?['weight'] as double?;
-          if (top != null && lastReps != null && lastReps >= top && lastWeight != null && lastWeight > 0) {
-            EventLogger.autoProgressSuggestionShown(
-              exerciseId: we.exerciseId,
-              isStrong: false,
-            );
-          }
+        final rec = evaluateProgression(
+          lastSets[we.exerciseId],
+          consecutiveFullReps: autoProgress.contains(we.exerciseId) ? 3 : 0,
+          topRepsInRange: _parseTopReps(we.repsRange),
+        );
+        if (rec != null && rec.direction == ProgressionDirection.increase) {
+          EventLogger.autoProgressSuggestionShown(
+            exerciseId: we.exerciseId,
+            isStrong: autoProgress.contains(we.exerciseId),
+          );
         }
       }
     }
@@ -324,6 +317,82 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final parts = range.split('-');
     final last = parts.last.trim().split(' ')[0];
     return int.tryParse(last);
+  }
+
+  Widget _buildProgressionChip({
+    required ProgressionRec progRec,
+    required double currentWeightKg,
+    required String exerciseId,
+    required bool useKg,
+    required String unit,
+  }) {
+    final (color, icon) = switch (progRec.direction) {
+      ProgressionDirection.increase => (AppColors.success, Icons.trending_up),
+      ProgressionDirection.maintain => (const Color(0xFFFF9F0A), Icons.trending_flat),
+      ProgressionDirection.decrease => (AppColors.error, Icons.trending_down),
+    };
+
+    final suggestedKg = progRec.suggestedWeightKg;
+    final isStrong = progRec.direction == ProgressionDirection.increase &&
+        _autoProgressSuggestions.contains(exerciseId);
+
+    void applyWeight() {
+      if (suggestedKg == null) return;
+      final displaySuggested = useKg ? suggestedKg : suggestedKg * 2.20462;
+      for (final c in _weightControllers) {
+        final cur = double.tryParse(c.text.replaceAll(',', '.'));
+        if (c.text.isEmpty || cur == currentWeightKg) {
+          c.text = displaySuggested.toStringAsFixed(
+              displaySuggested % 1 == 0 ? 0 : 1);
+        }
+      }
+      EventLogger.autoProgressAccepted(
+        exerciseId: exerciseId,
+        suggestedWeightKg: suggestedKg,
+        isStrong: isStrong,
+      );
+    }
+
+    final chip = Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: suggestedKg != null ? 0.12 : 0.08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              progRec.message,
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+                fontWeight: suggestedKg != null
+                    ? FontWeight.w600
+                    : FontWeight.normal,
+              ),
+            ),
+          ),
+          if (suggestedKg != null) ...[
+            const SizedBox(width: 6),
+            Text(
+              '→ ${(useKg ? suggestedKg : suggestedKg * 2.20462).toStringAsFixed(1)} $unit',
+              style: TextStyle(
+                  fontSize: 12, color: color, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (suggestedKg != null) {
+      return GestureDetector(onTap: applyWeight, child: chip);
+    }
+    return chip;
   }
 
   WorkoutExercise? get _currentExercise {
@@ -1177,17 +1246,12 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                         final dateShort = d.length >= 10
                             ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
                             : d;
-                        // Suggestion: if last reps >= top of range, suggest +2.5 kg
-                        final topReps = _parseTopReps(we.repsRange);
-                        final suggestIncrease = topReps != null && r >= topReps && w > 0;
-                        final strongSuggest = _autoProgressSuggestions.contains(we.exerciseId);
-                        final suggestWeight = useKg ? w + 2.5 : (w + 2.5) * 2.20462;
-                        // RecSys takes priority: suppress old increase chips when
-                        // RPE data says to maintain or decrease load.
-                        final progRec = evaluateProgression(_lastSets[we.exerciseId]);
-                        final recsysBlocks = progRec != null &&
-                            (progRec.direction == ProgressionDirection.maintain ||
-                             progRec.direction == ProgressionDirection.decrease);
+                        // ── Unified RecSys progression chip ──────────────
+                        final progRec = evaluateProgression(
+                          _lastSets[we.exerciseId],
+                          consecutiveFullReps: _autoProgressSuggestions.contains(we.exerciseId) ? 3 : 0,
+                          topRepsInRange: _parseTopReps(we.repsRange),
+                        );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1196,111 +1260,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                               style: const TextStyle(
                                   fontSize: 12, color: AppColors.accent),
                             ),
-                            if (strongSuggest && !recsysBlocks) ...[
-                              GestureDetector(
-                                onTap: () {
-                                  final suggestWeightKg = w + 2.5;
-                                  for (final c in _weightControllers) {
-                                    if (c.text.isEmpty || double.tryParse(c.text.replaceAll(',', '.')) == w) {
-                                      c.text = suggestWeightKg.toStringAsFixed(suggestWeightKg % 1 == 0 ? 0 : 1);
-                                    }
-                                  }
-                                  EventLogger.autoProgressAccepted(
-                                    exerciseId: we.exerciseId,
-                                    suggestedWeightKg: suggestWeightKg,
-                                    isStrong: true,
-                                  );
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.only(top: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.success.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.trending_up, size: 14, color: AppColors.success),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        'Пора увеличить вес! 3 подряд → ${suggestWeight.toStringAsFixed(1)} $unit',
-                                        style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w600),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ] else if (suggestIncrease && !recsysBlocks) ...[
-                              GestureDetector(
-                                onTap: () {
-                                  final suggestWeightKg = w + 2.5;
-                                  for (final c in _weightControllers) {
-                                    if (c.text.isEmpty || double.tryParse(c.text.replaceAll(',', '.')) == w) {
-                                      c.text = suggestWeightKg.toStringAsFixed(suggestWeightKg % 1 == 0 ? 0 : 1);
-                                    }
-                                  }
-                                  EventLogger.autoProgressAccepted(
-                                    exerciseId: we.exerciseId,
-                                    suggestedWeightKg: suggestWeightKg,
-                                    isStrong: false,
-                                  );
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.only(top: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.success.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.trending_up, size: 14, color: AppColors.success),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        'Попробуй +2.5 $unit → ${suggestWeight.toStringAsFixed(1)} $unit',
-                                        style: const TextStyle(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w500),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                            if (progRec != null) ...[
+                              _buildProgressionChip(
+                                progRec: progRec,
+                                currentWeightKg: w,
+                                exerciseId: we.exerciseId,
+                                useKg: useKg,
+                                unit: unit,
                               ),
                             ],
-                            // ── RecSys progression chip ───────────────────
-                            if (progRec != null) Builder(builder: (_) {
-                              // Skip increase if old chips already show it
-                              if (progRec.direction == ProgressionDirection.increase &&
-                                  (strongSuggest || suggestIncrease)) {
-                                return const SizedBox.shrink();
-                              }
-                              final (color, icon) = switch (progRec.direction) {
-                                ProgressionDirection.increase => (AppColors.success, Icons.trending_up),
-                                ProgressionDirection.maintain => (const Color(0xFFFF9F0A), Icons.trending_flat),
-                                ProgressionDirection.decrease => (AppColors.error, Icons.trending_down),
-                              };
-                              return Container(
-                                margin: const EdgeInsets.only(top: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: color.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(icon, size: 14, color: color),
-                                    const SizedBox(width: 5),
-                                    Flexible(
-                                      child: Text(
-                                        progRec.message,
-                                        style: TextStyle(fontSize: 12, color: color),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
                           ],
                         );
                       }),

@@ -90,5 +90,99 @@ void main() {
       });
       expect(rec!.direction, ProgressionDirection.increase);
     });
+
+    // ── consecutiveFullReps signal ────────────────────────────────────────────
+
+    test('increase: consecutiveFullReps >= 3 triggers strong signal', () {
+      final rec = evaluateProgression(
+        {'weight': 80.0, 'reps': 10, 'reps_target': 10},
+        consecutiveFullReps: 3,
+      );
+      expect(rec!.direction, ProgressionDirection.increase);
+      expect(rec.suggestedWeightKg, 82.5);
+      expect(rec.message, contains('3'));
+    });
+
+    test('increase: consecutiveFullReps=3 takes priority over RPE-based increase', () {
+      // both signals fire — consecutive should win (priority 3 vs 4/5)
+      final rec = evaluateProgression(
+        {
+          'weight': 80.0, 'reps': 10, 'reps_target': 10, 'rpe': 7,
+          'prev': {'rpe': 7, 'reps': 10, 'reps_target': 10},
+        },
+        consecutiveFullReps: 3,
+      );
+      expect(rec!.message, contains('3'));
+    });
+
+    test('consecutiveFullReps=2 does NOT trigger strong signal', () {
+      final rec = evaluateProgression(
+        {'weight': 80.0, 'reps': 10, 'reps_target': 10},
+        consecutiveFullReps: 2,
+      );
+      // Without RPE data there's nothing else to fire → null
+      expect(rec, isNull);
+    });
+
+    test('maintain takes priority over consecutiveFullReps=3', () {
+      final rec = evaluateProgression(
+        {'weight': 80.0, 'reps': 8, 'reps_target': 10},
+        consecutiveFullReps: 3,
+      );
+      expect(rec!.direction, ProgressionDirection.maintain);
+    });
+
+    // ── topRepsInRange (weak) signal ──────────────────────────────────────────
+
+    test('increase: reps >= topRepsInRange triggers weak signal', () {
+      final rec = evaluateProgression(
+        {'weight': 60.0, 'reps': 12},
+        topRepsInRange: 12,
+      );
+      expect(rec!.direction, ProgressionDirection.increase);
+      expect(rec.suggestedWeightKg, 62.5);
+    });
+
+    test('no increase when reps < topRepsInRange', () {
+      final rec = evaluateProgression(
+        {'weight': 60.0, 'reps': 10},
+        topRepsInRange: 12,
+      );
+      expect(rec, isNull);
+    });
+
+    test('maintain takes priority over topRepsInRange signal', () {
+      final rec = evaluateProgression(
+        {'weight': 60.0, 'reps': 10, 'reps_target': 12},
+        topRepsInRange: 12,
+      );
+      expect(rec!.direction, ProgressionDirection.maintain);
+    });
+
+    // ── suggestedWeightKg ─────────────────────────────────────────────────────
+
+    test('suggestedWeightKg is null for maintain', () {
+      final rec = evaluateProgression(
+        {'weight': 80.0, 'reps': 8, 'reps_target': 10},
+      );
+      expect(rec!.direction, ProgressionDirection.maintain);
+      expect(rec.suggestedWeightKg, isNull);
+    });
+
+    test('suggestedWeightKg is null for decrease', () {
+      final rec = evaluateProgression({
+        'weight': 80.0, 'reps': 10, 'rpe': 9,
+        'prev': {'rpe': 9, 'reps': 10},
+      });
+      expect(rec!.direction, ProgressionDirection.decrease);
+      expect(rec.suggestedWeightKg, isNull);
+    });
+
+    test('suggestedWeightKg = currentWeight + 2.5 for increase', () {
+      final rec = evaluateProgression(
+        {'weight': 100.0, 'reps': 12, 'rpe': 6, 'reps_target': 12},
+      );
+      expect(rec!.suggestedWeightKg, 102.5);
+    });
   });
 }

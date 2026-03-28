@@ -103,18 +103,39 @@ enum ProgressionDirection { increase, maintain, decrease }
 class ProgressionRec {
   final ProgressionDirection direction;
   final String message;
+  /// Concrete weight to suggest (kg). Non-null → chip is tappable.
+  final double? suggestedWeightKg;
 
-  const ProgressionRec({required this.direction, required this.message});
+  const ProgressionRec({
+    required this.direction,
+    required this.message,
+    this.suggestedWeightKg,
+  });
 }
 
-/// Evaluates whether the user should increase, maintain, or decrease weight
-/// for an exercise, based on the last 1–2 session results.
+/// Unified progression evaluator — single source of truth for weight advice.
 ///
-/// [last] — most recent session: {weight, reps, reps_target?, rpe?, prev?}
-/// [prev] — previous session (optional, nested inside last['prev'])
+/// Signal priority (highest → lowest):
+///   1. maintain  — reps < target last session
+///   2. decrease  — RPE ≥ 9 in both recent sessions
+///   3. increase  — ≥ 3 consecutive sessions with all reps completed
+///   4. increase  — RPE ≤ 7 both sessions + all reps hit
+///   5. increase  — RPE ≤ 6 last session + all reps hit
+///   6. increase  — reps ≥ top of reps range (weak signal, no RPE needed)
+///
+/// [last]               — most recent session map: {weight, reps,
+///                        reps_target?, rpe?, prev?}
+/// [consecutiveFullReps]— how many consecutive sessions all reps were
+///                        completed (from getConsecutiveFullRepsExercises).
+/// [topRepsInRange]     — upper bound of the exercise's reps_range config
+///                        (e.g. 12 for "8–12"). Used for the weak signal.
 ///
 /// Returns null when data is insufficient to make a recommendation.
-ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
+ProgressionRec? evaluateProgression(
+  Map<String, dynamic>? last, {
+  int consecutiveFullReps = 0,
+  int? topRepsInRange,
+}) {
   if (last == null) return null;
 
   final lastReps       = last['reps']        as int?;
@@ -124,12 +145,14 @@ ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
 
   if (lastWeight == null || lastWeight <= 0) return null;
 
-  final prev = last['prev'] as Map<String, dynamic>?;
-  final prevRpe        = prev?['rpe']         as int?;
-  final prevRepsTarget = prev?['reps_target'] as int?;
-  final prevReps       = prev?['reps']        as int?;
+  final suggestedWeight = lastWeight + 2.5;
 
-  // ── Maintain: не выполнил целевые повторения (приоритет над decrease) ────
+  final prev        = last['prev'] as Map<String, dynamic>?;
+  final prevRpe     = prev?['rpe']          as int?;
+  final prevRepsTarget = prev?['reps_target'] as int?;
+  final prevReps    = prev?['reps']          as int?;
+
+  // ── 1. Maintain: не выполнил целевые повторения ───────────────────────────
   if (lastRepsTarget != null && lastReps != null && lastReps < lastRepsTarget) {
     return ProgressionRec(
       direction: ProgressionDirection.maintain,
@@ -138,7 +161,7 @@ ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
     );
   }
 
-  // ── Decrease: RPE ≥ 9 в обеих сессиях ───────────────────────────────────
+  // ── 2. Decrease: RPE ≥ 9 в обеих сессиях ─────────────────────────────────
   if (lastRpe != null && lastRpe >= 9 &&
       prevRpe  != null && prevRpe  >= 9) {
     return const ProgressionRec(
@@ -147,12 +170,22 @@ ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
     );
   }
 
-  // ── Increase: RPE ≤ 7 в обеих сессиях + все повторения выполнены ─────────
   final lastHitTarget = lastRepsTarget == null ||
       (lastReps != null && lastReps >= lastRepsTarget);
   final prevHitTarget = prevRepsTarget == null ||
       (prevReps != null && prevReps >= prevRepsTarget);
 
+  // ── 3. Increase (strong): 3+ сессии подряд все повторения выполнены ──────
+  if (consecutiveFullReps >= 3 && lastHitTarget) {
+    return ProgressionRec(
+      direction: ProgressionDirection.increase,
+      message: '$consecutiveFullReps сессии подряд — '
+          'самое время попробовать +2.5 кг!',
+      suggestedWeightKg: suggestedWeight,
+    );
+  }
+
+  // ── 4. Increase: RPE ≤ 7 в обеих сессиях + все повторения выполнены ──────
   if (lastRpe != null && lastRpe <= 7 &&
       prevRpe  != null && prevRpe  <= 7 &&
       lastHitTarget && prevHitTarget) {
@@ -160,18 +193,31 @@ ProgressionRec? evaluateProgression(Map<String, dynamic>? last) {
       direction: ProgressionDirection.increase,
       message: 'RPE $lastRpe и $prevRpe/10 за последние 2 сессии — '
           'попробуй +2.5 кг сегодня.',
+      suggestedWeightKg: suggestedWeight,
     );
   }
 
-  // ── Increase (одна сессия): RPE ≤ 6 + все повторения выполнены ──────────
+  // ── 5. Increase: RPE ≤ 6 одна сессия + все повторения выполнены ──────────
   if (lastRpe != null && lastRpe <= 6 && lastHitTarget) {
     return ProgressionRec(
       direction: ProgressionDirection.increase,
-      message: 'RPE $lastRpe/10 в прошлый раз — хорошее время попробовать +2.5 кг.',
+      message: 'RPE $lastRpe/10 в прошлый раз — '
+          'хорошее время попробовать +2.5 кг.',
+      suggestedWeightKg: suggestedWeight,
     );
   }
 
-  return null; // данных недостаточно или всё нормально
+  // ── 6. Increase (weak): повторения ≥ верхней границы диапазона ───────────
+  if (topRepsInRange != null && lastReps != null &&
+      lastReps >= topRepsInRange && lastHitTarget) {
+    return ProgressionRec(
+      direction: ProgressionDirection.increase,
+      message: 'Выполнил $lastReps повт — попробуй +2.5 кг.',
+      suggestedWeightKg: suggestedWeight,
+    );
+  }
+
+  return null; // данных недостаточно или всё в норме
 }
 
 // ─── Muscle balance recommendation ────────────────────────────────────────────
