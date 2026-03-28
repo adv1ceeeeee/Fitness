@@ -75,9 +75,9 @@ Future<void> _initWindowForDesktop() async {
   await windowManager.ensureInitialized();
   await windowManager.waitUntilReadyToShow(
     const WindowOptions(
-      size: Size(393, 852),       // iPhone 14 logical pixels
-      minimumSize: Size(393, 852),
-      maximumSize: Size(393, 852),
+      size: Size(500, 850),
+      minimumSize: Size(500, 850),
+      maximumSize: Size(500, 850),
       center: true,
       title: 'Sportify',
       backgroundColor: Colors.transparent,
