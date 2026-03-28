@@ -3153,7 +3153,7 @@ class _InsightsSection extends StatelessWidget {
 // Existing widgets (unchanged)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class _AnimatedCounter extends StatelessWidget {
+class _AnimatedCounter extends StatefulWidget {
   final double value;
   final String Function(double) format;
   final TextStyle style;
@@ -3164,12 +3164,35 @@ class _AnimatedCounter extends StatelessWidget {
   });
 
   @override
+  State<_AnimatedCounter> createState() => _AnimatedCounterState();
+}
+
+class _AnimatedCounterState extends State<_AnimatedCounter> {
+  late double _begin;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start from current value so re-creation after tab switch shows
+    // the number instantly instead of re-animating from 0.
+    _begin = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedCounter old) {
+    super.didUpdateWidget(old);
+    // Animate from old value to new value when data actually changes.
+    _begin = old.value;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: value),
-      duration: const Duration(milliseconds: 800),
+      key: ValueKey(widget.value),
+      tween: Tween(begin: _begin, end: widget.value),
+      duration: const Duration(milliseconds: 600),
       curve: Curves.easeOut,
-      builder: (_, v, __) => Text(format(v), style: style),
+      builder: (_, v, __) => Text(widget.format(v), style: widget.style),
     );
   }
 }
