@@ -818,11 +818,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _ActionCard(
-                  icon: Icons.calendar_month_rounded,
-                  label: 'Календарь тренировок',
-                  onTap: () => context.push('/calendar'),
-                  fullWidth: true,
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActionCard(
+                        icon: Icons.calendar_month_rounded,
+                        label: 'Календарь тренировок',
+                        onTap: () => context.push('/calendar'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _ActionCard(
+                        icon: Icons.monitor_weight_rounded,
+                        label: 'Параметры тела',
+                        onTap: () => context.push('/body-metrics'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2396,13 +2409,11 @@ class _ActionCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  final bool fullWidth;
 
   const _ActionCard({
     required this.icon,
     required this.label,
     required this.onTap,
-    this.fullWidth = false,
   });
 
   @override
@@ -2415,22 +2426,7 @@ class _ActionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: fullWidth
-              ? Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(icon, size: 28, color: AppColors.accent),
-                    const SizedBox(width: 12),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
+          child: Column(
                   children: [
                     Icon(icon, size: 32, color: AppColors.accent),
                     const SizedBox(height: 12),
