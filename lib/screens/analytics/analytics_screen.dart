@@ -38,6 +38,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   int _workoutsThisWeek = 0;
   double _volumeThisWeek = 0;
   bool _loading = true;
+  bool _refreshing = false;
   bool _sharing = false;
 
   List<Map<String, dynamic>> _trackedExercises = [];
@@ -259,7 +260,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   }
 
   Future<void> _refreshFresh() async {
-    if (!mounted) return;
+    if (!mounted || _refreshing) return;
+    _refreshing = true;
     try {
       await AppCache.withForceRefresh(() async {
         final results = await Future.wait([
@@ -328,6 +330,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           ),
         );
       }
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -874,7 +878,11 @@ class _WorkoutsTab extends StatefulWidget {
   State<_WorkoutsTab> createState() => _WorkoutsTabState();
 }
 
-class _WorkoutsTabState extends State<_WorkoutsTab> {
+class _WorkoutsTabState extends State<_WorkoutsTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   _DateRange _range = _DateRange.month3;
 
   List<Map<String, dynamic>> get _filteredVolume {
@@ -940,6 +948,7 @@ class _WorkoutsTabState extends State<_WorkoutsTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return RefreshIndicator(
       onRefresh: widget.onRefresh,
       child: SingleChildScrollView(
@@ -1307,7 +1316,11 @@ class _BodyTab extends StatefulWidget {
   State<_BodyTab> createState() => _BodyTabState();
 }
 
-class _BodyTabState extends State<_BodyTab> {
+class _BodyTabState extends State<_BodyTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   _DateRange _range = _DateRange.month3;
   final _chartKey = GlobalKey();
   bool _sharing = false;
@@ -1393,6 +1406,7 @@ class _BodyTabState extends State<_BodyTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return RefreshIndicator(
       onRefresh: widget.onRefresh,
       child: SingleChildScrollView(
