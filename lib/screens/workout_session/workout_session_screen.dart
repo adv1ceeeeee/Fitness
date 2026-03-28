@@ -80,6 +80,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   bool _goToNextAfterRest = false;
   DateTime? _restStartedAt;
   DateTime? _pausedAt;
+  DateTime? _currentSetStartedAt; // when the current set began (rest ended)
   int _lastRestSeconds = 0;
   int? _lastCompletedSetIndex;
 
@@ -264,6 +265,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       c.dispose();
     }
     _lastCompletedSetIndex = null;
+    _currentSetStartedAt = DateTime.now().toUtc();
     _weightControllers = List.generate(
         we.sets, (i) => TextEditingController(text: i == 0 ? lastWeightText : '')..addListener(_saveDraft));
     _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps, repsTarget: defaultReps));
@@ -403,6 +405,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         : null;
 
     // Save to DB in background; show retry snackbar on failure
+    final setStartedAt = _currentSetStartedAt;
+    _currentSetStartedAt = null; // consumed
     final saved = await TrainingService.saveSet(
       widget.sessionId,
       we.id,
@@ -414,6 +418,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       restSeconds: restSecondsToSave,
       kcalEstimated: kcalEstimated,
       isWarmup: setData.isWarmup,
+      startedAt: setStartedAt,
     );
 
     if (!saved && mounted) {
@@ -602,6 +607,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         }
       }
     }
+    _currentSetStartedAt = DateTime.now().toUtc();
     setState(() => _resting = false);
     if (_goToNextAfterRest) _advanceExercise();
   }

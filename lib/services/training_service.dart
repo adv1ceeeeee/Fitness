@@ -162,6 +162,7 @@ class TrainingService {
     int? restSeconds,
     double? kcalEstimated,
     bool isWarmup = false,
+    DateTime? startedAt,
   }) async {
     try {
       await retryWithBackoff(() => _client.from('sets').insert({
@@ -174,6 +175,7 @@ class TrainingService {
             'completed': true,
             'is_warmup': isWarmup,
             'performed_at': DateTime.now().toUtc().toIso8601String(),
+            if (startedAt != null) 'started_at': startedAt.toIso8601String(),
             if (repsTarget != null) 'reps_target': repsTarget,
             if (restSeconds != null) 'rest_seconds': restSeconds,
             if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
@@ -189,6 +191,7 @@ class TrainingService {
         reps: reps,
         rpe: rpe,
         restSeconds: restSeconds,
+        startedAt: startedAt,
       );
       return false;
     }

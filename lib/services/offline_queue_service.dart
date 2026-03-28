@@ -15,6 +15,7 @@ class _PendingSet {
   final int? reps;
   final int? rpe;
   final int? restSeconds;
+  final DateTime? startedAt;
 
   const _PendingSet({
     required this.sessionId,
@@ -24,6 +25,7 @@ class _PendingSet {
     this.reps,
     this.rpe,
     this.restSeconds,
+    this.startedAt,
   });
 
   Map<String, dynamic> toJson() => {
@@ -34,6 +36,7 @@ class _PendingSet {
         'reps': reps,
         'rpe': rpe,
         'restSeconds': restSeconds,
+        if (startedAt != null) 'startedAt': startedAt!.toIso8601String(),
       };
 
   factory _PendingSet.fromJson(Map<String, dynamic> j) => _PendingSet(
@@ -44,6 +47,9 @@ class _PendingSet {
         reps: j['reps'] as int?,
         rpe: j['rpe'] as int?,
         restSeconds: j['restSeconds'] as int?,
+        startedAt: j['startedAt'] != null
+            ? DateTime.parse(j['startedAt'] as String)
+            : null,
       );
 }
 
@@ -72,6 +78,7 @@ class OfflineQueueService {
     int? reps,
     int? rpe,
     int? restSeconds,
+    DateTime? startedAt,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
@@ -83,6 +90,7 @@ class OfflineQueueService {
       reps: reps,
       rpe: rpe,
       restSeconds: restSeconds,
+      startedAt: startedAt,
     ).toJson()));
     await prefs.setStringList(_key, raw);
     if (kDebugMode) debugPrint('[OfflineQueue] enqueued set, queue size=${raw.length}');
@@ -108,6 +116,7 @@ class OfflineQueueService {
           reps: s.reps,
           rpe: s.rpe,
           restSeconds: s.restSeconds,
+          startedAt: s.startedAt,
         );
         if (!ok) remaining.add(item); // still failing — keep it
       } catch (e) {
