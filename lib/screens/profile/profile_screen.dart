@@ -764,7 +764,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     }),
                   ),
                   _SettingsRow(
-                    label: 'Шаг увеличения веса',
+                    label: 'Шаг гантельного ряда',
                     last: true,
                     trailing: Builder(builder: (context) {
                       final inc   = ref.watch(dumbbellIncrementProvider);

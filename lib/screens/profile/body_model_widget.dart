@@ -65,6 +65,13 @@ class _Body3DWidgetState extends State<Body3DWidget> {
   }
 
   Future<void> _init() async {
+    // WebView is only supported on Android/iOS.
+    // On Windows/Linux/macOS the platform implementation is absent — skip 3D.
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      if (mounted) setState(() { _modelMissing = true; _initializing = false; });
+      return;
+    }
+
     // 1. Check model asset exists
     ByteData? glbData;
     try {

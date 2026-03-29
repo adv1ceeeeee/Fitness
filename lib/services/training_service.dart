@@ -577,4 +577,115 @@ class TrainingService {
       return null;
     }
   }
+
+  /// Returns per-weekday training history for a workout program.
+  ///
+  /// Result map keys:
+  ///   'totalSessions' → int
+  ///   'firstDate'     → String? ('yyyy-MM-dd')
+  ///   'byDay'         → Map<int, Map> where key is 0-based weekday (0=Mon…6=Sun)
+  ///                     each value: {date, rpe, durationSeconds, exercises:[{name,setCount,maxWeight,lastReps}]}
+  static Future<Map<String, dynamic>> getWorkoutDayHistory(String workoutId) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {'totalSessions': 0, 'firstDate': null, 'byDay': <int, Map>{}};
+
+    // 1. Last 60 sessions for total count + first date + per-day grouping
+    final sessRes = await _client
+        .from('training_sessions')
+        .select('id, date, session_rpe, duration_seconds')
+        .eq('workout_id', workoutId)
+        .eq('user_id', userId)
+        .eq('completed', true)
+        .order('date', ascending: false)
+        .limit(60);
+
+    final sessions = (sessRes as List).cast<Map<String, dynamic>>();
+    if (sessions.isEmpty) {
+      return {'totalSessions': 0, 'firstDate': null, 'byDay': <int, Map>{}};
+    }
+
+    final totalSessions = sessions.length;
+    final firstDate = sessions.last['date'] as String?;
+
+    // 2. Keep most recent session per weekday (0=Mon…6=Sun)
+    final byDay = <int, Map<String, dynamic>>{};
+    for (final s in sessions) {
+      final dateStr = s['date'] as String?;
+      if (dateStr == null) continue;
+      final weekday = DateTime.parse(dateStr).weekday - 1; // 0=Mon…6=Sun
+      if (!byDay.containsKey(weekday)) {
+        byDay[weekday] = {
+          'id':              s['id'] as String,
+          'date':            dateStr,
+          'rpe':             s['session_rpe'] as int?,
+          'durationSeconds': s['duration_seconds'] as int?,
+          'exercises':       <Map<String, dynamic>>[],
+        };
+      }
+    }
+
+    // 3. Fetch working sets for the selected sessions
+    final sessionIds = byDay.values.map((d) => d['id'] as String).toList();
+    final setsRes = await _client
+        .from('sets')
+        .select('training_session_id, workout_exercise_id, weight, reps, set_number')
+        .inFilter('training_session_id', sessionIds)
+        .eq('completed', true)
+        .eq('is_warmup', false)
+        .not('reps', 'is', null)
+        .not('workout_exercise_id', 'is', null)
+        .order('set_number');
+
+    // 4. Resolve workout_exercise_id → exercise display name
+    final weIds = (setsRes as List)
+        .map((s) => s['workout_exercise_id'] as String)
+        .toSet()
+        .toList();
+
+    final weNames = <String, String>{};
+    if (weIds.isNotEmpty) {
+      final weRes = await _client
+          .from('workout_exercises')
+          .select('id, exercises(name, name_ru)')
+          .inFilter('id', weIds);
+      for (final row in weRes as List) {
+        final ex = row['exercises'] as Map<String, dynamic>?;
+        if (ex == null) continue;
+        final nameRu = ex['name_ru'] as String?;
+        final name   = ex['name']    as String? ?? '';
+        weNames[row['id'] as String] =
+            (nameRu != null && nameRu.isNotEmpty) ? nameRu : name;
+      }
+    }
+
+    // 5. Aggregate sets per session: {weId → {name, setCount, maxWeight, lastReps}}
+    //    Preserve exercise order (by min set_number encountered first).
+    final setsBySess = <String, Map<String, Map<String, dynamic>>>{};
+    for (final s in setsRes as List) {
+      final sessId = s['training_session_id'] as String;
+      final weId   = s['workout_exercise_id'] as String;
+      setsBySess.putIfAbsent(sessId, () => {});
+      setsBySess[sessId]!.putIfAbsent(weId, () => {
+        'name':      weNames[weId] ?? weId,
+        'setCount':  0,
+        'maxWeight': 0.0,
+        'lastReps':  0,
+      });
+      final agg = setsBySess[sessId]![weId]!;
+      agg['setCount'] = (agg['setCount'] as int) + 1;
+      final w = (s['weight'] as num?)?.toDouble() ?? 0.0;
+      if (w > (agg['maxWeight'] as double)) {
+        agg['maxWeight'] = w;
+        agg['lastReps']  = (s['reps'] as num?)?.toInt() ?? 0;
+      }
+    }
+
+    for (final entry in byDay.entries) {
+      final sessId = entry.value['id'] as String;
+      entry.value['exercises'] =
+          setsBySess[sessId]?.values.toList() ?? <Map<String, dynamic>>[];
+    }
+
+    return {'totalSessions': totalSessions, 'firstDate': firstDate, 'byDay': byDay};
+  }
 }

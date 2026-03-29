@@ -1139,6 +1139,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                         onTap: _deleteMode
                             ? () => _toggleSelect(sorted[i].id)
                             : () => widget.onWorkoutTap(sorted[i]),
+                        onLongPress: () => _showWorkoutHistory(context, sorted[i]),
                         onToggleHide: () => _toggleHidden(sorted[i].id),
                         onDelete: () => _confirmDelete(sorted[i]),
                         onCopy: () => _duplicateWorkout(sorted[i]),
@@ -1151,6 +1152,15 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showWorkoutHistory(BuildContext context, Workout workout) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _WorkoutHistorySheet(workout: workout),
     );
   }
 }
@@ -1166,6 +1176,7 @@ class _SwipeableCard extends StatefulWidget {
   final VoidCallback onOpen;
   final VoidCallback onClose;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final VoidCallback onToggleHide;
   final VoidCallback onDelete;
   final VoidCallback onCopy;
@@ -1180,6 +1191,7 @@ class _SwipeableCard extends StatefulWidget {
     required this.onOpen,
     required this.onClose,
     required this.onTap,
+    required this.onLongPress,
     required this.onToggleHide,
     required this.onDelete,
     required this.onCopy,
@@ -1290,72 +1302,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
                               duration: const Duration(milliseconds: 200));
                           widget.onClose();
                         }
-                        showModalBottomSheet(
-                          context: context,
-                          backgroundColor: AppColors.card,
-                          shape: const RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.vertical(top: Radius.circular(20)),
-                          ),
-                          builder: (_) => SafeArea(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ListTile(
-                                  leading: Icon(
-                                    widget.isHidden
-                                        ? Icons.visibility
-                                        : Icons.visibility_off,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                  title: Text(
-                                    widget.isHidden ? 'Показать' : 'Скрыть',
-                                    style: const TextStyle(
-                                        color: AppColors.textPrimary),
-                                  ),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    widget.onToggleHide();
-                                  },
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.archive_outlined,
-                                      color: Color(0xFFFF9500)),
-                                  title: const Text('В архив',
-                                      style: TextStyle(
-                                          color: AppColors.textPrimary)),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    widget.onArchive();
-                                  },
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.copy_rounded,
-                                      color: AppColors.accent),
-                                  title: const Text('Копировать',
-                                      style: TextStyle(
-                                          color: AppColors.textPrimary)),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    widget.onCopy();
-                                  },
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.delete_outline,
-                                      color: AppColors.error),
-                                  title: const Text('Удалить',
-                                      style:
-                                          TextStyle(color: AppColors.error)),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    widget.onDelete();
-                                  },
-                                ),
-                                const SizedBox(height: 8),
-                              ],
-                            ),
-                          ),
-                        );
+                        widget.onLongPress();
                       },
                       onHorizontalDragUpdate: widget.inDeleteMode ? null : _onDragUpdate,
                       onHorizontalDragEnd: widget.inDeleteMode ? null : _onDragEnd,
@@ -1739,5 +1686,347 @@ class _InactiveWorkoutCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─── Workout History Sheet ────────────────────────────────────────────────────
+
+class _WorkoutHistorySheet extends StatefulWidget {
+  final Workout workout;
+  const _WorkoutHistorySheet({required this.workout});
+
+  @override
+  State<_WorkoutHistorySheet> createState() => _WorkoutHistorySheetState();
+}
+
+class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
+  bool _loading = true;
+  int _totalSessions = 0;
+  String? _firstDate;
+  Map<int, Map<String, dynamic>> _byDay = {};
+
+  static const _dayNames = [
+    'Понедельник', 'Вторник', 'Среда',
+    'Четверг', 'Пятница', 'Суббота', 'Воскресенье',
+  ];
+  static const _monthNames = [
+    '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await TrainingService.getWorkoutDayHistory(widget.workout.id);
+      if (!mounted) return;
+      setState(() {
+        _totalSessions = data['totalSessions'] as int;
+        _firstDate     = data['firstDate'] as String?;
+        _byDay         = Map<int, Map<String, dynamic>>.from(
+          (data['byDay'] as Map).map((k, v) =>
+              MapEntry(k as int, Map<String, dynamic>.from(v as Map))),
+        );
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<int> get _activeDays {
+    final scheduled = widget.workout.days.toSet();
+    return _byDay.keys
+        .where((d) => scheduled.isEmpty || scheduled.contains(d))
+        .toList()
+      ..sort();
+  }
+
+  String _fmtDate(String isoDate) {
+    final d = DateTime.tryParse(isoDate);
+    if (d == null) return isoDate;
+    return '${d.day} ${_monthNames[d.month]}';
+  }
+
+  String _startedLabel() {
+    if (_firstDate == null) return '';
+    final d = DateTime.tryParse(_firstDate!);
+    if (d == null) return '';
+    final days = DateTime.now().difference(d).inDays;
+    if (days == 0) return 'Начато сегодня';
+    if (days < 7)  return 'Начато $days дн. назад';
+    final weeks = days ~/ 7;
+    return 'Начато $weeks нед. назад';
+  }
+
+  double get _progressFraction {
+    final daysPerWeek = widget.workout.days.length.clamp(1, 7);
+    return _totalSessions / (8 * daysPerWeek);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, scrollCtrl) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.workout.name,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (!_loading)
+                    Text(
+                      '$_totalSessions трен.',
+                      style: const TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            if (!_loading) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Stack(children: [
+                        Container(height: 6, color: AppColors.surface),
+                        FractionallySizedBox(
+                          widthFactor: _progressFraction.clamp(0.0, 1.0),
+                          child: Container(
+                            height: 6,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              gradient: LinearGradient(
+                                colors: _progressFraction >= 1.0
+                                    ? [AppColors.success, const Color(0xFF00D084)]
+                                    : [AppColors.accent,
+                                       AppColors.accent.withValues(alpha: 0.7)],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          _startedLabel(),
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 12),
+                        ),
+                        const Spacer(),
+                        _progressFraction >= 1.0
+                            ? const Text('Цель выполнена',
+                                style: TextStyle(
+                                    color: AppColors.success,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600))
+                            : Text(
+                                '${(_progressFraction * 100).round()}% от 8 недель',
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary, fontSize: 12)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: AppColors.surface, height: 24),
+            ],
+
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _activeDays.isEmpty
+                      ? const Center(
+                          child: Text('Тренировок ещё не было',
+                              style: TextStyle(color: AppColors.textSecondary)))
+                      : ListView.separated(
+                          controller: scrollCtrl,
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                          itemCount: _activeDays.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (_, i) {
+                            final day  = _activeDays[i];
+                            final info = _byDay[day]!;
+                            return _DayPanel(
+                              dayName:         _dayNames[day],
+                              sessionDate:     _fmtDate(info['date'] as String),
+                              rpe:             info['rpe'] as int?,
+                              durationSeconds: info['durationSeconds'] as int?,
+                              exercises: (info['exercises'] as List)
+                                  .cast<Map<String, dynamic>>(),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Day Panel ────────────────────────────────────────────────────────────────
+
+class _DayPanel extends StatelessWidget {
+  final String dayName;
+  final String sessionDate;
+  final int? rpe;
+  final int? durationSeconds;
+  final List<Map<String, dynamic>> exercises;
+
+  const _DayPanel({
+    required this.dayName,
+    required this.sessionDate,
+    required this.rpe,
+    required this.durationSeconds,
+    required this.exercises,
+  });
+
+  String _fmtDuration(int s) {
+    final m = s ~/ 60;
+    return m < 60 ? '$m мин' : '${m ~/ 60} ч ${m % 60} мин';
+  }
+
+  Color _rpeColor(int rpe) {
+    if (rpe <= 5) return AppColors.success;
+    if (rpe <= 7) return AppColors.warning;
+    return AppColors.error;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(dayName,
+                  style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700)),
+              const Spacer(),
+              Text(sessionDate,
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 12)),
+              if (durationSeconds != null && durationSeconds! > 0) ...[
+                const SizedBox(width: 8),
+                Text(_fmtDuration(durationSeconds!),
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 12)),
+              ],
+              if (rpe != null) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _rpeColor(rpe!).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: _rpeColor(rpe!).withValues(alpha: 0.4),
+                        width: 1),
+                  ),
+                  child: Text('RPE $rpe',
+                      style: TextStyle(
+                          color: _rpeColor(rpe!),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ],
+          ),
+          if (exercises.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Divider(color: AppColors.card, height: 1),
+            const SizedBox(height: 8),
+            for (final ex in exercises)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(ex['name'] as String? ?? '—',
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 13),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _exerciseStr(ex),
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('Нет данных о подходах',
+                  style: TextStyle(
+                      color: AppColors.textSecondary.withValues(alpha: 0.6),
+                      fontSize: 12)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _exerciseStr(Map<String, dynamic> ex) {
+    final sets   = ex['setCount']  as int;
+    final reps   = ex['lastReps']  as int;
+    final weight = ex['maxWeight'] as double;
+    final wStr   = weight > 0
+        ? '  ${weight % 1 == 0 ? weight.toInt() : weight} кг'
+        : '';
+    return '$sets × $reps$wStr';
   }
 }
