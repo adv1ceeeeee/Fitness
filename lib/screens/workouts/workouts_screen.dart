@@ -791,8 +791,10 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
               if (sorted.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(children: [
                       const Expanded(
                         child: Text(
                           'Действующие программы',
@@ -857,6 +859,15 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                                 size: 18, color: AppColors.textSecondary),
                           ),
                         ),
+                      ]),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Удерживайте программу, чтобы увидеть историю тренировок',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
