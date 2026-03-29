@@ -25,6 +25,7 @@ import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
 import 'package:sportwai/services/recsys_service.dart';
+import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/data/standard_programs.dart';
@@ -112,8 +113,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Workout? _overrideWorkout; // user-selected program override for "Начать"
   bool _loadingWorkout = true;
   bool _wellnessLogged = true;
-  Map<String, dynamic>? _todayWellness;
-  WellnessRec? _wellnessRec;
+  // RecSys fields — always derived from the same UserState snapshot so they
+  // can never contradict each other.  See UserStateService.computeUserState().
+  WellnessRec? _wellnessRec;   // null = no issues / dismissed by user
   EnergyState? _energyState;
 
   WorkoutInsight? _insight;
@@ -333,18 +335,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final weeklyGoal = prefs.getInt('weekly_workout_goal') ?? 0;
 
       final results = await Future.wait([
-        ProfileService.getProfile(),
-        TrainingService.getTodayWorkout(),
-        WellnessService.getTodayLog(),
-        AnalyticsService.getLastWorkoutInsight(),
-        BodyMetricsService.getHistory(),
-        AnalyticsService.getWorkoutsThisWeek(),
-        TrainingService.getDaysSinceLastWorkout(),
-        AnalyticsService.getCurrentStreak(),
+        ProfileService.getProfile(),           // [0]
+        TrainingService.getTodayWorkout(),     // [1]
+        AnalyticsService.getLastWorkoutInsight(), // [2]
+        BodyMetricsService.getHistory(),       // [3]
+        AnalyticsService.getWorkoutsThisWeek(), // [4]
+        TrainingService.getDaysSinceLastWorkout(), // [5]
+        AnalyticsService.getCurrentStreak(),   // [6]
+        UserStateService.computeUserState(),   // [7] unified RecSys — replaces
+                                               //     getTodayLog + getEnergyState
       ]).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
-      final metricsHistory = (results[4] as List).cast<Map<String, dynamic>>();
+      final metricsHistory = (results[3] as List).cast<Map<String, dynamic>>();
       bool showReminder = false;
       if (metricsHistory.isEmpty) {
         showReminder = true;
@@ -358,8 +361,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
         }
       }
-      final daysSince = results[6] as int;
-      final streak = results[7] as int;
+      final daysSince = results[5] as int;
+      final streak = results[6] as int;
+      final userState = results[7] as UserState;
       // Check if today is a rest day in any active workout
       final todayAppDay = DateTime.now().weekday - 1; // 0=Mon…6=Sun
       final allWorkouts = await WorkoutService.getMyWorkouts();
@@ -377,15 +381,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _profile = results[0] as Profile?;
         _todayWorkout = results[1] as Workout?;
         _loadingWorkout = false;
-        _wellnessLogged = results[2] != null;
-        _todayWellness = results[2] as Map<String, dynamic>?;
-        _wellnessRec = evaluateWellness(_todayWellness);
-        _insight = results[3] as WorkoutInsight?;
-        // Energy state loaded separately (cached 30 min via AppCache).
+        // RecSys: all recommendation fields come from the same UserState
+        // snapshot → energy and wellness cards are guaranteed consistent.
+        _energyState = userState.energyState;
+        _wellnessRec = userState.wellnessRec;
+        _wellnessLogged = userState.todayWellness != null;
+        _insight = results[2] as WorkoutInsight?;
         _bodyMetricsHistory = metricsHistory;
         _showMeasurementReminder = showReminder;
         _weeklyWorkoutGoal = weeklyGoal;
-        _workoutsThisWeek = results[5] as int;
+        _workoutsThisWeek = results[4] as int;
         _daysSinceLastWorkout = daysSince;
         _nextScheduledWorkout = nextWorkout;
         _isRestDay = isRestDay;
@@ -395,10 +400,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (plannedTime != null) _startCountdown(plannedTime);
       _maybeShowWeeklySummary(weeklyGoal);
       _maybeShowDeloadSuggestion();
-      // Load energy state independently (cached 30 min — doesn't block main load).
-      AnalyticsService.getEnergyState().then((es) {
-        if (mounted) setState(() => _energyState = es);
-      }).catchError((_) {});
       }); // end withForceRefresh
     } catch (e) {
       if (mounted) {
@@ -759,11 +760,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _WellnessCard(
                     onSaved: () async {
                       final log = await WellnessService.getTodayLog();
+                      if (!mounted) return;
+                      // Optimistic local update for instant feedback.
+                      setState(() {
+                        _wellnessLogged = true;
+                        _wellnessRec = evaluateWellness(log);
+                        _energyState = null; // hide stale energy until refreshed
+                      });
+                      // Invalidate RecSys cache so next navigation shows
+                      // consistent energy + wellness derived from the same log.
+                      await UserStateService.invalidate();
+                      // Re-fetch UserState so energy card updates immediately.
+                      final userState = await UserStateService.computeUserState();
                       if (mounted) {
                         setState(() {
-                          _wellnessLogged = true;
-                          _todayWellness = log;
-                          _wellnessRec = evaluateWellness(log);
+                          _energyState = userState.energyState;
+                          _wellnessRec = userState.wellnessRec;
                         });
                       }
                     },

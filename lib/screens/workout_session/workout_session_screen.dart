@@ -20,9 +20,8 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
-import 'package:sportwai/services/wellness_service.dart';
+import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/workout_service.dart';
-import 'package:sportwai/services/profile_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:confetti/confetti.dart';
 
@@ -183,14 +182,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final pbFutures = ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
     final lastSetsFuture = AnalyticsService.getLastSetsForExercises(exerciseIds);
     final userMetricsFuture = BodyMetricsService.getLatest();
-    final wellnessFuture = WellnessService.getTodayLog();
-    final energyStateFuture = AnalyticsService.getEnergyState();
+    final userStateFuture = UserStateService.computeUserState();
     final best1RMFuture = AnalyticsService.getPersonalBest1RMForExercises(exerciseIds);
     final pbValues = await Future.wait(pbFutures);
     final lastSets = await lastSetsFuture;
     final userMetrics = await userMetricsFuture;
-    final todayWellness = await wellnessFuture;
-    final energyState = await energyStateFuture;
+    final userState = await userStateFuture;
+    final todayWellness = userState.todayWellness;
+    final energyState = userState.energyState;
     final personalBests1RM = await best1RMFuture;
 
     // Build topReps map for auto-progress check
@@ -235,6 +234,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _todayWellness = todayWellness;
         _sessionEnergyState = energyState;
         _sessionEnergyEnd = energyState.reserve;
+        _userGoal = userState.userGoal;
+        _rpeCalibrationOffset = userState.rpeCalibrationOffset;
         _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
         _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
         _warmupMinutes = warmupMins;
@@ -257,16 +258,6 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       Future.wait(ex.map((e) => AnalyticsService.getAvgRestSeconds(e.exerciseId)
           .then((v) { if (v != null && mounted) setState(() => _avgRestByExercise[e.exerciseId] = v); })
           .catchError((_) {}))).ignore();
-
-      // Load user goal (non-blocking — defaults to null = 'general')
-      ProfileService.getProfile().then((p) {
-        if (mounted) setState(() => _userGoal = p?.goal);
-      }).catchError((_) {});
-
-      // Load RPE calibration offset (non-blocking)
-      AnalyticsService.getRpeCalibrationOffset().then((offset) {
-        if (mounted) setState(() => _rpeCalibrationOffset = offset);
-      }).catchError((_) {});
 
       // Log RecSys increase suggestions shown to user
       for (final we in ex) {

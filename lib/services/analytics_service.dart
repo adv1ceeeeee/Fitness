@@ -60,6 +60,7 @@ class AnalyticsService {
       AppCache.invalidatePrefix('1rm:$userId'),
       AppCache.invalidatePrefix('muscle_trend:$userId'),
       AppCache.invalidatePrefix('inter_session_days:$userId'),
+      AppCache.invalidatePrefix('user_state:$userId'),
     ]);
     statsVersion.value++;
   }

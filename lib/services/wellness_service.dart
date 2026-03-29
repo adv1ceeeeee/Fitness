@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class WellnessService {
@@ -33,6 +34,9 @@ class WellnessService {
       },
       onConflict: 'user_id,date',
     );
+    // Wellness affects EnergyState and WellnessRec — bust unified UserState cache.
+    await AppCache.invalidatePrefix('user_state:$userId');
+    await AppCache.invalidatePrefix('energy_state:$userId');
   }
 
   static Future<Map<String, dynamic>?> getTodayLog() async {

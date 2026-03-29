@@ -228,7 +228,7 @@ class TrainingService {
       String sessionId) async {
     final res = await _client
         .from('sets')
-        .select('*, workout_exercises(order, reps_range, sets, exercises(name))')
+        .select('*, workout_exercises(order, reps_range, sets, exercises(name, name_ru, category))')
         .eq('training_session_id', sessionId)
         .order('set_number');
     return (res as List).cast<Map<String, dynamic>>();
@@ -241,12 +241,14 @@ class TrainingService {
     int? reps,
     int? rpe,
     bool? isWarmup,
+    double? kcalEstimated,
   }) async {
     await _client.from('sets').update({
       'weight': weight,
       'reps': reps,
       'rpe': rpe,
       if (isWarmup != null) 'is_warmup': isWarmup,
+      if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
     }).eq('id', setId);
   }
 
