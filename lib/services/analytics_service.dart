@@ -2333,7 +2333,34 @@ class AnalyticsService {
       key: 'energy_state:$userId',
       ttl: const Duration(minutes: 30),
       fetch: () async {
-        // 1. Last completed session with energy checkpoint.
+        final now       = DateTime.now();
+        final todayStr  = now.toIso8601String().split('T')[0];
+
+        // 1. Today's subjective energy from wellness log (most reliable signal).
+        // Used as an upper cap on the training-load model's computed reserve so
+        // that "Готовность: Пик" never shows when the user logged low energy.
+        int? todayEnergy;
+        try {
+          final wellRows = await _client
+              .from('wellness_logs')
+              .select('energy')
+              .eq('user_id', userId)
+              .eq('date', todayStr)
+              .limit(1);
+          if ((wellRows as List).isNotEmpty) {
+            todayEnergy = wellRows.first['energy'] as int?;
+          }
+        } catch (_) {}
+
+        // Helper: apply the subjective energy cap so the two cards agree.
+        // wellness energy 1–10  →  max reserve 10–100 %.
+        EnergyState applyWellnessCap(EnergyState state) {
+          if (todayEnergy == null) return state;
+          final cap = (todayEnergy * 10.0).clamp(0.0, 100.0);
+          return state.reserve > cap ? EnergyState(reserve: cap) : state;
+        }
+
+        // 2. Last completed session with energy checkpoint.
         final sessions = await _client
             .from('training_sessions')
             .select('id, date, session_rpe, duration_seconds, energy_end')
@@ -2342,23 +2369,32 @@ class AnalyticsService {
             .order('date', ascending: false)
             .limit(1);
 
-        if (sessions.isEmpty) return const EnergyState(reserve: 100);
+        if (sessions.isEmpty) {
+          // No sessions at all — fall back to subjective energy or default.
+          if (todayEnergy != null) {
+            return EnergyState(reserve: (todayEnergy * 10.0).clamp(0.0, 100.0));
+          }
+          return const EnergyState(reserve: 100);
+        }
 
-        final last         = sessions.first;
+        final last          = (sessions as List).first;
         final lastEnergyEnd = (last['energy_end'] as num?)?.toDouble();
         final lastRpe       = last['session_rpe'] as int?;
         final lastDateStr   = last['date'] as String?;
 
-        // If no energy_end checkpoint yet (pre-feature sessions), start fresh.
+        // If no energy_end checkpoint yet (pre-feature sessions), use wellness
+        // energy as the estimate rather than an optimistic 100 %.
         if (lastEnergyEnd == null || lastDateStr == null) {
+          if (todayEnergy != null) {
+            return EnergyState(reserve: (todayEnergy * 10.0).clamp(0.0, 100.0));
+          }
           return const EnergyState(reserve: 100);
         }
 
         final lastDate = DateTime.parse(lastDateStr);
-        final now      = DateTime.now();
         final hours    = now.difference(lastDate).inMinutes / 60.0;
 
-        // 2. Training experience from profile (months since training_start_date).
+        // 3. Training experience from profile (months since training_start_date).
         int trainingMonths = 12; // fallback: intermediate
         try {
           final profile = await _client
@@ -2372,7 +2408,7 @@ class AnalyticsService {
           }
         } catch (_) {}
 
-        // 3. Worst wellness log since last session (captures recovery quality).
+        // 4. Worst wellness log since last session (captures recovery quality).
         Map<String, dynamic>? worstWellness;
         try {
           final logs = await _client
@@ -2382,11 +2418,10 @@ class AnalyticsService {
               .gte('date', lastDateStr)
               .order('date', ascending: false);
 
-          if (logs.isNotEmpty) {
+          if ((logs as List).isNotEmpty) {
             // Pick the row with the worst composite score (lowest sleep,
             // highest stress, lowest energy).
-            worstWellness = (logs as List<dynamic>).cast<Map<String, dynamic>>()
-                .reduce((a, b) {
+            worstWellness = logs.cast<Map<String, dynamic>>().reduce((a, b) {
               final scoreA = _wellnessScore(a);
               final scoreB = _wellnessScore(b);
               return scoreA <= scoreB ? a : b;
@@ -2394,13 +2429,17 @@ class AnalyticsService {
           }
         } catch (_) {}
 
-        return computeEnergyStart(
-          lastEnergyEnd:    lastEnergyEnd,
-          hoursSinceLast:   hours,
-          lastSessionRpe:   lastRpe,
-          trainingMonths:   trainingMonths,
+        final computed = computeEnergyStart(
+          lastEnergyEnd:     lastEnergyEnd,
+          hoursSinceLast:    hours,
+          lastSessionRpe:    lastRpe,
+          trainingMonths:    trainingMonths,
           wellnessSinceLast: worstWellness,
         );
+
+        // Cap by today's subjective energy so the EnergyReadinessCard and
+        // WellnessRecBanner always agree on readiness level.
+        return applyWellnessCap(computed);
       },
       encode: (s) => '${s.reserve}',
       decode: (raw) => raw == null
