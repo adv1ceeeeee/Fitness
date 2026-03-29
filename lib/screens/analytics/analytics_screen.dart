@@ -1192,8 +1192,10 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
                         ? Container(
                             height: 80,
                             alignment: Alignment.center,
-                            child: const Text('Нет данных',
-                                style: TextStyle(color: AppColors.textSecondary)),
+                            child: const Text(
+                              'Нет данных за выбранный период',
+                              style: TextStyle(color: AppColors.textSecondary),
+                            ),
                           )
                         : _ProgressChart(
                             data: _filteredExerciseProgress,
@@ -3333,9 +3335,9 @@ class _InsightsSection extends StatelessWidget {
         ),
         child: const Center(
           child: Text(
-            'Завершите несколько тренировок,\nчтобы получить персональные инсайты',
+            'Нужно от 5 тренировок,\nчтобы появились персональные инсайты',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(color: AppColors.textSecondary, height: 1.4),
           ),
         ),
       );
@@ -4491,8 +4493,11 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
             color: AppColors.card, borderRadius: BorderRadius.circular(16)),
-        child: const Text('Нет данных за последние 30 дней',
-            style: TextStyle(color: AppColors.textSecondary)),
+        child: const Text(
+          'Завершите хотя бы 1 тренировку,\nчтобы увидеть баланс мышечных групп',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+        ),
       );
     }
 

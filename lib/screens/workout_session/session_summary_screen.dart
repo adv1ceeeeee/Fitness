@@ -499,15 +499,29 @@ class _SessionRpeCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text(
-                'Сложность тренировки',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Сложность тренировки',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Влияет на следующие рекомендации',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
               if (selected != null)
                 Text(
                   _labels[selected] ?? '',

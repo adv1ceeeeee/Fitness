@@ -765,6 +765,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   _SettingsRow(
                     label: 'Шаг гантельного ряда',
+                    subtitle: 'Минимальный шаг при добавлении веса',
                     last: true,
                     trailing: Builder(builder: (context) {
                       final inc   = ref.watch(dumbbellIncrementProvider);
@@ -1441,12 +1442,14 @@ class _StatCard extends StatelessWidget {
 
 class _SettingsRow extends StatelessWidget {
   final String label;
+  final String? subtitle;
   final Widget trailing;
   final bool last;
 
   const _SettingsRow({
     required this.label,
     required this.trailing,
+    this.subtitle,
     this.last = false,
   });
 
@@ -1455,21 +1458,43 @@ class _SettingsRow extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SizedBox(
-            height: 56,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(label,
-                      style: const TextStyle(color: AppColors.textPrimary)),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: subtitle != null ? 10 : 0),
+          child: subtitle != null
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(label,
+                              style: const TextStyle(color: AppColors.textPrimary)),
+                          const SizedBox(height: 2),
+                          Text(subtitle!,
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    trailing,
+                  ],
+                )
+              : SizedBox(
+                  height: 56,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(label,
+                            style: const TextStyle(color: AppColors.textPrimary)),
+                      ),
+                      const SizedBox(width: 8),
+                      trailing,
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                trailing,
-              ],
-            ),
-          ),
         ),
         if (!last)
           const Divider(height: 1, indent: 16, endIndent: 16),

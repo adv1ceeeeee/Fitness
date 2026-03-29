@@ -862,7 +862,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                       ]),
                       const SizedBox(height: 4),
                       const Text(
-                        'Удерживайте программу, чтобы увидеть историю тренировок',
+                        'Удерживайте программу — история тренировок · Смахните влево — действия',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textSecondary,

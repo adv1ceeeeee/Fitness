@@ -2351,7 +2351,15 @@ class _WellnessCardState extends State<_WellnessCard> {
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 4),
+          const Text(
+            'Данные влияют на готовность и рекомендации',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
           _SleepRow(
             value: _sleep,
             onChanged: (v) => setState(() => _sleep = v),
