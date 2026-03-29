@@ -11,6 +11,7 @@ import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/recsys_service.dart';
+import 'package:sportwai/services/calorie_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
@@ -69,14 +70,16 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
       final weInfo =
           row['workout_exercises'] as Map<String, dynamic>? ?? {};
       final exInfo = weInfo['exercises'] as Map<String, dynamic>? ?? {};
-      final exerciseName =
-          exInfo['name'] as String? ?? 'Упражнение';
+      final exerciseName = (exInfo['name_ru'] as String?)
+          ?? exInfo['name'] as String?
+          ?? 'Упражнение';
+      final exerciseCategory = exInfo['category'] as String? ?? 'chest';
       final weOrder = weInfo['order'] as int? ?? 0;
       final key = '${weOrder}_$exerciseName';
 
       map.putIfAbsent(
         key,
-        () => _ExerciseGroup(name: exerciseName, order: weOrder),
+        () => _ExerciseGroup(name: exerciseName, order: weOrder, category: exerciseCategory),
       );
       map[key]!.sets.add(_SetRow(
         id: row['id'] as String,
@@ -232,14 +235,18 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
 
     setState(() => _saving = true);
     try {
-      // Update edited sets
+      // Update edited sets (including recalculated kcal_estimated)
       for (final group in _groups) {
         for (final set in group.sets) {
+          final kcal = (set.reps != null && set.reps! > 0)
+              ? estimateSetKcal(category: group.category, reps: set.reps!, rpe: set.rpe)
+              : null;
           await TrainingService.updateSet(
             set.id,
             weight: set.weight,
             reps: set.reps,
             rpe: set.rpe,
+            kcalEstimated: kcal,
           );
         }
       }
@@ -433,9 +440,10 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
 class _ExerciseGroup {
   final String name;
   final int order;
+  final String category;
   final List<_SetRow> sets;
 
-  _ExerciseGroup({required this.name, required this.order})
+  _ExerciseGroup({required this.name, required this.order, required this.category})
       : sets = [];
 }
 
@@ -681,6 +689,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
             const Divider(height: 1, color: AppColors.surface),
             ...widget.group.sets.map((set) => _SetRowWidget(
                   set: set,
+                  category: widget.group.category,
                   onChanged: () => setState(() {}),
                 )),
           ],
@@ -692,9 +701,10 @@ class _ExerciseCardState extends State<_ExerciseCard> {
 
 class _SetRowWidget extends StatelessWidget {
   final _SetRow set;
+  final String category;
   final VoidCallback onChanged;
 
-  const _SetRowWidget({required this.set, required this.onChanged});
+  const _SetRowWidget({required this.set, required this.category, required this.onChanged});
 
   void _editSet(BuildContext context) {
     showModalBottomSheet(
@@ -705,7 +715,7 @@ class _SetRowWidget extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _SetEditSheet(set: set, onSave: onChanged),
+      builder: (ctx) => _SetEditSheet(set: set, category: category, onSave: onChanged),
     );
   }
 
@@ -794,9 +804,10 @@ class _SetRowWidget extends StatelessWidget {
 
 class _SetEditSheet extends StatefulWidget {
   final _SetRow set;
+  final String category;
   final VoidCallback onSave;
 
-  const _SetEditSheet({required this.set, required this.onSave});
+  const _SetEditSheet({required this.set, required this.category, required this.onSave});
 
   @override
   State<_SetEditSheet> createState() => _SetEditSheetState();
@@ -838,7 +849,11 @@ class _SetEditSheetState extends State<_SetEditSheet> {
     widget.onSave();
     Navigator.pop(context);
     // Autosave: persist immediately so changes survive navigation without saving
-    TrainingService.updateSet(widget.set.id, weight: w, reps: r, rpe: _rpe);
+    final kcal = (r != null && r > 0)
+        ? estimateSetKcal(category: widget.category, reps: r, rpe: _rpe)
+        : null;
+    TrainingService.updateSet(widget.set.id, weight: w, reps: r, rpe: _rpe,
+        kcalEstimated: kcal);
   }
 
   @override
