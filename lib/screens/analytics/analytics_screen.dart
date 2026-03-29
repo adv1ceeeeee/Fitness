@@ -143,6 +143,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     if (!mounted) return;
     // Phase 1: load from cache (fast — no skeleton if cache exists)
     await _loadCached();
+    // Phase 1b: profile is never in cache — load it independently so goal
+    // always shows even if the main refresh fails.
+    ProfileService.getProfile().then((p) {
+      if (mounted && p != null) setState(() => _profile = p);
+    }).catchError((_) {});
     // Phase 2: refresh from network in background (silent update)
     _refreshFresh();
   }
@@ -269,79 +274,83 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     if (!mounted || _refreshing) return;
     _refreshing = true;
     try {
-      await AppCache.withForceRefresh(() async {
-        final results = await Future.wait([
-          ProfileService.getProfile(),
-          AnalyticsService.getTotalWorkouts(),
-          AnalyticsService.getBestStreak(),
-          AnalyticsService.getWorkoutsThisWeek(),
-          AnalyticsService.getVolumeThisWeek(),
-          AnalyticsService.getTrackedExercises(),
-          BodyMetricsService.getHistory(),
-          AchievementService.getAchievements(),
-          AnalyticsService.getWeeklyVolumeHistory(),
-          AnalyticsService.getMuscleGroupBalance(),
-          AnalyticsService.getMuscleGroupFrequency(),
-          AnalyticsService.getCaloriesPerSession(),
-          AnalyticsService.getCommunityAvgWeeklyVolume(),
-          AnalyticsService.getCommunityAvgWorkoutsPerWeek(),
-          AnalyticsService.getWeekComparison(),
-          AnalyticsService.getWorkoutHeatmap(),
-          AnalyticsService.getTopExercisesByVolume(),
-          AnalyticsService.getWellnessHistory(),
-          AnalyticsService.getSessionDurationHistory(),
-          AnalyticsService.getSessionRpeHistory(),
-          AnalyticsService.getTopExercisesByProgress(),
-          AnalyticsService.getStagnantExercises(),
-          AnalyticsService.getWellnessPerformanceCorrelation(),
-        ]);
+      // Each AppCache.get() handles its own freshness:
+      // – invalidated keys (post-workout) are fetched from network
+      // – still-fresh keys return from cache instantly
+      // – stale keys return cached + background-revalidate
+      // No withForceRefresh: avoids thundering-herd (23 simultaneous
+      // network calls) that caused TimeoutException and killed all data.
+      final results = await Future.wait([
+        ProfileService.getProfile(),
+        AnalyticsService.getTotalWorkouts(),
+        AnalyticsService.getBestStreak(),
+        AnalyticsService.getWorkoutsThisWeek(),
+        AnalyticsService.getVolumeThisWeek(),
+        AnalyticsService.getTrackedExercises(),
+        BodyMetricsService.getHistory(),
+        AchievementService.getAchievements(),
+        AnalyticsService.getWeeklyVolumeHistory(),
+        AnalyticsService.getMuscleGroupBalance(),
+        AnalyticsService.getMuscleGroupFrequency(),
+        AnalyticsService.getCaloriesPerSession(),
+        AnalyticsService.getCommunityAvgWeeklyVolume(),
+        AnalyticsService.getCommunityAvgWorkoutsPerWeek(),
+        AnalyticsService.getWeekComparison(),
+        AnalyticsService.getWorkoutHeatmap(),
+        AnalyticsService.getTopExercisesByVolume(),
+        AnalyticsService.getWellnessHistory(),
+        AnalyticsService.getSessionDurationHistory(),
+        AnalyticsService.getSessionRpeHistory(),
+        AnalyticsService.getTopExercisesByProgress(),
+        AnalyticsService.getStagnantExercises(),
+        AnalyticsService.getWellnessPerformanceCorrelation(),
+      ]);
 
-        if (mounted) {
-          setState(() {
-            _profile = results[0] as Profile?;
-            _totalWorkouts = results[1] as int;
-            _bestStreak = results[2] as int;
-            _workoutsThisWeek = results[3] as int;
-            _volumeThisWeek = results[4] as double;
-            _trackedExercises = results[5] as List<Map<String, dynamic>>;
-            _bodyHistory = results[6] as List<Map<String, dynamic>>;
-            _achievements = results[7] as List<Achievement>;
-            _weeklyVolume = results[8] as List<Map<String, dynamic>>;
-            _muscleBalance = results[9] as Map<String, int>;
-            _muscleFrequency = results[10] as Map<String, double>;
-            _caloriesPerSession = results[11] as List<Map<String, dynamic>>;
-            _communityAvgWeeklyVolume = results[12] as double?;
-            _communityAvgWorkoutsPerWeek = results[13] as double?;
-            _weekComparison = results[14] as ({
-              double volumeThisWeek,
-              double volumeLastWeek,
-              int sessionsThisWeek,
-              int sessionsLastWeek,
-            })?;
-            _heatmapData = results[15] as Map<DateTime, double>;
-            _topExercises = results[16] as List<Map<String, dynamic>>;
-            _wellnessHistory = results[17] as List<Map<String, dynamic>>;
-            _sessionDurations = results[18] as List<Map<String, dynamic>>;
-            _sessionRpes = results[19] as List<Map<String, dynamic>>;
-            _exerciseProgressList = results[20] as List<Map<String, dynamic>>;
-            _stagnantExercises = results[21] as List<Map<String, dynamic>>;
-            _wellnessCorrelation = results[22] as List<Map<String, dynamic>>;
-            _loading = false;
-          });
-          // Load deload metrics independently (doesn't block main render).
-          AnalyticsService.getDeloadMetrics().then((m) {
-            if (mounted) setState(() => _deloadMetrics = m);
-          }).catchError((_) {});
-          // Load 8-week muscle volume trend (non-blocking).
-          AnalyticsService.getMuscleGroupVolumeTrend().then((t) {
-            if (mounted) setState(() => _muscleVolumeTrend = t);
-          }).catchError((_) {});
-          // Load inter-session recovery days per muscle (non-blocking).
-          AnalyticsService.getAvgDaysBetweenSessionsByMuscle().then((d) {
-            if (mounted) setState(() => _muscleRecoveryDays = d);
-          }).catchError((_) {});
-        }
-      }).timeout(const Duration(seconds: 15));
+      if (mounted) {
+        setState(() {
+          _profile = results[0] as Profile?;
+          _totalWorkouts = results[1] as int;
+          _bestStreak = results[2] as int;
+          _workoutsThisWeek = results[3] as int;
+          _volumeThisWeek = results[4] as double;
+          _trackedExercises = results[5] as List<Map<String, dynamic>>;
+          _bodyHistory = results[6] as List<Map<String, dynamic>>;
+          _achievements = results[7] as List<Achievement>;
+          _weeklyVolume = results[8] as List<Map<String, dynamic>>;
+          _muscleBalance = results[9] as Map<String, int>;
+          _muscleFrequency = results[10] as Map<String, double>;
+          _caloriesPerSession = results[11] as List<Map<String, dynamic>>;
+          _communityAvgWeeklyVolume = results[12] as double?;
+          _communityAvgWorkoutsPerWeek = results[13] as double?;
+          _weekComparison = results[14] as ({
+            double volumeThisWeek,
+            double volumeLastWeek,
+            int sessionsThisWeek,
+            int sessionsLastWeek,
+          })?;
+          _heatmapData = results[15] as Map<DateTime, double>;
+          _topExercises = results[16] as List<Map<String, dynamic>>;
+          _wellnessHistory = results[17] as List<Map<String, dynamic>>;
+          _sessionDurations = results[18] as List<Map<String, dynamic>>;
+          _sessionRpes = results[19] as List<Map<String, dynamic>>;
+          _exerciseProgressList = results[20] as List<Map<String, dynamic>>;
+          _stagnantExercises = results[21] as List<Map<String, dynamic>>;
+          _wellnessCorrelation = results[22] as List<Map<String, dynamic>>;
+          _loading = false;
+        });
+        // Load deload metrics independently (doesn't block main render).
+        AnalyticsService.getDeloadMetrics().then((m) {
+          if (mounted) setState(() => _deloadMetrics = m);
+        }).catchError((_) {});
+        // Load 8-week muscle volume trend (non-blocking).
+        AnalyticsService.getMuscleGroupVolumeTrend().then((t) {
+          if (mounted) setState(() => _muscleVolumeTrend = t);
+        }).catchError((_) {});
+        // Load inter-session recovery days per muscle (non-blocking).
+        AnalyticsService.getAvgDaysBetweenSessionsByMuscle().then((d) {
+          if (mounted) setState(() => _muscleRecoveryDays = d);
+        }).catchError((_) {});
+      }
     } catch (e) {
       debugPrint('Analytics _refreshFresh error: $e');
       if (mounted) {
