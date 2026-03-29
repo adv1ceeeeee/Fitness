@@ -1205,7 +1205,7 @@ class AnalyticsService {
 
     final weRes = await _client
         .from('workout_exercises')
-        .select('id, exercises(category, movement_type, name, name_ru)')
+        .select('id, exercises(category, name, name_ru)')
         .inFilter('id', weIds);
 
     // Build weId -> exercise metadata map
@@ -1227,7 +1227,7 @@ class AnalyticsService {
       // Sub-category (used by antagonist pair checks in evaluateMuscleBalance)
       final subCat = _muscleSubCategory(
         cat,
-        ex['movement_type'] as String?,
+        null, // movement_type not in DB yet — keyword fallback handles classification
         ex['name']    as String?,
         ex['name_ru'] as String?,
       );
@@ -2033,6 +2033,7 @@ class AnalyticsService {
         .eq('completed', true)
         .eq('is_warmup', false)
         .not('weight', 'is', null)
+        .not('workout_exercise_id', 'is', null)
         .gt('weight', 0);
 
     // Map workout_exercise_id → exercise_id
@@ -2234,6 +2235,7 @@ class AnalyticsService {
         .eq('completed', true)
         .eq('is_warmup', false)
         .not('weight', 'is', null)
+        .not('workout_exercise_id', 'is', null)
         .gt('weight', 0);
 
     final weIds = (setsRes as List)

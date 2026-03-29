@@ -147,18 +147,26 @@ class UserStateService {
   }
 
   static Future<UserState> _fetch(String userId) async {
-    // All sub-service methods use their own AppCache keys with TTLs, so in
-    // most cases (warm cache) each call returns instantly from SharedPrefs.
-    // On a cold start or after invalidation only the expired keys hit the network.
+    // Run all sub-service calls in parallel. Each is individually guarded so
+    // a single DB error (missing column, network blip) never kills the whole
+    // UserState — callers always get a valid object back.
     final results = await Future.wait([
-      WellnessService.getTodayLog(),                          // [0] Map?
-      AnalyticsService.getEnergyState(),                     // [1] EnergyState
-      ProfileService.getProfile(),                           // [2] Profile?
-      AnalyticsService.getRpeCalibrationOffset(),            // [3] double
-      AnalyticsService.getMuscleGroupBalance(),              // [4] Map<String, int>
-      AnalyticsService.getDeloadMetrics(),                   // [5] Map<String, dynamic>?
-      AnalyticsService.getStagnantExercises(),               // [6] List<Map>
-      AnalyticsService.getWellnessPerformanceCorrelation(),  // [7] List<Map>
+      WellnessService.getTodayLog()
+          .catchError((_) => null as Map<String, dynamic>?),        // [0]
+      AnalyticsService.getEnergyState()
+          .catchError((_) => const EnergyState(reserve: 100)),      // [1]
+      ProfileService.getProfile()
+          .catchError((_) => null as Profile?),                     // [2]
+      AnalyticsService.getRpeCalibrationOffset()
+          .catchError((_) => 0.0),                                  // [3]
+      AnalyticsService.getMuscleGroupBalance()
+          .catchError((_) => <String, int>{}),                      // [4]
+      AnalyticsService.getDeloadMetrics()
+          .catchError((_) => null as Map<String, dynamic>?),        // [5]
+      AnalyticsService.getStagnantExercises()
+          .catchError((_) => <Map<String, dynamic>>[]),             // [6]
+      AnalyticsService.getWellnessPerformanceCorrelation()
+          .catchError((_) => <Map<String, dynamic>>[]),             // [7]
     ]);
 
     final todayWellness = results[0] as Map<String, dynamic>?;
