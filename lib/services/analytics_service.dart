@@ -2355,12 +2355,16 @@ class AnalyticsService {
           }
         } catch (_) {}
 
-        // Helper: apply the subjective energy cap so the two cards agree.
-        // wellness energy 1–10  →  max reserve 10–100 %.
-        EnergyState applyWellnessCap(EnergyState state) {
+        // Helper: blend the physical model result with today's subjective energy.
+        // 70 % physical model + 30 % subjective wellness — avoids both
+        // "Пик (100%)" when you feel terrible AND suppressing the model entirely
+        // when you just feel off. Wellness already slows recovery via wellnessMod,
+        // so a hard cap would double-count it.
+        EnergyState blendWithWellness(EnergyState state) {
           if (todayEnergy == null) return state;
-          final cap = (todayEnergy * 10.0).clamp(0.0, 100.0);
-          return state.reserve > cap ? EnergyState(reserve: cap) : state;
+          final wellnessReserve = (todayEnergy * 10.0).clamp(0.0, 100.0);
+          final blended = state.reserve * 0.70 + wellnessReserve * 0.30;
+          return EnergyState(reserve: blended.clamp(0.0, 100.0));
         }
 
         // 2. Last completed session with energy checkpoint.
@@ -2440,9 +2444,8 @@ class AnalyticsService {
           wellnessSinceLast: worstWellness,
         );
 
-        // Cap by today's subjective energy so the EnergyReadinessCard and
-        // WellnessRecBanner always agree on readiness level.
-        return applyWellnessCap(computed);
+        // Blend physical model (70%) with today's subjective wellness (30%).
+        return blendWithWellness(computed);
       },
       encode: (s) => '${s.reserve}',
       decode: (raw) => raw == null
