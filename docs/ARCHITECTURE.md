@@ -368,7 +368,7 @@ push → main (только)
 
 Формат: `MAJOR.MINOR.PATCH+BUILD` в `pubspec.yaml`.
 
-Текущая версия: **1.3.2+8**
+Текущая версия: **1.9.0+24**
 
 Подробные правила и процесс релиза: [releases/README.md](../releases/README.md)
 

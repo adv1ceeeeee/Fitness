@@ -11,6 +11,42 @@ Versioning: `MAJOR.MINOR.PATCH+BUILD`
 
 ---
 
+## [1.9.0+24] — 2026-04-08
+
+### Added
+- **UserStateService** — единый источник истины для RecSys: 8 параллельных sub-calls, каждый с `.catchError` (безопасный дефолт), кеш 30 мин. Все экраны читают `energyState`, `wellnessRec`, `userGoal`, `rpeCalibrationOffset` только из `UserState`
+- **Workout history sheet** — long-press по программе открывает историю тренировок: прогресс-бар, панели по дням недели с упражнениями, RPE, длительностью (`TrainingService.getWorkoutDayHistory()`)
+- **Контекстные подсказки** — 6 хинтов по всему приложению: свайп+long-press в программах, RPE влияет на рекомендации, wellness влияет на готовность, тап по дате в календаре, шаг гантельного ряда, пустые секции аналитики с указанием сколько тренировок нужно
+- **Developer documentation** — `docs/ARCHITECTURE.md`: стек, структура, 27 сервисов, паттерны (AppCache, RecSys, energy model), схема БД, CI/CD
+
+### Changed
+- **Энергетическая модель** — заменён жёсткий wellness-cap на 70/30 blend: `reserve = physical_model × 0.70 + wellness_energy × 0.30` (устранён двойной учёт wellness)
+
+### Fixed
+- **Analytics crash** — `getMuscleGroupBalance()` запрашивал несуществующую колонку `movement_type` → PostgrestException убивал весь `UserStateService` → энергетическая карточка пропадала
+- **Null cast в analytics** — `_fetchStagnantExercises` и `_fetchWellnessPerformanceCorrelation` падали при `workout_exercise_id = null`; добавлен `.not('workout_exercise_id', 'is', null)`
+- **kcal пересчёт** — `kcal_estimated` не обновлялся при редактировании подхода в SessionSummary
+- **Thundering herd** — убран `withForceRefresh` wrapper из аналитики
+
+### Technical
+- `user_state_service.dart`: `computeUserState()` + `invalidate()` + `AppCache` TTL 30 мин
+- `training_service.dart`: `getWorkoutDayHistory(workoutId)` — последние 60 сессий, группировка по дням, агрегация подходов
+- `session_summary_screen.dart`: RPE-карточка с subtitle
+- `workouts_screen.dart`: `_WorkoutHistorySheet` + `_DayPanel`
+- `profile_screen.dart`: `_SettingsRow` с опциональным `subtitle`
+- `analytics_screen.dart`: улучшены empty states с конкретными числами
+
+---
+
+## [1.8.1+23] — 2026-03-29
+
+### Fixed
+- **Exercise names/gifs** — русские имена и GIF-ки корректно отображаются в RecSys-карточках
+- **Energy cap** — `EnergyState.reserve` ограничивалась `wellness.energy × 10` (до замены на blend)
+- **Analytics timeout** — `withForceRefresh` вызывал повторные параллельные запросы при быстром переключении табов
+
+---
+
 ## [1.8.0+22] — 2026-03-28
 
 ### Added
