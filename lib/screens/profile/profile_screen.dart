@@ -1458,7 +1458,7 @@ class _SettingsRow extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: subtitle != null ? 10 : 0),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: subtitle != null ? 10 : 0),
           child: subtitle != null
               ? Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
