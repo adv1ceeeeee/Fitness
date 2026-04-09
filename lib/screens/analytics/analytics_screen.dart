@@ -3982,38 +3982,45 @@ class _AchievementCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final a = achievement;
     final locked = !a.unlocked;
+    final isHiddenLocked = a.hidden && locked;
     final frac = a.progressFraction;
 
     return Tooltip(
-      message: locked
-          ? '${a.description}\n${_progressLabel(a)} / ${_thresholdLabel(a)}'
-          : a.description,
+      message: isHiddenLocked
+          ? 'Скрытое достижение'
+          : locked
+              ? '${a.description}\n${_progressLabel(a)} / ${_thresholdLabel(a)}'
+              : '${a.description}\n${a.rarity.label} · +${a.rarity.xpReward} XP',
       child: Container(
         decoration: BoxDecoration(
           color: locked ? AppColors.surface : AppColors.card,
           borderRadius: BorderRadius.circular(14),
           border: a.unlocked
-              ? Border.all(color: AppColors.accent.withValues(alpha: 0.5), width: 1.5)
+              ? Border.all(color: a.rarity.color.withValues(alpha: 0.6), width: 1.5)
               : Border.all(color: AppColors.surface, width: 1),
         ),
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ColorFiltered(
-              colorFilter: locked
-                  ? const ColorFilter.matrix([
-                      0.25, 0, 0, 0, 0,
-                      0, 0.25, 0, 0, 0,
-                      0, 0, 0.25, 0, 0,
-                      0, 0, 0, 0.6, 0,
-                    ])
-                  : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
-              child: Text(a.emoji, style: const TextStyle(fontSize: 24)),
-            ),
+            if (isHiddenLocked)
+              Icon(Icons.help_outline_rounded, size: 24,
+                  color: AppColors.textSecondary.withValues(alpha: 0.3))
+            else
+              ColorFiltered(
+                colorFilter: locked
+                    ? const ColorFilter.matrix([
+                        0.25, 0, 0, 0, 0,
+                        0, 0.25, 0, 0, 0,
+                        0, 0, 0.25, 0, 0,
+                        0, 0, 0, 0.6, 0,
+                      ])
+                    : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                child: Text(a.emoji, style: const TextStyle(fontSize: 24)),
+              ),
             const SizedBox(height: 5),
             Text(
-              a.title,
+              isHiddenLocked ? '???' : a.title,
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -4025,7 +4032,7 @@ class _AchievementCell extends StatelessWidget {
                     : AppColors.textPrimary,
               ),
             ),
-            if (locked) ...[
+            if (locked && !isHiddenLocked) ...[
               const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
@@ -4034,7 +4041,7 @@ class _AchievementCell extends StatelessWidget {
                   minHeight: 3,
                   backgroundColor: AppColors.card,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    AppColors.accent.withValues(alpha: 0.6),
+                    a.rarity.color.withValues(alpha: 0.6),
                   ),
                 ),
               ),
@@ -4044,6 +4051,17 @@ class _AchievementCell extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 9,
                   color: AppColors.textSecondary.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+            if (a.unlocked) ...[
+              const SizedBox(height: 4),
+              Text(
+                a.rarity.label,
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                  color: a.rarity.color,
                 ),
               ),
             ],

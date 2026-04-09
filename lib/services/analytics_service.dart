@@ -2853,4 +2853,295 @@ class AnalyticsService {
     return result;
   }
 
+  // ─── Achievement-related queries ──────────────────────────────────────────
+
+  /// Count of completed workouts started before 08:00.
+  static Future<int> getEarlyWorkoutCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('id, date')
+          .eq('user_id', userId)
+          .eq('completed', true);
+      int count = 0;
+      for (final row in res as List) {
+        final d = row['date'] as String?;
+        if (d == null) continue;
+        final dt = DateTime.tryParse(d);
+        if (dt != null && dt.hour < 8) count++;
+      }
+      return count;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getEarlyWorkoutCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Count of completed workouts started at or after 20:00.
+  static Future<int> getLateWorkoutCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('id, date')
+          .eq('user_id', userId)
+          .eq('completed', true);
+      int count = 0;
+      for (final row in res as List) {
+        final d = row['date'] as String?;
+        if (d == null) continue;
+        final dt = DateTime.tryParse(d);
+        if (dt != null && dt.hour >= 20) count++;
+      }
+      return count;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getLateWorkoutCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Count of completed workouts on Saturday or Sunday.
+  static Future<int> getWeekendWorkoutCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('id, date')
+          .eq('user_id', userId)
+          .eq('completed', true);
+      int count = 0;
+      for (final row in res as List) {
+        final d = row['date'] as String?;
+        if (d == null) continue;
+        final dt = DateTime.tryParse(d);
+        if (dt != null &&
+            (dt.weekday == DateTime.saturday ||
+                dt.weekday == DateTime.sunday)) {
+          count++;
+        }
+      }
+      return count;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getWeekendWorkoutCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Longest consecutive-day streak of wellness check-ins.
+  static Future<int> getWellnessStreak() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('wellness_logs')
+          .select('date')
+          .eq('user_id', userId)
+          .order('date');
+      final dates = (res as List)
+          .map((r) => DateTime.tryParse(r['date'] as String? ?? ''))
+          .whereType<DateTime>()
+          .toList();
+      if (dates.isEmpty) return 0;
+      int best = 1, current = 1;
+      for (int i = 1; i < dates.length; i++) {
+        if (dates[i].difference(dates[i - 1]).inDays == 1) {
+          current++;
+          if (current > best) best = current;
+        } else if (dates[i].difference(dates[i - 1]).inDays > 1) {
+          current = 1;
+        }
+        // same day — skip
+      }
+      return best;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getWellnessStreak error: $e');
+      return 0;
+    }
+  }
+
+  /// Total number of wellness check-in entries.
+  static Future<int> getTotalWellnessLogs() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('wellness_logs')
+          .select('date')
+          .eq('user_id', userId);
+      return (res as List).length;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getTotalWellnessLogs error: $e');
+      return 0;
+    }
+  }
+
+  /// Total number of body metric entries.
+  static Future<int> getTotalBodyMetrics() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('body_metrics')
+          .select('date')
+          .eq('user_id', userId);
+      return (res as List).length;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getTotalBodyMetrics error: $e');
+      return 0;
+    }
+  }
+
+  /// Number of unique exercises ever performed (across all completed sets).
+  static Future<int> getUniqueExerciseCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final sessions = await _client
+          .from('training_sessions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('completed', true);
+      final sessionIds =
+          (sessions as List).map((e) => e['id'] as String).toList();
+      if (sessionIds.isEmpty) return 0;
+      final sets = await _client
+          .from('sets')
+          .select('workout_exercise_id, workout_exercises!inner(exercise_id)')
+          .inFilter('training_session_id', sessionIds)
+          .eq('completed', true);
+      final exerciseIds = <String>{};
+      for (final s in sets as List) {
+        final we = s['workout_exercises'] as Map<String, dynamic>?;
+        final exId = we?['exercise_id'] as String?;
+        if (exId != null) exerciseIds.add(exId);
+      }
+      return exerciseIds.length;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getUniqueExerciseCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Number of distinct muscle group categories trained in the last 30 days.
+  static Future<int> getUniqueMuscleGroupsLast30() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final startStr = DateTime.now()
+          .subtract(const Duration(days: 30))
+          .toIso8601String()
+          .split('T')[0];
+      final sessions = await _client
+          .from('training_sessions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .gte('date', startStr);
+      final sessionIds =
+          (sessions as List).map((e) => e['id'] as String).toList();
+      if (sessionIds.isEmpty) return 0;
+      final sets = await _client
+          .from('sets')
+          .select(
+              'workout_exercise_id, workout_exercises!inner(exercise_id, exercises!inner(category))')
+          .inFilter('training_session_id', sessionIds)
+          .eq('completed', true);
+      final categories = <String>{};
+      for (final s in sets as List) {
+        final we = s['workout_exercises'] as Map<String, dynamic>?;
+        final ex = we?['exercises'] as Map<String, dynamic>?;
+        final cat = ex?['category'] as String?;
+        if (cat != null) categories.add(cat);
+      }
+      return categories.length;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getUniqueMuscleGroupsLast30 error: $e');
+      return 0;
+    }
+  }
+
+  /// Count of export_triggered events for this user.
+  static Future<int> getExportCount() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('user_events')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('event', 'export_triggered');
+      return (res as List).length;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getExportCount error: $e');
+      return 0;
+    }
+  }
+
+  /// Count of completed sessions where session_rpe == 10.
+  static Future<int> getRpe10Count() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .eq('session_rpe', 10);
+      return (res as List).length;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getRpe10Count error: $e');
+      return 0;
+    }
+  }
+
+  /// Whether the user has any completed workout on January 1st of any year.
+  static Future<bool> hasJan1Workout() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return false;
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('id, date')
+          .eq('user_id', userId)
+          .eq('completed', true);
+      for (final row in res as List) {
+        final d = row['date'] as String?;
+        if (d == null) continue;
+        final dt = DateTime.tryParse(d);
+        if (dt != null && dt.month == 1 && dt.day == 1) return true;
+      }
+      return false;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] hasJan1Workout error: $e');
+      return false;
+    }
+  }
+
+  /// Longest completed session duration in minutes.
+  static Future<int> getLongestWorkoutMinutes() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('duration_seconds')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .not('duration_seconds', 'is', null)
+          .order('duration_seconds', ascending: false)
+          .limit(1);
+      if ((res as List).isEmpty) return 0;
+      final seconds = (res[0]['duration_seconds'] as num?)?.toInt() ?? 0;
+      return (seconds / 60).round();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getLongestWorkoutMinutes error: $e');
+      return 0;
+    }
+  }
+
 }

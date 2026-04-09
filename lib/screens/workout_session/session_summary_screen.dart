@@ -159,6 +159,15 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         ...newOnes.map((a) => a.id),
       ]);
 
+      // Award XP for each newly unlocked achievement
+      for (final ach in newOnes) {
+        await GamificationService.award(
+          'achievement',
+          amount: ach.rarity.xpReward,
+          sourceId: ach.id,
+        );
+      }
+
       if (!mounted) return;
       for (final ach in newOnes) {
         await showModalBottomSheet<void>(
@@ -1020,6 +1029,37 @@ class _AchievementUnlockSheet extends StatelessWidget {
               fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
+          ),
+          const SizedBox(height: 8),
+          // Rarity badge + XP reward
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: achievement.rarity.color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  achievement.rarity.label,
+                  style: TextStyle(
+                    color: achievement.rarity.color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '+${achievement.rarity.xpReward} XP',
+                style: TextStyle(
+                  color: achievement.rarity.color,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
