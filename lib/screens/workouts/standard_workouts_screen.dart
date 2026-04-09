@@ -500,11 +500,11 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
     return ListView(
       padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
       children: [
-        // ── Стандартные программы ─────────────────────────────────────────
+        // ── Готовые программы ─────────────────────────────────────────────
         const Padding(
           padding: EdgeInsets.only(bottom: 12),
           child: Text(
-            'Стандартные программы',
+            'Готовые программы',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -643,9 +643,9 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                           ),
                         ),
                         const Divider(height: 24, color: Color(0xFF2C2C2E)),
-                        Row(
+                        const Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: const [
+                          children: [
                             Text('Стоимость',
                                 style: TextStyle(color: AppColors.textSecondary)),
                             Text(
@@ -730,12 +730,12 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                       color: AppColors.card,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
+                    child: const Row(
                       children: [
-                        const Icon(Icons.credit_card_rounded,
+                        Icon(Icons.credit_card_rounded,
                             color: AppColors.textSecondary, size: 20),
-                        const SizedBox(width: 12),
-                        const Expanded(
+                        SizedBox(width: 12),
+                        Expanded(
                           child: Text(
                             '•••• •••• •••• 4242',
                             style: TextStyle(
@@ -745,7 +745,7 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                             ),
                           ),
                         ),
-                        const Text(
+                        Text(
                           '12/26',
                           style: TextStyle(
                             color: AppColors.textSecondary,

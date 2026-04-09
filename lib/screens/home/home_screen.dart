@@ -873,6 +873,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActionCard(
+                        icon: Icons.menu_book_rounded,
+                        label: 'Упражнения',
+                        onTap: () => context.push('/exercises'),
+                      ),
+                    ),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
               ],
             ),
           ),

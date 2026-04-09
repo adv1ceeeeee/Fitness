@@ -26,6 +26,7 @@ import 'package:sportwai/screens/analytics/personal_records_screen.dart';
 import 'package:sportwai/screens/tools/calculators_screen.dart';
 import 'package:sportwai/screens/analytics/exercise_history_screen.dart';
 import 'package:sportwai/screens/profile/feedback_screen.dart';
+import 'package:sportwai/screens/exercises/exercise_catalog_screen.dart';
 import 'package:sportwai/models/exercise.dart';
 
 // ── Transition helpers ────────────────────────────────────────────────────────
@@ -311,6 +312,11 @@ class AppRouter {
                 path: '/feedback',
                 pageBuilder: (context, state) =>
                     _slideUpPage(state, const FeedbackScreen()),
+              ),
+              GoRoute(
+                path: '/exercises',
+                pageBuilder: (context, state) =>
+                    _slideUpPage(state, const ExerciseCatalogScreen()),
               ),
             ],
           ),

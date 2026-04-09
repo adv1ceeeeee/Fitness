@@ -1168,7 +1168,7 @@ class _BodyCompositionTabState extends State<_BodyCompositionTab> {
   Widget build(BuildContext context) {
     final r = _result;
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

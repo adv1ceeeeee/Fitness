@@ -711,23 +711,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 rows: [
                   _SettingsRow(
                     label: 'Параметры тела',
-                    trailing: GestureDetector(
-                      onTap: () => context.push('/body-metrics'),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _latestMetrics?['weight_kg'] != null
-                                ? '${(_latestMetrics!['weight_kg'] as num).toStringAsFixed(1)} кг'
-                                : 'Не указано',
-                            style: const TextStyle(
-                                color: AppColors.textSecondary, fontSize: 14),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.chevron_right,
-                              color: AppColors.textSecondary, size: 18),
-                        ],
-                      ),
+                    onTap: () => context.push('/body-metrics'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _latestMetrics?['weight_kg'] != null
+                              ? '${(_latestMetrics!['weight_kg'] as num).toStringAsFixed(1)} кг'
+                              : 'Не указано',
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 14),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.chevron_right,
+                            color: AppColors.textSecondary, size: 18),
+                      ],
                     ),
                   ),
                   _SettingsRow(
@@ -985,22 +983,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       if (_notifMode == 'fixed')
                         _SettingsRow(
                           label: 'Время напоминания',
-                          trailing: GestureDetector(
-                            onTap: _pickNotifTime,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: AppColors.accent.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '$h:$m',
-                                style: const TextStyle(
-                                  color: AppColors.accent,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                ),
+                          onTap: _pickNotifTime,
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '$h:$m',
+                              style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
                               ),
                             ),
                           ),
@@ -1048,31 +1044,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ],
                     _SettingsRow(
                       label: 'Уведомление в дни отдыха',
-                      trailing: GestureDetector(
-                        onTap: _pickRestDayNotifTime,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFD4A454).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.hotel_rounded,
-                                  color: Color(0xFFD4A454), size: 14),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${_restDayNotifHour.toString().padLeft(2, '0')}:${_restDayNotifMinute.toString().padLeft(2, '0')}',
-                                style: const TextStyle(
-                                  color: Color(0xFFD4A454),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                ),
+                      onTap: _pickRestDayNotifTime,
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD4A454).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.hotel_rounded,
+                                color: Color(0xFFD4A454), size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_restDayNotifHour.toString().padLeft(2, '0')}:${_restDayNotifMinute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                color: Color(0xFFD4A454),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1172,22 +1166,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       _SettingsRow(
                         label: 'Время взвешивания',
                         last: true,
-                        trailing: GestureDetector(
-                          onTap: _pickWeighInTime,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppColors.accent.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${_weighInHour.toString().padLeft(2, '0')}:${_weighInMinute.toString().padLeft(2, '0')}',
-                              style: const TextStyle(
-                                color: AppColors.accent,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              ),
+                        onTap: _pickWeighInTime,
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${_weighInHour.toString().padLeft(2, '0')}:${_weighInMinute.toString().padLeft(2, '0')}',
+                            style: const TextStyle(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
                             ),
                           ),
                         ),
@@ -1232,28 +1224,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   _SettingsRow(
                     label: 'Калькуляторы',
-                    trailing: GestureDetector(
-                      onTap: () => context.push('/calculators'),
-                      child: const Icon(Icons.chevron_right,
-                          color: AppColors.textSecondary, size: 18),
-                    ),
+                    onTap: () => context.push('/calculators'),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: AppColors.textSecondary, size: 18),
                   ),
                   _SettingsRow(
                     label: 'Обратная связь',
-                    trailing: GestureDetector(
-                      onTap: () => context.push('/feedback'),
-                      child: const Icon(Icons.chevron_right,
-                          color: AppColors.textSecondary, size: 18),
-                    ),
+                    onTap: () => context.push('/feedback'),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: AppColors.textSecondary, size: 18),
                   ),
                   _SettingsRow(
                     label: 'Экспорт данных',
                     last: true,
-                    trailing: GestureDetector(
-                      onTap: () => _showExportSheet(context),
-                      child: const Icon(Icons.chevron_right,
-                          color: AppColors.textSecondary, size: 18),
-                    ),
+                    onTap: () => _showExportSheet(context),
+                    trailing: const Icon(Icons.chevron_right,
+                        color: AppColors.textSecondary, size: 18),
                   ),
                 ],
               ),
@@ -1460,57 +1446,64 @@ class _SettingsRow extends StatelessWidget {
   final String? subtitle;
   final Widget trailing;
   final bool last;
+  final VoidCallback? onTap;
 
   const _SettingsRow({
     required this.label,
     required this.trailing,
     this.subtitle,
     this.last = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: subtitle != null ? 10 : 0),
-          child: subtitle != null
-              ? Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(label,
-                              style: const TextStyle(color: AppColors.textPrimary)),
-                          const SizedBox(height: 2),
-                          Text(subtitle!,
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary, fontSize: 11)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    trailing,
-                  ],
-                )
-              : SizedBox(
-                  height: 56,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final content = Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: subtitle != null ? 10 : 0),
+      child: subtitle != null
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: Text(label,
-                            style: const TextStyle(color: AppColors.textPrimary)),
-                      ),
-                      const SizedBox(width: 8),
-                      trailing,
+                      Text(label,
+                          style: const TextStyle(color: AppColors.textPrimary)),
+                      const SizedBox(height: 2),
+                      Text(subtitle!,
+                          style: const TextStyle(
+                              color: AppColors.textSecondary, fontSize: 11)),
                     ],
                   ),
                 ),
-        ),
+                const SizedBox(width: 8),
+                trailing,
+              ],
+            )
+          : SizedBox(
+              height: 56,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(label,
+                        style: const TextStyle(color: AppColors.textPrimary)),
+                  ),
+                  const SizedBox(width: 8),
+                  trailing,
+                ],
+              ),
+            ),
+    );
+
+    return Column(
+      children: [
+        if (onTap != null)
+          InkWell(onTap: onTap, child: content)
+        else
+          content,
         if (!last)
           const Divider(height: 1, indent: 16, endIndent: 16),
       ],

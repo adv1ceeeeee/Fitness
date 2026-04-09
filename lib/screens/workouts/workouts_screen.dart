@@ -113,7 +113,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                     unselectedLabelColor: AppColors.textSecondary,
                     tabs: const [
                       Tab(text: 'Мои программы'),
-                      Tab(text: 'Стандартные'),
+                      Tab(text: 'Готовые'),
                     ],
                   ),
                 ],
@@ -902,7 +902,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Создайте свою или выберите\nготовую во вкладке «Стандартные»',
+                          'Создайте свою или выберите\nготовую во вкладке «Готовые»',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
