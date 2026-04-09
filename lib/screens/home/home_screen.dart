@@ -29,6 +29,7 @@ import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/data/standard_programs.dart';
+import 'package:sportwai/services/gamification_service.dart';
 
 // ─── Metric options for body progress panel ───────────────────────────────────
 
@@ -2326,6 +2327,7 @@ class _WellnessCardState extends State<_WellnessCard> {
         soreness: _soreness,
       );
       EventLogger.checkInSaved(type: 'wellness');
+      GamificationService.award('wellness_checkin');
       if (mounted) widget.onSaved();
     } catch (e) {
       if (mounted) setState(() => _saving = false);

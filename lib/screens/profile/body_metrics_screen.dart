@@ -5,6 +5,7 @@ import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/screens/profile/body_model_widget.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
+import 'package:sportwai/services/gamification_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 
 class BodyMetricsScreen extends ConsumerStatefulWidget {
@@ -404,12 +405,15 @@ class _SelectDateSheet extends StatelessWidget {
 
   String _summary(Map<String, dynamic> row) {
     final parts = <String>[];
-    if (row['weight_kg'] != null)
+    if (row['weight_kg'] != null) {
       parts.add('${(row['weight_kg'] as num).toStringAsFixed(1)} кг');
-    if (row['waist_cm'] != null)
+    }
+    if (row['waist_cm'] != null) {
       parts.add('талия ${(row['waist_cm'] as num).toStringAsFixed(0)} см');
-    if (row['chest_cm'] != null)
+    }
+    if (row['chest_cm'] != null) {
       parts.add('грудь ${(row['chest_cm'] as num).toStringAsFixed(0)} см');
+    }
     return parts.isEmpty ? 'нет ключевых данных' : parts.join(' · ');
   }
 
@@ -522,25 +526,25 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
   void initState() {
     super.initState();
     final r = widget.existingRow;
-    String _s(String key) =>
+    String s(String key) =>
         r != null && r[key] != null ? (r[key] as num).toStringAsFixed(1) : '';
 
     _heightCtrl = TextEditingController();
-    _weightCtrl = TextEditingController(text: _s('weight_kg'));
-    _fatCtrl = TextEditingController(text: _s('body_fat_pct'));
-    _neckCtrl = TextEditingController(text: _s('neck_cm'));
-    _shouldersCtrl = TextEditingController(text: _s('shoulders_cm'));
-    _chestCtrl = TextEditingController(text: _s('chest_cm'));
-    _waistCtrl = TextEditingController(text: _s('waist_cm'));
-    _hipsCtrl = TextEditingController(text: _s('hips_cm'));
-    _rightArmCtrl = TextEditingController(text: _s('right_arm_cm'));
-    _leftArmCtrl = TextEditingController(text: _s('left_arm_cm'));
-    _rightForearmCtrl = TextEditingController(text: _s('right_forearm_cm'));
-    _leftForearmCtrl = TextEditingController(text: _s('left_forearm_cm'));
-    _rightThighCtrl = TextEditingController(text: _s('right_thigh_cm'));
-    _leftThighCtrl = TextEditingController(text: _s('left_thigh_cm'));
-    _rightCalfCtrl = TextEditingController(text: _s('right_calf_cm'));
-    _leftCalfCtrl = TextEditingController(text: _s('left_calf_cm'));
+    _weightCtrl = TextEditingController(text: s('weight_kg'));
+    _fatCtrl = TextEditingController(text: s('body_fat_pct'));
+    _neckCtrl = TextEditingController(text: s('neck_cm'));
+    _shouldersCtrl = TextEditingController(text: s('shoulders_cm'));
+    _chestCtrl = TextEditingController(text: s('chest_cm'));
+    _waistCtrl = TextEditingController(text: s('waist_cm'));
+    _hipsCtrl = TextEditingController(text: s('hips_cm'));
+    _rightArmCtrl = TextEditingController(text: s('right_arm_cm'));
+    _leftArmCtrl = TextEditingController(text: s('left_arm_cm'));
+    _rightForearmCtrl = TextEditingController(text: s('right_forearm_cm'));
+    _leftForearmCtrl = TextEditingController(text: s('left_forearm_cm'));
+    _rightThighCtrl = TextEditingController(text: s('right_thigh_cm'));
+    _leftThighCtrl = TextEditingController(text: s('left_thigh_cm'));
+    _rightCalfCtrl = TextEditingController(text: s('right_calf_cm'));
+    _leftCalfCtrl = TextEditingController(text: s('left_calf_cm'));
   }
 
   @override
@@ -646,6 +650,7 @@ class _LogMetricsSheetState extends ConsumerState<_LogMetricsSheet> {
             rArm, lArm, rForearm, lForearm, rThigh, lThigh, rCalf, lCalf,
           ].where((v) => v != null).length;
           EventLogger.bodyMetricsSaved(fieldsCount: filled);
+          GamificationService.award('body_measurement');
         }
         Navigator.pop(context);
         widget.onSaved();

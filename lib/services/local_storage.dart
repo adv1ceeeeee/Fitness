@@ -179,6 +179,24 @@ class AppStorage {
   static Future<void> setLastWeeklySummaryShownWeek(String v) =>
       _p.setString('weekly_summary_shown_week', v);
 
+  // ── Gamification: daily active time ──────────────────────────────────────────
+  static const _dailyActiveKey = 'daily_active_seconds';
+  static const _dailyActiveDateKey = 'daily_active_date';
+
+  /// Accumulated foreground seconds today. Resets automatically on new day.
+  static int get dailyActiveSeconds {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final stored = _p.getString(_dailyActiveDateKey);
+    if (stored != today) return 0; // New day → reset
+    return _p.getInt(_dailyActiveKey) ?? 0;
+  }
+
+  static Future<void> setDailyActiveSeconds(int v) async {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    await _p.setString(_dailyActiveDateKey, today);
+    await _p.setInt(_dailyActiveKey, v);
+  }
+
   // ── Достижения ───────────────────────────────────────────────────────────────
   /// IDs достижений, о которых пользователь уже был уведомлён.
   static List<String> get seenAchievementIds =>

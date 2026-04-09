@@ -19,6 +19,7 @@ import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
 import 'package:sportwai/services/streak_freeze_service.dart';
+import 'package:sportwai/services/gamification_service.dart';
 
 bool get _isMobilePlatform =>
     defaultTargetPlatform == TargetPlatform.android ||
@@ -152,20 +153,41 @@ class SportifyApp extends ConsumerStatefulWidget {
 
 class _SportifyAppState extends ConsumerState<SportifyApp> {
   late final AppLifecycleListener _lifecycleListener;
+  DateTime? _foregroundStart;
 
   @override
   void initState() {
     super.initState();
+    _foregroundStart = DateTime.now();
+    // Check season decay once on app start
+    GamificationService.checkSeasonDecay();
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
+        _foregroundStart = DateTime.now();
         EventLogger.resetSession();
         EventLogger.appOpened(source: 'resume');
         NotificationService.refreshWeeklySummary();
         NotificationService.scheduleChurnNotification();
       },
-      onPause: EventLogger.flushOnExit,
-      onDetach: EventLogger.flushOnExit,
+      onPause: () {
+        _flushForegroundTime();
+        EventLogger.flushOnExit();
+      },
+      onDetach: () {
+        _flushForegroundTime();
+        EventLogger.flushOnExit();
+      },
     );
+  }
+
+  void _flushForegroundTime() {
+    final start = _foregroundStart;
+    if (start == null) return;
+    final seconds = DateTime.now().difference(start).inSeconds;
+    _foregroundStart = null;
+    if (seconds > 0) {
+      GamificationService.addActiveTime(seconds);
+    }
   }
 
   @override

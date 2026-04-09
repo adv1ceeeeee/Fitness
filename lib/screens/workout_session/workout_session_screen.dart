@@ -22,6 +22,7 @@ import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:sportwai/services/gamification_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:confetti/confetti.dart';
 
@@ -571,6 +572,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         _personalBests[exerciseId] = weightKg;
         HapticFeedback.heavyImpact();
         EventLogger.personalRecord(exerciseId: exerciseId, weightKg: weightKg);
+        GamificationService.award('personal_record', sourceId: exerciseId);
         _showPrBanner(we.exercise?.displayName ?? '', weightKg);
       }
     }

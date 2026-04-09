@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatf
 import 'package:sportwai/widgets/avatar_widget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:sportwai/services/gamification_service.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -53,6 +54,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   int _restDayNotifHour = 9;
   int _restDayNotifMinute = 0;
   bool _weeklySummaryEnabled = true;
+  PlayerStats? _playerStats;
 
   @override
   void initState() {
@@ -63,6 +65,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     _loadBiometric();
     _loadNotifTime();
     _loadExtraPrefs();
+    _loadPlayerStats();
   }
 
   Future<void> _loadNotifTime() async {
@@ -348,6 +351,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _loadProfile() async {
     final p = await ProfileService.getProfile();
     if (mounted) setState(() => _profile = p);
+  }
+
+  Future<void> _loadPlayerStats() async {
+    try {
+      final stats = await GamificationService.getPlayerStats();
+      if (mounted) setState(() => _playerStats = stats);
+    } catch (_) {}
   }
 
   bool get _isDesktop =>
@@ -644,6 +654,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ],
                 ),
               ),
+              // ── Level badge ──────────────────────────────────────────────
+              if (_playerStats != null) ...[
+                const SizedBox(height: 16),
+                _LevelBadge(stats: _playerStats!),
+              ],
               const SizedBox(height: 32),
 
               // Личные данные
@@ -1499,6 +1514,94 @@ class _SettingsRow extends StatelessWidget {
         if (!last)
           const Divider(height: 1, indent: 16, endIndent: 16),
       ],
+    );
+  }
+}
+
+class _LevelBadge extends StatelessWidget {
+  final PlayerStats stats;
+
+  const _LevelBadge({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = stats.title;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: title.color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Lv ${stats.level}',
+                  style: TextStyle(
+                    color: title.color,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title.name,
+                style: TextStyle(
+                  color: title.color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${stats.xpTotal} XP',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: stats.progress,
+              minHeight: 6,
+              backgroundColor: AppColors.surface,
+              valueColor: AlwaysStoppedAnimation<Color>(title.color),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'До уровня ${stats.level + 1}',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                '${stats.xpToNext} XP',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

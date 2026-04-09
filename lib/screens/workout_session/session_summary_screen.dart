@@ -13,6 +13,8 @@ import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/calorie_service.dart';
 import 'package:sportwai/services/training_service.dart';
+import 'package:sportwai/services/gamification_service.dart';
+import 'package:sportwai/services/gamification_config.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
 
@@ -264,6 +266,19 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         );
       }
       // kcal_total and volume_kg are now computed inside fn_complete_session
+      // ── XP awards ──────────────────────────────────────────────────────────
+      int xpGained = 0;
+      final totalSets = _groups.fold<int>(0, (s, g) => s + g.sets.length);
+      final duration = widget.durationSeconds;
+      if (duration >= minWorkoutDurationForXp) {
+        xpGained += await GamificationService.award('workout_completed', sourceId: widget.sessionId);
+        xpGained += await GamificationService.awardSets(totalSets, sessionId: widget.sessionId);
+        xpGained += await GamificationService.awardDuration(duration, sessionId: widget.sessionId);
+        final streak = await AnalyticsService.getCurrentStreak();
+        if (streak >= 7) {
+          xpGained += await GamificationService.award('streak_bonus', sourceId: widget.sessionId);
+        }
+      }
       // Schedule inactivity reminder (fires in 3 days if no workout)
       NotificationService.scheduleInactivityReminder(daysLater: 3);
       // Clear global session state
@@ -274,7 +289,19 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
         // ignore: use_build_context_synchronously
         await showNpsSheet(context);
       }
-      if (mounted) context.go('/home');
+      if (mounted) {
+        if (xpGained > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('+$xpGained XP'),
+              backgroundColor: AppColors.accent,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        context.go('/home');
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
