@@ -995,3 +995,898 @@ double _drainFactor(String movementType, String equipmentType, double rpe) {
   final rpeModifier = (rpe / 7.0).clamp(0.5, 1.5);
   return base * mult * rpeModifier;
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Extended recommendation pool (v2) — 12 new evaluators
+// All pure functions. No DB access. Fully unit-testable.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── 1. Autoregulation by session RPE ─────────────────────────────────────────
+
+enum AutoregDirection { increase, decrease, hold }
+
+class AutoregulationRec {
+  final AutoregDirection direction;
+  final double avgRpe;
+  final int sessionsAnalyzed;
+  final String message;
+
+  const AutoregulationRec({
+    required this.direction,
+    required this.avgRpe,
+    required this.sessionsAnalyzed,
+    required this.message,
+  });
+}
+
+/// Autoregulates weekly load based on average session RPE.
+///
+/// [recentSessionRpes] — session_rpe values for the last 4-8 sessions, newest
+/// first. Null/missing RPEs are ignored.
+///
+/// Thresholds:
+///   avg RPE ≥ 8.5 → decrease (too hard, deload incoming)
+///   avg RPE ≤ 6.5 → increase (undertrained, add intensity)
+///   otherwise     → null (on target)
+///
+/// Requires at least 4 sessions with valid RPE.
+AutoregulationRec? evaluateAutoregulation(List<double?> recentSessionRpes) {
+  final valid = recentSessionRpes.whereType<double>().toList();
+  if (valid.length < 4) return null;
+
+  final avg = valid.reduce((a, b) => a + b) / valid.length;
+  final avgStr = avg.toStringAsFixed(1);
+  final n = valid.length;
+
+  if (avg >= 8.5) {
+    return AutoregulationRec(
+      direction: AutoregDirection.decrease,
+      avgRpe: avg,
+      sessionsAnalyzed: n,
+      message: 'Средний RPE за $n тренировок: $avgStr — слишком тяжело. '
+          'Сделай лёгкую неделю или сократи объём на 20-30%.',
+    );
+  }
+  if (avg <= 6.5) {
+    return AutoregulationRec(
+      direction: AutoregDirection.increase,
+      avgRpe: avg,
+      sessionsAnalyzed: n,
+      message: 'Средний RPE за $n тренировок: $avgStr — можно прибавить '
+          'интенсивность: добавь подход или 2.5–5 кг в ключевых упражнениях.',
+    );
+  }
+  return null;
+}
+
+// ─── 2. Rep range diversification ─────────────────────────────────────────────
+
+enum RepRangeBlock { strength, hypertrophy, endurance }
+
+class RepRangeRec {
+  /// Block the user has been stuck in.
+  final RepRangeBlock currentBlock;
+  /// Block the user should try next.
+  final RepRangeBlock suggestedBlock;
+  /// How many consecutive weeks in the current block.
+  final int weeksInBlock;
+  final String message;
+
+  const RepRangeRec({
+    required this.currentBlock,
+    required this.suggestedBlock,
+    required this.weeksInBlock,
+    required this.message,
+  });
+}
+
+/// Suggests rotating into a different rep range when a user has been in the
+/// same rep block for too many weeks.
+///
+/// [avgRepsPerWeek] — average top-of-range reps per week, newest first.
+/// A week counts as "in block" when the average reps falls into the block.
+///
+/// Block boundaries:
+///   strength:    ≤ 6 reps
+///   hypertrophy: 7–12 reps
+///   endurance:   ≥ 13 reps
+///
+/// Triggers when ≥ 8 consecutive weeks in the same block.
+RepRangeRec? evaluateRepRangeDiversification(List<double> avgRepsPerWeek) {
+  if (avgRepsPerWeek.length < 8) return null;
+
+  RepRangeBlock blockFor(double r) {
+    if (r <= 6) return RepRangeBlock.strength;
+    if (r <= 12) return RepRangeBlock.hypertrophy;
+    return RepRangeBlock.endurance;
+  }
+
+  final current = blockFor(avgRepsPerWeek.first);
+  int streak = 0;
+  for (final r in avgRepsPerWeek) {
+    if (blockFor(r) == current) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  if (streak < 8) return null;
+
+  // Pick a new block — rotate through strength/hypertrophy/endurance
+  final suggested = switch (current) {
+    RepRangeBlock.strength => RepRangeBlock.hypertrophy,
+    RepRangeBlock.hypertrophy => RepRangeBlock.strength,
+    RepRangeBlock.endurance => RepRangeBlock.hypertrophy,
+  };
+
+  String blockLabel(RepRangeBlock b) => switch (b) {
+        RepRangeBlock.strength => 'сила (3–6 повторов)',
+        RepRangeBlock.hypertrophy => 'гипертрофия (8–12 повторов)',
+        RepRangeBlock.endurance => 'выносливость (15–20 повторов)',
+      };
+
+  return RepRangeRec(
+    currentBlock: current,
+    suggestedBlock: suggested,
+    weeksInBlock: streak,
+    message: '${_weeksLabel(streak)} подряд в блоке "${blockLabel(current)}". '
+        'Для лучшего прогресса попробуй блок "${blockLabel(suggested)}" — '
+        'смена стимула запускает новый рост.',
+  );
+}
+
+// ─── 3. Consistency rescue ────────────────────────────────────────────────────
+
+class ConsistencyRec {
+  final int sessionsLast2Weeks;
+  final double baselineSessionsPer2Weeks;
+  final double dropPct;
+  final String message;
+
+  const ConsistencyRec({
+    required this.sessionsLast2Weeks,
+    required this.baselineSessionsPer2Weeks,
+    required this.dropPct,
+    required this.message,
+  });
+}
+
+/// Nudges the user when recent frequency has dropped below their personal
+/// baseline.
+///
+/// [sessionsLast2Weeks]       — count of completed sessions in the last 14 days.
+/// [baselineSessionsPer2Weeks] — average completed sessions per 2-week window
+///   over the preceding 8 weeks.
+///
+/// Triggers when the recent count is < 70 % of baseline AND baseline ≥ 2
+/// (otherwise there's not enough data to judge a drop).
+ConsistencyRec? evaluateConsistency({
+  required int sessionsLast2Weeks,
+  required double baselineSessionsPer2Weeks,
+}) {
+  if (baselineSessionsPer2Weeks < 2) return null;
+  final ratio = sessionsLast2Weeks / baselineSessionsPer2Weeks;
+  if (ratio >= 0.70) return null;
+
+  final dropPct = (1.0 - ratio) * 100;
+  final dropStr = dropPct.round().toString();
+
+  return ConsistencyRec(
+    sessionsLast2Weeks: sessionsLast2Weeks,
+    baselineSessionsPer2Weeks: baselineSessionsPer2Weeks,
+    dropPct: dropPct,
+    message: 'Частота упала на $dropStr% по сравнению с твоим обычным ритмом. '
+        'Запланируй следующую тренировку прямо сейчас — маленький шаг сегодня '
+        'вернёт тебя в форму.',
+  );
+}
+
+// ─── 4. Goal alignment check ──────────────────────────────────────────────────
+
+class GoalAlignmentRec {
+  final String userGoal;
+  /// Average reps per set across the current program.
+  final double avgReps;
+  /// What the goal optimally recommends.
+  final String recommendedRange;
+  final String message;
+
+  const GoalAlignmentRec({
+    required this.userGoal,
+    required this.avgReps,
+    required this.recommendedRange,
+    required this.message,
+  });
+}
+
+/// Checks whether the user's current program matches their stated training
+/// goal (profiles.goal). Returns null when aligned.
+///
+/// [userGoal] values: 'strength', 'mass' (hypertrophy), 'weight_loss',
+///   'endurance', or other. Unknown goals → null.
+/// [avgRepsInProgram] — average top-of-range reps across all workout_exercises
+///   in the user's active program(s).
+GoalAlignmentRec? evaluateGoalAlignment({
+  required String? userGoal,
+  required double avgRepsInProgram,
+}) {
+  if (userGoal == null || avgRepsInProgram <= 0) return null;
+
+  final goal = userGoal.toLowerCase();
+
+  // Strength: 3-6 reps is optimal
+  if (goal == 'strength' && avgRepsInProgram > 8) {
+    return GoalAlignmentRec(
+      userGoal: goal,
+      avgReps: avgRepsInProgram,
+      recommendedRange: '3-6',
+      message: 'Твоя цель — сила, но в программе в среднем '
+          '${avgRepsInProgram.toStringAsFixed(1)} повторов. Для развития силы '
+          'эффективнее диапазон 3-6 повторов с бо́льшими весами.',
+    );
+  }
+
+  // Mass/hypertrophy: 8-12 reps
+  if (goal == 'mass' && (avgRepsInProgram < 6 || avgRepsInProgram > 15)) {
+    return GoalAlignmentRec(
+      userGoal: goal,
+      avgReps: avgRepsInProgram,
+      recommendedRange: '8-12',
+      message: 'Твоя цель — набор мышечной массы. В среднем '
+          '${avgRepsInProgram.toStringAsFixed(1)} повторов — '
+          'для максимальной гипертрофии лучше работать в диапазоне 8-12.',
+    );
+  }
+
+  // Endurance: 15+ reps
+  if (goal == 'endurance' && avgRepsInProgram < 12) {
+    return GoalAlignmentRec(
+      userGoal: goal,
+      avgReps: avgRepsInProgram,
+      recommendedRange: '15-20',
+      message: 'Твоя цель — выносливость, но в программе в среднем '
+          '${avgRepsInProgram.toStringAsFixed(1)} повторов. Для выносливости '
+          'эффективнее 15-20 повторов с меньшими весами.',
+    );
+  }
+
+  return null;
+}
+
+// ─── 5. PR readiness signal ───────────────────────────────────────────────────
+
+class PrReadinessRec {
+  /// Exercise most primed for a PR attempt.
+  final String exerciseName;
+  final String exerciseId;
+  /// Current working weight (kg).
+  final double currentWeightKg;
+  /// Suggested PR attempt weight.
+  final double suggestedWeightKg;
+  /// Confidence score 0.0–1.0.
+  final double confidence;
+  final String message;
+
+  const PrReadinessRec({
+    required this.exerciseName,
+    required this.exerciseId,
+    required this.currentWeightKg,
+    required this.suggestedWeightKg,
+    required this.confidence,
+    required this.message,
+  });
+}
+
+/// Detects when the user is primed for a PR attempt.
+///
+/// Trigger conditions (all must be true):
+///   • sleep ≥ 7 h
+///   • stress ≤ 5
+///   • energy ≥ 7
+///   • last 3 sessions with this exercise completed all prescribed reps
+///   • days since last PR on this exercise ≥ 14
+///
+/// [candidate] — best PR-attempt candidate:
+///   {
+///     'exerciseId': String,
+///     'exerciseName': String,
+///     'currentWeightKg': double,
+///     'consecutiveFullSessions': int,
+///     'daysSinceLastPr': int,
+///   }
+PrReadinessRec? evaluatePrReadiness({
+  required Map<String, dynamic>? wellness,
+  required Map<String, dynamic>? candidate,
+  double prIncrementKg = 2.5,
+}) {
+  if (wellness == null || candidate == null) return null;
+
+  final sleep = (wellness['sleep_hours'] as num?)?.toDouble();
+  final stress = (wellness['stress'] as num?)?.toInt();
+  final energy = (wellness['energy'] as num?)?.toInt();
+
+  if (sleep == null || stress == null || energy == null) return null;
+  if (sleep < 7 || stress > 5 || energy < 7) return null;
+
+  final consecutive = candidate['consecutiveFullSessions'] as int? ?? 0;
+  final daysSincePr = candidate['daysSinceLastPr'] as int? ?? 0;
+  if (consecutive < 3 || daysSincePr < 14) return null;
+
+  final exerciseName = candidate['exerciseName'] as String;
+  final exerciseId = candidate['exerciseId'] as String;
+  final currentWeight =
+      (candidate['currentWeightKg'] as num?)?.toDouble() ?? 0;
+  if (currentWeight <= 0) return null;
+
+  final suggested = currentWeight + prIncrementKg;
+  final curStr = currentWeight % 1 == 0
+      ? '${currentWeight.toInt()} кг'
+      : '${currentWeight.toStringAsFixed(1)} кг';
+  final sugStr = suggested % 1 == 0
+      ? '${suggested.toInt()} кг'
+      : '${suggested.toStringAsFixed(1)} кг';
+
+  // Confidence scales with how much margin above thresholds
+  final confidence =
+      ((sleep - 7).clamp(0, 2) / 2 * 0.3 +
+              (5 - stress).clamp(0, 5) / 5 * 0.3 +
+              (energy - 7).clamp(0, 3) / 3 * 0.4)
+          .clamp(0.0, 1.0)
+          .toDouble();
+
+  return PrReadinessRec(
+    exerciseName: exerciseName,
+    exerciseId: exerciseId,
+    currentWeightKg: currentWeight,
+    suggestedWeightKg: suggested,
+    confidence: confidence,
+    message: 'Отличный день для рекорда! Сон, стресс и энергия в норме, '
+        '$exerciseName выполняется стабильно. Попробуй $sugStr вместо $curStr.',
+  );
+}
+
+// ─── 6. Volume landmarks (MEV / MAV / MRV) ────────────────────────────────────
+
+enum VolumeZone { belowMev, withinRange, aboveMrv }
+
+class VolumeLandmarkRec {
+  final String muscleGroup;
+  final String muscleGroupLabel;
+  final int currentWeeklySets;
+  final int mev; // Minimum Effective Volume
+  final int mav; // Maximum Adaptive Volume
+  final int mrv; // Maximum Recoverable Volume
+  final VolumeZone zone;
+  final String message;
+
+  const VolumeLandmarkRec({
+    required this.muscleGroup,
+    required this.muscleGroupLabel,
+    required this.currentWeeklySets,
+    required this.mev,
+    required this.mav,
+    required this.mrv,
+    required this.zone,
+    required this.message,
+  });
+}
+
+/// Evaluates weekly volume per muscle group against Renaissance Periodization
+/// landmarks (Mike Israetel et al).
+///
+/// [setsByMuscle] — current weekly working-set counts by muscle key:
+///   { 'chest': 12, 'back': 18, 'legs': 10, ... }
+///
+/// Returns the single most notable deviation (largest magnitude from range),
+/// or null if all groups are within their healthy range.
+VolumeLandmarkRec? evaluateVolumeLandmarks(Map<String, int> setsByMuscle) {
+  // Per-muscle MEV / MAV / MRV (sets per week) — consensus literature values.
+  const landmarks = <String, (int mev, int mav, int mrv)>{
+    'chest':     (10, 16, 22),
+    'back':      (12, 18, 25),
+    'shoulders': (8,  16, 20),
+    'arms':      (8,  14, 20),
+    'legs':      (10, 18, 25),
+    'core':      (8,  14, 20),
+  };
+
+  const labels = {
+    'chest': 'грудь',
+    'back': 'спина',
+    'shoulders': 'плечи',
+    'arms': 'руки',
+    'legs': 'ноги',
+    'core': 'пресс',
+  };
+
+  VolumeLandmarkRec? worst;
+  int worstScore = 0; // larger = worse deviation
+
+  for (final entry in setsByMuscle.entries) {
+    final lm = landmarks[entry.key];
+    if (lm == null) continue;
+    final sets = entry.value;
+    final mev = lm.$1;
+    final mav = lm.$2;
+    final mrv = lm.$3;
+
+    VolumeZone? zone;
+    String? message;
+    int score = 0;
+    final label = labels[entry.key] ?? entry.key;
+
+    if (sets < mev) {
+      zone = VolumeZone.belowMev;
+      score = mev - sets; // how far below
+      message = 'Объём на "$label" — $sets сетов/нед, ниже минимального '
+          '($mev). Добавь 2-3 рабочих сета для стимула к росту.';
+    } else if (sets > mrv) {
+      zone = VolumeZone.aboveMrv;
+      score = sets - mrv;
+      message = 'Объём на "$label" — $sets сетов/нед, выше предела '
+          'восстановления ($mrv). Сократи до $mav — избыток объёма мешает '
+          'прогрессу.';
+    }
+
+    if (zone != null && score > worstScore) {
+      worstScore = score;
+      worst = VolumeLandmarkRec(
+        muscleGroup: entry.key,
+        muscleGroupLabel: label,
+        currentWeeklySets: sets,
+        mev: mev,
+        mav: mav,
+        mrv: mrv,
+        zone: zone,
+        message: message!,
+      );
+    }
+  }
+
+  return worst;
+}
+
+// ─── 7. Exercise stagnation with variations ───────────────────────────────────
+
+class ExerciseVariationRec {
+  final String stagnantExerciseName;
+  final String stagnantExerciseId;
+  final int weeksStagnant;
+  final List<String> suggestedVariations;
+  final String message;
+
+  const ExerciseVariationRec({
+    required this.stagnantExerciseName,
+    required this.stagnantExerciseId,
+    required this.weeksStagnant,
+    required this.suggestedVariations,
+    required this.message,
+  });
+}
+
+/// Exercise-variation knowledge base. Each key is a name-substring (lowercased)
+/// matched against the stagnant exercise; value is a list of Russian variation
+/// suggestions to display to the user.
+const _variationMap = <String, List<String>>{
+  'жим штанги лёжа': [
+    'Жим гантелей лёжа',
+    'Жим штанги на наклонной',
+    'Жим в тренажёре Смита'
+  ],
+  'жим лёжа': [
+    'Жим гантелей лёжа',
+    'Жим на наклонной скамье',
+    'Отжимания на брусьях'
+  ],
+  'приседан': [
+    'Фронтальный присед',
+    'Присед в Смите',
+    'Болгарский сплит-присед'
+  ],
+  'становая': [
+    'Румынская тяга',
+    'Становая на прямых ногах',
+    'Тяга сумо'
+  ],
+  'подтягиван': [
+    'Подтягивания обратным хватом',
+    'Тяга верхнего блока',
+    'Подтягивания с дополнительным весом'
+  ],
+  'тяга штанги в наклоне': [
+    'Тяга гантели одной рукой',
+    'Т-гриф тяга',
+    'Тяга в Смите'
+  ],
+  'жим стоя': [
+    'Жим гантелей сидя',
+    'Арнольд-жим',
+    'Жим в тренажёре'
+  ],
+  'жим сидя': [
+    'Жим гантелей сидя',
+    'Жим штанги стоя',
+    'Арнольд-жим'
+  ],
+  'подъём штанги на бицепс': [
+    'Подъём гантелей на бицепс',
+    'Молотки',
+    'Подъём на скамье Скотта'
+  ],
+  'французский жим': [
+    'Разгибания на верхнем блоке',
+    'Жим узким хватом',
+    'Разгибания гантели из-за головы'
+  ],
+};
+
+/// Suggests exercise variations when an exercise has been stagnant for 6+ weeks.
+///
+/// [stagnantExercises] — output of AnalyticsService.getStagnantExercises():
+///   [{exerciseId, exerciseName, weeksStagnant}]
+ExerciseVariationRec? evaluateExerciseVariations(
+    List<Map<String, dynamic>> stagnantExercises) {
+  final candidates =
+      stagnantExercises.where((e) => (e['weeksStagnant'] as int? ?? 0) >= 6);
+  if (candidates.isEmpty) return null;
+
+  // Pick the most stagnant
+  final worst = candidates.reduce((a, b) =>
+      (a['weeksStagnant'] as int) >= (b['weeksStagnant'] as int) ? a : b);
+
+  final name = worst['exerciseName'] as String;
+  final id = worst['exerciseId'] as String;
+  final weeks = worst['weeksStagnant'] as int;
+  final nameLower = name.toLowerCase();
+
+  // Find variations by substring match
+  List<String>? variations;
+  for (final entry in _variationMap.entries) {
+    if (nameLower.contains(entry.key)) {
+      variations = entry.value;
+      break;
+    }
+  }
+  variations ??= const [
+    'Попробуй другую постановку хвата/стоп',
+    'Измени темп выполнения (медленный эксцентрик)',
+    'Замени на похожее упражнение из той же группы мышц',
+  ];
+
+  return ExerciseVariationRec(
+    stagnantExerciseName: name,
+    stagnantExerciseId: id,
+    weeksStagnant: weeks,
+    suggestedVariations: variations,
+    message: '$name не прогрессирует ${_weeksLabel(weeks)}. '
+        'Попробуй заменить на: ${variations.take(2).join(" / ")} — '
+        'смена упражнения часто пробивает плато.',
+  );
+}
+
+// ─── 8. Frequency optimization per muscle ─────────────────────────────────────
+
+class FrequencyOptRec {
+  final String muscleGroup;
+  final String muscleGroupLabel;
+  final double currentDaysBetween;
+  final int suggestedSessionsPerWeek;
+  final String message;
+
+  const FrequencyOptRec({
+    required this.muscleGroup,
+    required this.muscleGroupLabel,
+    required this.currentDaysBetween,
+    required this.suggestedSessionsPerWeek,
+    required this.message,
+  });
+}
+
+/// Suggests increasing muscle-group frequency when the user trains a group
+/// less often than 2×/week.
+///
+/// [avgDaysBetweenByMuscle] — output of
+///   AnalyticsService.getAvgDaysBetweenSessionsByMuscle():
+///   { 'chest': 7.5, 'back': 3.8, 'legs': 9.0, ... }
+///
+/// Trigger: avg days between sessions > 6 (i.e. less than ~1×/week)
+/// Returns the single most under-trained group.
+FrequencyOptRec? evaluateFrequencyOptimization(
+    Map<String, double> avgDaysBetweenByMuscle) {
+  const labels = {
+    'chest': 'грудь',
+    'back': 'спина',
+    'shoulders': 'плечи',
+    'arms': 'руки',
+    'legs': 'ноги',
+    'core': 'пресс',
+  };
+
+  MapEntry<String, double>? worst;
+  for (final entry in avgDaysBetweenByMuscle.entries) {
+    if (!labels.containsKey(entry.key)) continue;
+    if (entry.value <= 6.0) continue;
+    if (worst == null || entry.value > worst.value) {
+      worst = entry;
+    }
+  }
+  if (worst == null) return null;
+
+  final label = labels[worst.key] ?? worst.key;
+  final daysStr = worst.value.toStringAsFixed(1);
+
+  return FrequencyOptRec(
+    muscleGroup: worst.key,
+    muscleGroupLabel: label,
+    currentDaysBetween: worst.value,
+    suggestedSessionsPerWeek: 2,
+    message: 'Группа "$label" тренируется раз в $daysStr дней. '
+        'Исследования показывают, что 2 тренировки в неделю на мышечную '
+        'группу дают больше роста, чем одна. Распредели объём на 2 дня.',
+  );
+}
+
+// ─── 9. Volume ramp injury guard ──────────────────────────────────────────────
+
+enum VolumeRampSeverity { info, warning, danger }
+
+class VolumeRampRec {
+  final double currentWeekVolume;
+  final double prior4WeekAvg;
+  final double rampPct;
+  final VolumeRampSeverity severity;
+  final String message;
+
+  const VolumeRampRec({
+    required this.currentWeekVolume,
+    required this.prior4WeekAvg,
+    required this.rampPct,
+    required this.severity,
+    required this.message,
+  });
+}
+
+/// Flags rapid volume ramps that increase injury risk (ACWR-inspired).
+///
+/// [currentWeekVolume] — total weekly volume (kg × reps) for the current week.
+/// [prior4WeekAvg]     — average weekly volume over the previous 4 weeks.
+///
+/// Rules:
+///   ramp > 30 % → danger (acute:chronic ratio ≥ 1.5)
+///   ramp > 20 % → warning
+///   otherwise   → null
+VolumeRampRec? evaluateVolumeRamp({
+  required double currentWeekVolume,
+  required double prior4WeekAvg,
+}) {
+  if (prior4WeekAvg <= 0) return null;
+  final ramp = (currentWeekVolume - prior4WeekAvg) / prior4WeekAvg * 100;
+  if (ramp <= 20) return null;
+
+  final rampStr = ramp.round().toString();
+  VolumeRampSeverity severity;
+  String message;
+
+  if (ramp > 30) {
+    severity = VolumeRampSeverity.danger;
+    message = 'Объём за неделю вырос на $rampStr% относительно предыдущих '
+        'четырёх. Такой скачок повышает риск травмы. Вернись к прежнему '
+        'объёму или прибавляй не более 10% в неделю.';
+  } else {
+    severity = VolumeRampSeverity.warning;
+    message = 'Рост недельного объёма +$rampStr%. Это за пределами безопасного '
+        'диапазона (+10%). Не наращивай дальше, дай телу адаптироваться.';
+  }
+
+  return VolumeRampRec(
+    currentWeekVolume: currentWeekVolume,
+    prior4WeekAvg: prior4WeekAvg,
+    rampPct: ramp,
+    severity: severity,
+    message: message,
+  );
+}
+
+// ─── 10. Time-of-day performance ──────────────────────────────────────────────
+
+enum TimeOfDay { morning, afternoon, evening }
+
+class TimeOfDayRec {
+  final TimeOfDay bestTime;
+  final double bestTimeAvgVolume;
+  final double worstTimeAvgVolume;
+  final double deltaPct;
+  final String message;
+
+  const TimeOfDayRec({
+    required this.bestTime,
+    required this.bestTimeAvgVolume,
+    required this.worstTimeAvgVolume,
+    required this.deltaPct,
+    required this.message,
+  });
+}
+
+/// Compares average session volume by time-of-day bucket and suggests training
+/// at the best-performing time.
+///
+/// [sessionsByBucket] — each entry: { hour: int 0-23, volumeKg: double }
+///
+/// Buckets:
+///   morning   — 5-11
+///   afternoon — 12-17
+///   evening   — 18-23
+///
+/// Triggers when best bucket has ≥ 15 % higher avg volume than the worst,
+/// and each bucket has at least 3 sessions.
+TimeOfDayRec? evaluateTimeOfDay(List<Map<String, dynamic>> sessions) {
+  if (sessions.length < 9) return null;
+
+  final buckets = <TimeOfDay, List<double>>{
+    TimeOfDay.morning: [],
+    TimeOfDay.afternoon: [],
+    TimeOfDay.evening: [],
+  };
+
+  for (final s in sessions) {
+    final hour = s['hour'] as int?;
+    final vol = (s['volumeKg'] as num?)?.toDouble();
+    if (hour == null || vol == null || vol <= 0) continue;
+    if (hour >= 5 && hour <= 11) {
+      buckets[TimeOfDay.morning]!.add(vol);
+    } else if (hour >= 12 && hour <= 17) {
+      buckets[TimeOfDay.afternoon]!.add(vol);
+    } else if (hour >= 18 && hour <= 23) {
+      buckets[TimeOfDay.evening]!.add(vol);
+    }
+  }
+
+  // Require all three buckets to have at least 3 sessions
+  if (buckets.values.any((v) => v.length < 3)) return null;
+
+  double avg(List<double> l) => l.reduce((a, b) => a + b) / l.length;
+  final avgs = {
+    for (final e in buckets.entries) e.key: avg(e.value),
+  };
+
+  final best = avgs.entries.reduce((a, b) => a.value >= b.value ? a : b);
+  final worst = avgs.entries.reduce((a, b) => a.value <= b.value ? a : b);
+  if (worst.value <= 0) return null;
+
+  final deltaPct = (best.value - worst.value) / worst.value * 100;
+  if (deltaPct < 15) return null;
+
+  final timeLabel = switch (best.key) {
+    TimeOfDay.morning => 'утром (5:00-11:00)',
+    TimeOfDay.afternoon => 'днём (12:00-17:00)',
+    TimeOfDay.evening => 'вечером (18:00-23:00)',
+  };
+
+  return TimeOfDayRec(
+    bestTime: best.key,
+    bestTimeAvgVolume: best.value,
+    worstTimeAvgVolume: worst.value,
+    deltaPct: deltaPct,
+    message: 'Твой объём $timeLabel в среднем на ${deltaPct.round()}% выше. '
+        'Попробуй переносить тяжёлые тренировки именно в это время.',
+  );
+}
+
+// ─── 11. DOMS-guided recovery ─────────────────────────────────────────────────
+
+class DomsRec {
+  final int soreness;
+  final String plannedMuscle;
+  final String plannedMuscleLabel;
+  final String message;
+
+  const DomsRec({
+    required this.soreness,
+    required this.plannedMuscle,
+    required this.plannedMuscleLabel,
+    required this.message,
+  });
+}
+
+/// Warns when the user plans to train a still-sore muscle group.
+///
+/// [soreness] — self-reported soreness today, 1-5 scale.
+/// [plannedMuscle] — muscle group key the user is about to train.
+/// [plannedMuscleRecentlyWorked] — true if this group was trained in the last
+///   48 hours (soreness likely refers to it).
+///
+/// Triggers when soreness ≥ 4 AND the planned muscle was recently worked.
+DomsRec? evaluateDoms({
+  required int? soreness,
+  required String? plannedMuscle,
+  required bool plannedMuscleRecentlyWorked,
+}) {
+  if (soreness == null || soreness < 4) return null;
+  if (plannedMuscle == null || !plannedMuscleRecentlyWorked) return null;
+
+  const labels = {
+    'chest': 'грудь',
+    'back': 'спина',
+    'shoulders': 'плечи',
+    'arms': 'руки',
+    'legs': 'ноги',
+    'core': 'пресс',
+  };
+
+  final label = labels[plannedMuscle] ?? plannedMuscle;
+
+  return DomsRec(
+    soreness: soreness,
+    plannedMuscle: plannedMuscle,
+    plannedMuscleLabel: label,
+    message: 'Крепатура $soreness/5 и ты собираешься тренировать "$label", '
+        'которая уже работала за последние 48 часов. Дай мышцам ещё день '
+        'отдыха или переключись на другую группу.',
+  );
+}
+
+// ─── 12. Session duration optimization ────────────────────────────────────────
+
+class SessionDurationRec {
+  final double avgDurationMin;
+  final double lastThirdDropPct;
+  final int sessionsAnalyzed;
+  final String message;
+
+  const SessionDurationRec({
+    required this.avgDurationMin,
+    required this.lastThirdDropPct,
+    required this.sessionsAnalyzed,
+    required this.message,
+  });
+}
+
+/// Detects sessions that run too long with noticeable performance drop-off in
+/// the final third, suggesting to shorten or split the workout.
+///
+/// [sessions] — each entry:
+///   {
+///     'durationMin': double,
+///     'firstThirdAvgVolume': double, // avg set volume in the first third
+///     'lastThirdAvgVolume':  double, // avg set volume in the last third
+///   }
+///
+/// Triggers when average duration > 75 min AND average last-third drop > 10%
+/// AND at least 4 sessions analyzed.
+SessionDurationRec? evaluateSessionDuration(
+    List<Map<String, dynamic>> sessions) {
+  final longs = sessions
+      .where((s) => ((s['durationMin'] as num?)?.toDouble() ?? 0) > 75)
+      .toList();
+  if (longs.length < 4) return null;
+
+  double totalDrop = 0;
+  double totalDuration = 0;
+  int valid = 0;
+
+  for (final s in longs) {
+    final first = (s['firstThirdAvgVolume'] as num?)?.toDouble() ?? 0;
+    final last = (s['lastThirdAvgVolume'] as num?)?.toDouble() ?? 0;
+    final dur = (s['durationMin'] as num?)?.toDouble() ?? 0;
+    if (first <= 0 || last <= 0 || dur <= 0) continue;
+    final drop = (first - last) / first * 100;
+    totalDrop += drop;
+    totalDuration += dur;
+    valid++;
+  }
+  if (valid < 4) return null;
+
+  final avgDrop = totalDrop / valid;
+  final avgDuration = totalDuration / valid;
+  if (avgDrop < 10) return null;
+
+  return SessionDurationRec(
+    avgDurationMin: avgDuration,
+    lastThirdDropPct: avgDrop,
+    sessionsAnalyzed: valid,
+    message: 'Твои тренировки длятся в среднем ${avgDuration.round()} мин, '
+        'а производительность в последней трети падает на '
+        '${avgDrop.round()}%. Сократи до 60-70 мин или раздели программу '
+        'на A/B — короткие интенсивные сессии эффективнее длинных.',
+  );
+}
