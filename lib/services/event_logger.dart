@@ -397,4 +397,18 @@ class EventLogger {
 
   static void feedbackSubmitted({required String category}) =>
       log('feedback_submitted', props: {'category': category});
+
+  // ─── RecSys feedback ──────────────────────────────────────────────────────
+
+  /// User tapped "useful" or acted on a recommendation.
+  static void recAccepted({required String recId}) =>
+      log('rec_accepted', props: {'rec_id': recId});
+
+  /// User dismissed / closed a recommendation card.
+  static void recDismissed({required String recId}) =>
+      log('rec_dismissed', props: {'rec_id': recId});
+
+  /// Recommendation card was shown to the user (for impression tracking).
+  static void recShown({required String recId}) =>
+      log('rec_shown', props: {'rec_id': recId});
 }

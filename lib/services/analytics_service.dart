@@ -3144,4 +3144,470 @@ class AnalyticsService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RecSys v2 — data sources for the 12 new evaluators
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Recent session RPE values (newest first). For [evaluateAutoregulation].
+  static Future<List<double?>> getRecentRpes({int limit = 8}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('session_rpe')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .order('date', ascending: false)
+          .limit(limit);
+      return (res as List)
+          .map((r) => (r['session_rpe'] as num?)?.toDouble())
+          .toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getRecentRpes error: $e');
+      return [];
+    }
+  }
+
+  /// Consistency data: sessions in last 14 days vs 8-week baseline.
+  /// For [evaluateConsistency].
+  static Future<Map<String, dynamic>> getConsistencyData() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {'last2Weeks': 0, 'baseline': 0.0};
+    try {
+      final now = DateTime.now();
+      final twoWeeksAgo = now.subtract(const Duration(days: 14));
+      final tenWeeksAgo = now.subtract(const Duration(days: 70));
+
+      final results = await Future.wait([
+        _client
+            .from('training_sessions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .gte('date', twoWeeksAgo.toIso8601String().split('T')[0]),
+        _client
+            .from('training_sessions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .gte('date', tenWeeksAgo.toIso8601String().split('T')[0])
+            .lt('date', twoWeeksAgo.toIso8601String().split('T')[0]),
+      ]);
+
+      final last2 = (results[0] as List).length;
+      final prior8WeeksSessions = (results[1] as List).length;
+      // baseline = avg sessions per 2-week window over the prior 8 weeks (= 4 windows)
+      final baseline = prior8WeeksSessions > 0
+          ? prior8WeeksSessions / 4.0
+          : 0.0;
+
+      return {'last2Weeks': last2, 'baseline': baseline};
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getConsistencyData error: $e');
+      return {'last2Weeks': 0, 'baseline': 0.0};
+    }
+  }
+
+  /// Average reps across the user's active program exercises.
+  /// For [evaluateGoalAlignment].
+  static Future<double> getAvgRepsInProgram() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      final workouts = await _client
+          .from('workouts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_standard', false)
+          .isFilter('deleted_at', null);
+      final wIds = (workouts as List).map((e) => e['id'] as String).toList();
+      if (wIds.isEmpty) return 0;
+
+      final weRes = await _client
+          .from('workout_exercises')
+          .select('reps_range')
+          .inFilter('workout_id', wIds);
+      if ((weRes as List).isEmpty) return 0;
+
+      double totalReps = 0;
+      int count = 0;
+      for (final we in weRes) {
+        final range = we['reps_range'] as String? ?? '8-12';
+        final parts = range.split('-');
+        // Use top of range
+        final top = double.tryParse(parts.last) ?? 10;
+        totalReps += top;
+        count++;
+      }
+      return count > 0 ? totalReps / count : 0;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getAvgRepsInProgram error: $e');
+      return 0;
+    }
+  }
+
+  /// Weekly working sets per muscle group (current week).
+  /// For [evaluateVolumeLandmarks].
+  /// Keys match recsys landmarks: chest, back, shoulders, arms, legs, core.
+  static Future<Map<String, int>> getCurrentWeekSetsByMuscle() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return {};
+    try {
+      final now = DateTime.now();
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final mondayStr = monday.toIso8601String().split('T')[0];
+
+      final sessRes = await _client
+          .from('training_sessions')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .gte('date', mondayStr);
+      final sIds = (sessRes as List).map((e) => e['id'] as String).toList();
+      if (sIds.isEmpty) return {};
+
+      final setsRes = await _client
+          .from('sets')
+          .select('workout_exercise_id')
+          .inFilter('training_session_id', sIds)
+          .eq('completed', true)
+          .eq('is_warmup', false);
+
+      final weIds = (setsRes as List)
+          .map((e) => e['workout_exercise_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      if (weIds.isEmpty) return {};
+
+      final weRes = await _client
+          .from('workout_exercises')
+          .select('id, exercises(category)')
+          .inFilter('id', weIds);
+
+      final weCategory = <String, String>{};
+      for (final we in weRes as List) {
+        final cat = (we['exercises'] as Map<String, dynamic>?)?['category'] as String?;
+        if (cat != null) weCategory[we['id'] as String] = _normalizeMuscleKey(cat);
+      }
+
+      final result = <String, int>{};
+      for (final set in setsRes as List) {
+        final weId = set['workout_exercise_id'] as String?;
+        if (weId == null) continue;
+        final muscle = weCategory[weId];
+        if (muscle == null) continue;
+        result[muscle] = (result[muscle] ?? 0) + 1;
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getCurrentWeekSetsByMuscle error: $e');
+      return {};
+    }
+  }
+
+  /// Map DB category names to recsys landmark keys.
+  static String _normalizeMuscleKey(String category) {
+    return switch (category.toLowerCase()) {
+      'chest' || 'грудь' => 'chest',
+      'back' || 'спина' => 'back',
+      'shoulders' || 'плечи' => 'shoulders',
+      'arms' || 'руки' || 'biceps' || 'triceps' => 'arms',
+      'legs' || 'ноги' || 'glutes' || 'ягодицы' => 'legs',
+      'core' || 'пресс' || 'abs' => 'core',
+      _ => category.toLowerCase(),
+    };
+  }
+
+  /// Volume ramp data: current week total volume vs 4-week average.
+  /// For [evaluateVolumeRamp]. Derives from [getWeeklyVolumeHistory].
+  static Future<Map<String, double>> getVolumeRampData() async {
+    try {
+      final history = await getWeeklyVolumeHistory(weeks: 5);
+      if (history.length < 5) return {};
+      // Last entry = current week, prior 4 = baseline
+      final currentVol = (history.last['volume'] as num?)?.toDouble() ?? 0;
+      final prior4 = history.sublist(0, 4);
+      final avgPrior =
+          prior4.fold<double>(0, (s, e) => s + ((e['volume'] as num?)?.toDouble() ?? 0)) / 4;
+      return {'currentWeekVolume': currentVol, 'prior4WeekAvg': avgPrior};
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getVolumeRampData error: $e');
+      return {};
+    }
+  }
+
+  /// Sessions with hour-of-day and volume. For [evaluateTimeOfDay].
+  static Future<List<Map<String, dynamic>>> getSessionsByTimeOfDay({
+    int limit = 60,
+  }) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    try {
+      final res = await _client
+          .from('training_sessions')
+          .select('created_at, volume_kg')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .not('volume_kg', 'is', null)
+          .not('created_at', 'is', null)
+          .order('date', ascending: false)
+          .limit(limit);
+
+      return (res as List).map((r) {
+        final createdAt = DateTime.tryParse(r['created_at'] as String? ?? '');
+        return {
+          'hour': createdAt?.hour ?? 12,
+          'volumeKg': (r['volume_kg'] as num?)?.toDouble() ?? 0,
+        };
+      }).toList();
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getSessionsByTimeOfDay error: $e');
+      return [];
+    }
+  }
+
+  /// Session duration with first/last-third volume splits.
+  /// For [evaluateSessionDuration].
+  static Future<List<Map<String, dynamic>>> getSessionDurationSplits({
+    int limit = 20,
+  }) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    try {
+      final sessRes = await _client
+          .from('training_sessions')
+          .select('id, duration_seconds')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .not('duration_seconds', 'is', null)
+          .order('date', ascending: false)
+          .limit(limit);
+
+      final longSessions = (sessRes as List)
+          .where((s) => ((s['duration_seconds'] as num?) ?? 0) > 4500) // > 75 min
+          .toList();
+      if (longSessions.isEmpty) return [];
+
+      final sIds = longSessions.map((s) => s['id'] as String).toList();
+      final setsRes = await _client
+          .from('sets')
+          .select('training_session_id, weight, reps, set_number')
+          .inFilter('training_session_id', sIds)
+          .eq('completed', true)
+          .eq('is_warmup', false)
+          .order('set_number');
+
+      // Group sets by session and compute first/last third volumes
+      final setsBySession = <String, List<Map<String, dynamic>>>{};
+      for (final s in setsRes as List) {
+        final sid = s['training_session_id'] as String;
+        setsBySession.putIfAbsent(sid, () => []).add(s.cast<String, dynamic>());
+      }
+
+      final result = <Map<String, dynamic>>[];
+      for (final sess in longSessions) {
+        final sid = sess['id'] as String;
+        final sets = setsBySession[sid];
+        if (sets == null || sets.length < 6) continue;
+
+        final dur = (sess['duration_seconds'] as num).toDouble() / 60;
+        final third = sets.length ~/ 3;
+        final firstSets = sets.sublist(0, third);
+        final lastSets = sets.sublist(sets.length - third);
+
+        double avgVol(List<Map<String, dynamic>> s) {
+          if (s.isEmpty) return 0;
+          final total = s.fold<double>(0, (sum, r) {
+            final w = (r['weight'] as num?)?.toDouble() ?? 0;
+            final reps = (r['reps'] as num?)?.toInt() ?? 0;
+            return sum + w * reps;
+          });
+          return total / s.length;
+        }
+
+        result.add({
+          'durationMin': dur,
+          'firstThirdAvgVolume': avgVol(firstSets),
+          'lastThirdAvgVolume': avgVol(lastSets),
+        });
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getSessionDurationSplits error: $e');
+      return [];
+    }
+  }
+
+  /// Best PR candidate: exercise with most consecutive full sessions + days
+  /// since last PR. For [evaluatePrReadiness].
+  static Future<Map<String, dynamic>?> getPrCandidate() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return null;
+    try {
+      // Get recent PRs
+      final prRes = await _client
+          .from('personal_records')
+          .select('exercise_id, weight_kg, achieved_at')
+          .eq('user_id', userId)
+          .order('achieved_at', ascending: false);
+      final prMap = <String, Map<String, dynamic>>{};
+      for (final pr in prRes as List) {
+        final eid = pr['exercise_id'] as String;
+        if (!prMap.containsKey(eid)) prMap[eid] = pr.cast<String, dynamic>();
+      }
+
+      // Get last 10 sessions and their sets
+      final sessRes = await _client
+          .from('training_sessions')
+          .select('id, date')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .order('date', ascending: false)
+          .limit(10);
+      if ((sessRes as List).length < 3) return null;
+
+      final sIds = sessRes.map((s) => s['id'] as String).toList();
+      final setsRes = await _client
+          .from('sets')
+          .select('training_session_id, workout_exercise_id, reps, reps_target, weight')
+          .inFilter('training_session_id', sIds)
+          .eq('completed', true)
+          .eq('is_warmup', false);
+
+      // For each workout_exercise: count consecutive sessions where reps >= reps_target
+      final weStats = <String, int>{}; // weId -> consecutive full sessions
+      final weWeights = <String, double>{}; // weId -> max recent weight
+      final weSessionOrder = <String, List<String>>{}; // weId -> session ids in order
+
+      for (final s in setsRes as List) {
+        final weId = s['workout_exercise_id'] as String?;
+        if (weId == null) continue;
+        final sid = s['training_session_id'] as String;
+        weSessionOrder.putIfAbsent(weId, () => []);
+        if (!weSessionOrder[weId]!.contains(sid)) weSessionOrder[weId]!.add(sid);
+        final w = (s['weight'] as num?)?.toDouble() ?? 0;
+        if (w > (weWeights[weId] ?? 0)) weWeights[weId] = w;
+
+        final reps = (s['reps'] as num?)?.toInt() ?? 0;
+        final target = (s['reps_target'] as num?)?.toInt();
+        if (target != null && reps >= target) {
+          weStats[weId] = (weStats[weId] ?? 0) + 1;
+        }
+      }
+
+      // Resolve exercise names
+      final weIds = weStats.keys.toList();
+      if (weIds.isEmpty) return null;
+      final weRes = await _client
+          .from('workout_exercises')
+          .select('id, exercise_id, exercises(name, name_ru)')
+          .inFilter('id', weIds);
+      final weMeta = <String, Map<String, dynamic>>{};
+      for (final we in weRes as List) {
+        weMeta[we['id'] as String] = we.cast<String, dynamic>();
+      }
+
+      // Pick the best candidate: most consecutive full sets, weighted by recency
+      String? bestWeId;
+      int bestScore = 0;
+      for (final entry in weStats.entries) {
+        if (entry.value > bestScore) {
+          bestScore = entry.value;
+          bestWeId = entry.key;
+        }
+      }
+      if (bestWeId == null || bestScore < 3) return null;
+
+      final meta = weMeta[bestWeId];
+      if (meta == null) return null;
+      final ex = meta['exercises'] as Map<String, dynamic>?;
+      final exerciseId = meta['exercise_id'] as String;
+      final nameRu = ex?['name_ru'] as String?;
+      final name = (nameRu?.isNotEmpty == true ? nameRu : ex?['name']) ?? '';
+
+      // Days since last PR
+      final pr = prMap[exerciseId];
+      int daysSincePr = 999;
+      if (pr != null) {
+        final achievedAt = DateTime.tryParse(pr['achieved_at'] as String? ?? '');
+        if (achievedAt != null) {
+          daysSincePr = DateTime.now().difference(achievedAt).inDays;
+        }
+      }
+
+      return {
+        'exerciseId': exerciseId,
+        'exerciseName': name,
+        'currentWeightKg': weWeights[bestWeId] ?? 0.0,
+        'consecutiveFullSessions': bestScore,
+        'daysSinceLastPr': daysSincePr,
+      };
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getPrCandidate error: $e');
+      return null;
+    }
+  }
+
+  /// Average reps per week (newest first) over the last [weeks] weeks.
+  /// For [evaluateRepRangeDiversification].
+  static Future<List<double>> getAvgRepsPerWeek({int weeks = 12}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return [];
+    try {
+      final now = DateTime.now();
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final earliest = monday.subtract(Duration(days: 7 * (weeks - 1)));
+      final earliestStr = earliest.toIso8601String().split('T')[0];
+
+      final sessRes = await _client
+          .from('training_sessions')
+          .select('id, date')
+          .eq('user_id', userId)
+          .eq('completed', true)
+          .gte('date', earliestStr);
+      if ((sessRes as List).isEmpty) return [];
+
+      final sessionIds = sessRes.map((e) => e['id'] as String).toList();
+      final sessionDates = <String, String>{
+        for (final s in sessRes) s['id'] as String: s['date'] as String
+      };
+
+      final setsRes = await _client
+          .from('sets')
+          .select('training_session_id, reps')
+          .inFilter('training_session_id', sessionIds)
+          .eq('completed', true)
+          .eq('is_warmup', false)
+          .not('reps', 'is', null);
+
+      // Group reps by week
+      final weekReps = <String, List<int>>{};
+      for (final s in setsRes as List) {
+        final sid = s['training_session_id'] as String;
+        final date = sessionDates[sid];
+        if (date == null) continue;
+        final d = DateTime.parse(date);
+        final wMonday = d.subtract(Duration(days: d.weekday - 1));
+        final wKey = wMonday.toIso8601String().split('T')[0];
+        weekReps.putIfAbsent(wKey, () => []).add((s['reps'] as num).toInt());
+      }
+
+      // Build result: newest first
+      final result = <double>[];
+      for (int i = weeks - 1; i >= 0; i--) {
+        final wMonday = earliest.add(Duration(days: 7 * i));
+        final wKey = wMonday.toIso8601String().split('T')[0];
+        final reps = weekReps[wKey];
+        if (reps != null && reps.isNotEmpty) {
+          result.add(reps.reduce((a, b) => a + b) / reps.length);
+        }
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AnalyticsService] getAvgRepsPerWeek error: $e');
+      return [];
+    }
+  }
 }
