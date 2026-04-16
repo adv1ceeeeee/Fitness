@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +7,7 @@ import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
 import 'package:sportwai/utils/retry.dart';
@@ -12,30 +15,72 @@ import 'package:sportwai/utils/retry.dart';
 class TrainingService {
   static SupabaseClient get _client => Supabase.instance.client;
 
+  // ─── Cache helpers ──────────────────────────────────────────────────────
+  // Short TTLs: session data changes more often than workouts.
+  static const _shortTtl = Duration(minutes: 2);
+  static const _mediumTtl = Duration(minutes: 5);
+
+  /// Invalidate every cache entry related to training sessions for a user.
+  /// Called after any session mutation (create, complete, skip, delete).
+  static Future<void> _invalidateSessionCaches() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+    await Future.wait([
+      AppCache.invalidate('today_workout:$userId'),
+      AppCache.invalidate('next_scheduled:$userId'),
+      AppCache.invalidate('days_since_last:$userId'),
+      AppCache.invalidate('open_session:$userId'),
+      AppCache.invalidatePrefix('sessions_range:$userId'),
+      AppCache.invalidatePrefix('last_session_info:$userId'),
+      AppCache.invalidatePrefix('upcoming_sessions:$userId'),
+    ]);
+  }
+
+  /// Clear all training-related caches (used on logout).
+  static Future<void> clearAllCaches() async {
+    await Future.wait([
+      AppCache.invalidatePrefix('today_workout:'),
+      AppCache.invalidatePrefix('next_scheduled:'),
+      AppCache.invalidatePrefix('days_since_last:'),
+      AppCache.invalidatePrefix('open_session:'),
+      AppCache.invalidatePrefix('sessions_range:'),
+      AppCache.invalidatePrefix('last_session_info:'),
+      AppCache.invalidatePrefix('upcoming_sessions:'),
+    ]);
+  }
+
   /// Получить тренировку на сегодня для пользователя
   static Future<Workout?> getTodayWorkout() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
-    final weekday = DateTime.now().weekday;
-    // Dart: 1=Mon, 7=Sun. Our days: 0=Mon, 6=Sun
-    final dayIndex = weekday - 1;
+    return AppCache.get<Workout?>(
+      key: 'today_workout:$userId',
+      ttl: _shortTtl,
+      fetch: () async {
+        final weekday = DateTime.now().weekday;
+        final dayIndex = weekday - 1; // 0=Mon…6=Sun
 
-    final res = await _client
-        .from('workouts')
-        .select()
-        .eq('user_id', userId)
-        .eq('is_standard', false);
+        final res = await _client
+            .from('workouts')
+            .select()
+            .eq('user_id', userId)
+            .eq('is_standard', false);
 
-    final list = res as List;
-    for (final row in list) {
-      final days = row['days'] as List<dynamic>?;
-      if (days != null &&
-          days.any((d) => (d as num).toInt() == dayIndex)) {
-        return Workout.fromJson(row as Map<String, dynamic>);
-      }
-    }
-    return null;
+        for (final row in res as List) {
+          final days = row['days'] as List<dynamic>?;
+          if (days != null && days.any((d) => (d as num).toInt() == dayIndex)) {
+            return Workout.fromJson(row as Map<String, dynamic>);
+          }
+        }
+        return null;
+      },
+      encode: (w) => w == null ? null : jsonEncode(w.toJson()),
+      decode: (cached) {
+        if (cached == null) return null;
+        return Workout.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+      },
+    );
   }
 
   static Future<List<WorkoutExercise>> getWorkoutExercisesForToday(
@@ -69,6 +114,7 @@ class TrainingService {
       if (streakAtStart != null) 'streak_at_start': streakAtStart,
     }).select().single();
 
+    await _invalidateSessionCaches();
     return TrainingSession.fromJson(res);
   }
 
@@ -117,6 +163,7 @@ class TrainingService {
           : notes,
       if (sessionRpe != null) 'p_session_rpe': sessionRpe.clamp(1, 10),
     });
+    await _invalidateSessionCaches();
   }
 
   /// Mark a planned session as skipped with a reason.
@@ -125,6 +172,7 @@ class TrainingService {
     await _client.from('training_sessions').update({
       'notes': 'skipped:$reason',
     }).eq('id', sessionId);
+    await _invalidateSessionCaches();
   }
 
   /// Получить все сессии пользователя в диапазоне дат
@@ -138,17 +186,31 @@ class TrainingService {
     final fromStr = from.toIso8601String().split('T')[0];
     final toStr = to.toIso8601String().split('T')[0];
 
-    final res = await _client
-        .from('training_sessions')
-        .select('id, user_id, workout_id, date, completed, notes, planned_time')
-        .eq('user_id', userId)
-        .gte('date', fromStr)
-        .lte('date', toStr)
-        .order('date');
-
-    return (res as List)
-        .map((e) => TrainingSession.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return AppCache.get<List<TrainingSession>>(
+      key: 'sessions_range:$userId:$fromStr:$toStr',
+      ttl: _shortTtl,
+      fetch: () async {
+        final res = await _client
+            .from('training_sessions')
+            .select(
+                'id, user_id, workout_id, date, completed, notes, planned_time')
+            .eq('user_id', userId)
+            .gte('date', fromStr)
+            .lte('date', toStr)
+            .order('date');
+        return (res as List)
+            .map((e) => TrainingSession.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+      encode: (list) => jsonEncode(list.map((s) => s.toJson()).toList()),
+      decode: (cached) {
+        if (cached == null) return <TrainingSession>[];
+        final list = jsonDecode(cached) as List;
+        return list
+            .map((e) => TrainingSession.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+    );
   }
 
   static Future<bool> saveSet(
@@ -368,28 +430,41 @@ class TrainingService {
 
   /// Find the most recent incomplete session started within the last 24 hours.
   /// Returns null if none found. Used for session recovery on app restart.
+  /// Cached briefly so the lookup on each app resume is near-instant.
   static Future<Map<String, dynamic>?> getOpenSession() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
-    final cutoff = DateTime.now()
-        .subtract(const Duration(hours: 24))
-        .toIso8601String();
+    return AppCache.get<Map<String, dynamic>?>(
+      key: 'open_session:$userId',
+      ttl: _shortTtl,
+      fetch: () async {
+        final cutoff = DateTime.now()
+            .subtract(const Duration(hours: 24))
+            .toIso8601String();
 
-    return await _client
-        .from('training_sessions')
-        .select('id, workout_id, created_at, workouts(name)')
-        .eq('user_id', userId)
-        .eq('completed', false)
-        .gte('created_at', cutoff)
-        .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle();
+        return await _client
+            .from('training_sessions')
+            .select('id, workout_id, created_at, workouts(name)')
+            .eq('user_id', userId)
+            .eq('completed', false)
+            .gte('created_at', cutoff)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+      },
+      encode: (v) => v == null ? null : jsonEncode(v),
+      decode: (cached) {
+        if (cached == null) return null;
+        return (jsonDecode(cached) as Map).cast<String, dynamic>();
+      },
+    );
   }
 
   /// Delete a session and all its sets atomically via fn_delete_session RPC.
   static Future<void> deleteSession(String sessionId) async {
     await _client.rpc('fn_delete_session', params: {'p_session_id': sessionId});
+    await _invalidateSessionCaches();
   }
 
   /// Returns the personal best weight (kg) for an exercise.
@@ -418,74 +493,108 @@ class TrainingService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
 
-    final rows = await _client
-        .from('training_sessions')
-        .select('workout_id, date, duration_seconds')
-        .eq('user_id', userId)
-        .eq('completed', true)
-        .inFilter('workout_id', workoutIds)
-        .order('date', ascending: false);
+    final sortedIds = [...workoutIds]..sort();
+    final keyIds = sortedIds.join(',');
 
-    final result = <String, Map<String, dynamic>>{};
-    for (final row in rows as List) {
-      final wid = row['workout_id'] as String;
-      if (!result.containsKey(wid)) {
-        result[wid] = {
-          'date': row['date'] as String?,
-          'duration_seconds': row['duration_seconds'] as int?,
-        };
-      }
-    }
-    return result;
+    return AppCache.get<Map<String, Map<String, dynamic>>>(
+      key: 'last_session_info:$userId:$keyIds',
+      ttl: _mediumTtl,
+      fetch: () async {
+        final rows = await _client
+            .from('training_sessions')
+            .select('workout_id, date, duration_seconds')
+            .eq('user_id', userId)
+            .eq('completed', true)
+            .inFilter('workout_id', workoutIds)
+            .order('date', ascending: false);
+
+        final result = <String, Map<String, dynamic>>{};
+        for (final row in rows as List) {
+          final wid = row['workout_id'] as String;
+          if (!result.containsKey(wid)) {
+            result[wid] = {
+              'date': row['date'] as String?,
+              'duration_seconds': row['duration_seconds'] as int?,
+            };
+          }
+        }
+        return result;
+      },
+      encode: (m) => jsonEncode(m),
+      decode: (cached) {
+        if (cached == null) return {};
+        final raw = jsonDecode(cached) as Map;
+        return raw.map((k, v) =>
+            MapEntry(k as String, (v as Map).cast<String, dynamic>()));
+      },
+    );
   }
 
   /// Returns the next scheduled workout within 7 days (by workout.days weekday list).
   static Future<Workout?> getNextScheduledWorkout() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
-    try {
-      final rows = await _client
-          .from('workouts')
-          .select('id, name, days, cycle_weeks, is_standard')
-          .eq('user_id', userId)
-          .not('days', 'eq', '{}');
-      final workouts = (rows as List)
-          .map((r) => Workout.fromJson(r as Map<String, dynamic>))
-          .where((w) => w.days.isNotEmpty)
-          .toList();
-      if (workouts.isEmpty) return null;
-      // Find the soonest upcoming workout day (1-7 days ahead)
-      final today = DateTime.now().weekday - 1; // 0=Mon…6=Sun
-      for (int offset = 1; offset <= 7; offset++) {
-        final targetDay = (today + offset) % 7;
-        for (final w in workouts) {
-          if (w.days.contains(targetDay)) return w;
+    return AppCache.get<Workout?>(
+      key: 'next_scheduled:$userId',
+      ttl: _shortTtl,
+      fetch: () async {
+        try {
+          final rows = await _client
+              .from('workouts')
+              .select('id, name, days, cycle_weeks, is_standard')
+              .eq('user_id', userId)
+              .not('days', 'eq', '{}');
+          final workouts = (rows as List)
+              .map((r) => Workout.fromJson(r as Map<String, dynamic>))
+              .where((w) => w.days.isNotEmpty)
+              .toList();
+          if (workouts.isEmpty) return null;
+          final today = DateTime.now().weekday - 1;
+          for (int offset = 1; offset <= 7; offset++) {
+            final targetDay = (today + offset) % 7;
+            for (final w in workouts) {
+              if (w.days.contains(targetDay)) return w;
+            }
+          }
+          return null;
+        } catch (_) {
+          return null;
         }
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
+      },
+      encode: (w) => w == null ? null : jsonEncode(w.toJson()),
+      decode: (cached) {
+        if (cached == null) return null;
+        return Workout.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+      },
+    );
   }
 
   /// Returns days since the last completed workout (0 = trained today, -1 = never).
   static Future<int> getDaysSinceLastWorkout() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return -1;
-    try {
-      final rows = await _client
-          .from('training_sessions')
-          .select('date')
-          .eq('user_id', userId)
-          .eq('completed', true)
-          .order('date', ascending: false)
-          .limit(1);
-      if ((rows as List).isEmpty) return -1;
-      final lastDate = DateTime.parse(rows[0]['date'] as String);
-      return DateTime.now().difference(lastDate).inDays;
-    } catch (_) {
-      return -1;
-    }
+    return AppCache.get<int>(
+      key: 'days_since_last:$userId',
+      ttl: _shortTtl,
+      fetch: () async {
+        try {
+          final rows = await _client
+              .from('training_sessions')
+              .select('date')
+              .eq('user_id', userId)
+              .eq('completed', true)
+              .order('date', ascending: false)
+              .limit(1);
+          if ((rows as List).isEmpty) return -1;
+          final lastDate = DateTime.parse(rows[0]['date'] as String);
+          return DateTime.now().difference(lastDate).inDays;
+        } catch (_) {
+          return -1;
+        }
+      },
+      encode: (v) => v.toString(),
+      decode: (cached) => int.tryParse(cached ?? '') ?? -1,
+    );
   }
 
   /// Returns the nearest upcoming (future, incomplete, non-skipped) session per workout.
@@ -495,34 +604,54 @@ class TrainingService {
     if (workoutIds.isEmpty) return {};
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
-    final today = DateTime.now().toIso8601String().split('T')[0];
-    try {
-      final rows = await _client
-          .from('training_sessions')
-          .select('id, workout_id, date, notes')
-          .eq('user_id', userId)
-          .eq('completed', false)
-          .inFilter('workout_id', workoutIds)
-          .gte('date', today)
-          .order('date', ascending: true);
 
-      final result = <String, Map<String, dynamic>>{};
-      for (final row in rows as List) {
-        final notes = row['notes'] as String?;
-        if (notes?.startsWith('skipped:') == true) continue;
-        final wid = row['workout_id'] as String;
-        if (!result.containsKey(wid)) {
-          result[wid] = {
-            'date': row['date'] as String,
-            'session_id': row['id'] as String,
-          };
+    final sortedIds = [...workoutIds]..sort();
+    final keyIds = sortedIds.join(',');
+
+    return AppCache.get<Map<String, Map<String, dynamic>>>(
+      key: 'upcoming_sessions:$userId:$keyIds',
+      ttl: _shortTtl,
+      fetch: () async {
+        final today = DateTime.now().toIso8601String().split('T')[0];
+        try {
+          final rows = await _client
+              .from('training_sessions')
+              .select('id, workout_id, date, notes')
+              .eq('user_id', userId)
+              .eq('completed', false)
+              .inFilter('workout_id', workoutIds)
+              .gte('date', today)
+              .order('date', ascending: true);
+
+          final result = <String, Map<String, dynamic>>{};
+          for (final row in rows as List) {
+            final notes = row['notes'] as String?;
+            if (notes?.startsWith('skipped:') == true) continue;
+            final wid = row['workout_id'] as String;
+            if (!result.containsKey(wid)) {
+              result[wid] = {
+                'date': row['date'] as String,
+                'session_id': row['id'] as String,
+              };
+            }
+          }
+          return result;
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint(
+                '[TrainingService.getUpcomingSessionsForWorkouts] error: $e');
+          }
+          return {};
         }
-      }
-      return result;
-    } catch (e) {
-      if (kDebugMode) debugPrint('[TrainingService.getUpcomingSessionsForWorkouts] error: $e');
-      return {};
-    }
+      },
+      encode: (m) => jsonEncode(m),
+      decode: (cached) {
+        if (cached == null) return {};
+        final raw = jsonDecode(cached) as Map;
+        return raw.map((k, v) =>
+            MapEntry(k as String, (v as Map).cast<String, dynamic>()));
+      },
+    );
   }
 
 

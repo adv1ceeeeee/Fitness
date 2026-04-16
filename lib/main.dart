@@ -13,6 +13,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/firebase_options.dart';
 import 'package:sportwai/providers/settings_provider.dart';
 import 'package:sportwai/router.dart';
+import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/device_token_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/local_storage.dart';
@@ -113,6 +114,12 @@ Future<void> _bootstrap() async {
   await _initFcm();
   NotificationService.scheduleChurnNotification();
   OfflineQueueService.init();
+
+  // Warm caches on cold start when the user is already authenticated.
+  // Fire-and-forget — errors fall back to normal on-demand fetches.
+  if (Supabase.instance.client.auth.currentSession != null) {
+    AuthService.prefetchOnLogin();
+  }
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

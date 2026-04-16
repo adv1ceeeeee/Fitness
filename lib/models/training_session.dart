@@ -60,5 +60,11 @@ class TrainingSession {
         'date': date.toIso8601String().split('T')[0],
         'completed': completed,
         'notes': notes,
+        if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+        if (volumeKg != null) 'volume_kg': volumeKg,
+        if (plannedTime != null)
+          'planned_time':
+              '${plannedTime!.hour.toString().padLeft(2, '0')}:${plannedTime!.minute.toString().padLeft(2, '0')}',
+        if (sessionRpe != null) 'session_rpe': sessionRpe,
       };
 }

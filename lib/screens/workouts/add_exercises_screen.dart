@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -629,6 +630,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: CachedNetworkImage(
+                          cacheManager: AppImageCacheManager.instance,
                           imageUrl: gifUrl,
                           width: double.infinity,
                           height: 260,

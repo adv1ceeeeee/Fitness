@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/services/exercise_service.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 
 /// Category chip data: DB key → display name.
 const _categoryChips = [
@@ -179,6 +180,7 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
+                    cacheManager: AppImageCacheManager.instance,
                     imageUrl: gifUrl,
                     width: double.infinity,
                     height: 260,

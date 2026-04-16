@@ -73,13 +73,23 @@ void main() {
       expect(json['date'], '2024-06-20');
     });
 
-    test('does not include created_at in output', () {
+    test('includes created_at when set (for cache round-trip)', () {
       final s = TrainingSession(
         id: 'ts6',
         userId: 'u6',
         workoutId: 'w6',
         date: DateTime(2024, 1, 1),
         createdAt: DateTime(2024, 1, 1),
+      );
+      expect(s.toJson().containsKey('created_at'), isTrue);
+    });
+
+    test('omits created_at when null', () {
+      final s = TrainingSession(
+        id: 'ts6b',
+        userId: 'u6',
+        workoutId: 'w6',
+        date: DateTime(2024, 1, 1),
       );
       expect(s.toJson().containsKey('created_at'), isFalse);
     });

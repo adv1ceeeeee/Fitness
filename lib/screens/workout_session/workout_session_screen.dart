@@ -24,6 +24,7 @@ import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/services/gamification_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 import 'package:confetti/confetti.dart';
 
 enum _SessionPhase { warmup, exercise, cooldown }
@@ -1349,6 +1350,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: CachedNetworkImage(
+                          cacheManager: AppImageCacheManager.instance,
                           imageUrl: we.exercise!.gifUrl!,
                           height: 180,
                           width: double.infinity,
@@ -2508,6 +2510,7 @@ class _RestScreen extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
+                    cacheManager: AppImageCacheManager.instance,
                     imageUrl: nextExerciseGifUrl!,
                     height: 140,
                     width: 220,

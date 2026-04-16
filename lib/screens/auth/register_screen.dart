@@ -49,6 +49,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       EventLogger.resetSession();
       EventLogger.userRegistered();
       EventLogger.appOpened(source: 'register');
+      AuthService.prefetchOnLogin();
       if (mounted) {
         if (_rememberDevice) {
           context.go('/pin-setup');

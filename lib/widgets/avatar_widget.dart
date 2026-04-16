@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/avatar_config.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 
 /// Отображает аватар пользователя:
 /// - null или "default_N" → иконка из kDefaultAvatars
@@ -40,6 +41,7 @@ class AvatarWidget extends StatelessWidget {
     // Network image (custom photo) — cached on disk
     if (url.startsWith('http')) {
       return CachedNetworkImage(
+        cacheManager: AppImageCacheManager.instance,
         imageUrl: url,
         imageBuilder: (_, image) => CircleAvatar(
           radius: radius,

@@ -87,5 +87,8 @@ class WorkoutExercise {
         'superset_group': supersetGroup,
         'is_drop_set': isDropSet,
         'day': day,
+        // Nested exercise included for cache round-tripping. Supabase inserts
+        // use manual maps, not toJson(), so this does not affect writes.
+        if (exercise != null) 'exercises': exercise!.toJson(),
       };
 }

@@ -96,6 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
         EventLogger.resetSession();
         EventLogger.userLoggedIn();
         EventLogger.appOpened(source: 'login');
+        AuthService.prefetchOnLogin();
         if (mounted) context.go('/onboarding-check');
       } catch (e) {
         await _recordFailedAttempt();

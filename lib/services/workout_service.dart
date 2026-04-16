@@ -1,26 +1,70 @@
+import 'dart:convert';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 
 class WorkoutService {
   static SupabaseClient get _client => Supabase.instance.client;
 
+  // ─── Cache helpers ───────────────────────────────────────────────────────
+  static const _workoutsTtl = Duration(minutes: 5);
+  static const _workoutTtl = Duration(minutes: 5);
+  static const _exercisesTtl = Duration(minutes: 5);
+
+  /// Invalidate all workout-related caches for the current user.
+  /// Call after any mutation that affects the user's workout list.
+  static Future<void> _invalidateWorkoutsList() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return;
+    await AppCache.invalidate('workouts:$userId');
+  }
+
+  static Future<void> _invalidateWorkout(String id) async {
+    await AppCache.invalidate('workout:$id');
+  }
+
+  static Future<void> _invalidateWorkoutExercises(String workoutId) async {
+    await AppCache.invalidate('workout_exercises:$workoutId');
+  }
+
+  static Future<void> _invalidateGroup(String? groupId) async {
+    if (groupId == null) return;
+    await AppCache.invalidate('workout_group:$groupId');
+  }
+
+  // ─── Reads ───────────────────────────────────────────────────────────────
+
   static Future<List<Workout>> getMyWorkouts() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
 
-    final res = await _client
-        .from('workouts')
-        .select()
-        .eq('user_id', userId)
-        .eq('is_standard', false)
-        .isFilter('deleted_at', null)
-        .order('updated_at', ascending: false);
-
-    return (res as List)
-        .map((e) => Workout.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return AppCache.get<List<Workout>>(
+      key: 'workouts:$userId',
+      ttl: _workoutsTtl,
+      fetch: () async {
+        final res = await _client
+            .from('workouts')
+            .select()
+            .eq('user_id', userId)
+            .eq('is_standard', false)
+            .isFilter('deleted_at', null)
+            .order('updated_at', ascending: false);
+        return (res as List)
+            .map((e) => Workout.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+      encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
+      decode: (cached) {
+        if (cached == null) return <Workout>[];
+        final list = jsonDecode(cached) as List;
+        return list
+            .map((e) => Workout.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+    );
   }
 
   static Future<Workout> createWorkout(
@@ -45,6 +89,8 @@ class WorkoutService {
         'day_times': {for (final e in dayTimes.entries) '${e.key}': e.value},
     }).select().single();
 
+    await _invalidateWorkoutsList();
+    await _invalidateGroup(groupId);
     return Workout.fromJson(res);
   }
 
@@ -53,21 +99,35 @@ class WorkoutService {
   static Future<List<Workout>> getSectionsByGroupId(String groupId) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return [];
-    final res = await _client
-        .from('workouts')
-        .select()
-        .eq('user_id', userId)
-        .eq('group_id', groupId)
-        .isFilter('deleted_at', null);
-    final list = (res as List)
-        .map((e) => Workout.fromJson(e as Map<String, dynamic>))
-        .toList();
-    list.sort((a, b) {
-      final da = a.days.isEmpty ? 99 : a.days.reduce((x, y) => x < y ? x : y);
-      final db = b.days.isEmpty ? 99 : b.days.reduce((x, y) => x < y ? x : y);
-      return da.compareTo(db);
-    });
-    return list;
+    return AppCache.get<List<Workout>>(
+      key: 'workout_group:$groupId',
+      ttl: _workoutsTtl,
+      fetch: () async {
+        final res = await _client
+            .from('workouts')
+            .select()
+            .eq('user_id', userId)
+            .eq('group_id', groupId)
+            .isFilter('deleted_at', null);
+        final list = (res as List)
+            .map((e) => Workout.fromJson(e as Map<String, dynamic>))
+            .toList();
+        list.sort((a, b) {
+          final da = a.days.isEmpty ? 99 : a.days.reduce((x, y) => x < y ? x : y);
+          final db = b.days.isEmpty ? 99 : b.days.reduce((x, y) => x < y ? x : y);
+          return da.compareTo(db);
+        });
+        return list;
+      },
+      encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
+      decode: (cached) {
+        if (cached == null) return <Workout>[];
+        final list = jsonDecode(cached) as List;
+        return list
+            .map((e) => Workout.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+    );
   }
 
   static Future<void> setGroupId(String workoutId, String groupId) async {
@@ -75,6 +135,9 @@ class WorkoutService {
         .from('workouts')
         .update({'group_id': groupId})
         .eq('id', workoutId);
+    await _invalidateWorkoutsList();
+    await _invalidateWorkout(workoutId);
+    await _invalidateGroup(groupId);
   }
 
   /// Creates multiple workouts that form a multi-section program.
@@ -117,6 +180,8 @@ class WorkoutService {
           ),
     );
 
+    await _invalidateWorkoutsList();
+    await _invalidateGroup(groupId);
     return [first, ...rest];
   }
 
@@ -153,26 +218,54 @@ class WorkoutService {
       if (durationMinutes != null) 'duration_minutes': durationMinutes,
       if (day != null) 'day': day,
     });
+    await _invalidateWorkoutExercises(workoutId);
   }
 
   static Future<List<WorkoutExercise>> getWorkoutExercises(
       String workoutId) async {
-    final res = await _client
-        .from('workout_exercises')
-        .select('*, exercises(*)')
-        .eq('workout_id', workoutId)
-        .order('order');
-
-    return (res as List)
-        .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return AppCache.get<List<WorkoutExercise>>(
+      key: 'workout_exercises:$workoutId',
+      ttl: _exercisesTtl,
+      fetch: () async {
+        final res = await _client
+            .from('workout_exercises')
+            .select('*, exercises(*)')
+            .eq('workout_id', workoutId)
+            .order('order');
+        return (res as List)
+            .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+      encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
+      decode: (cached) {
+        if (cached == null) return <WorkoutExercise>[];
+        final list = jsonDecode(cached) as List;
+        return list
+            .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+    );
   }
 
   static Future<Workout?> getWorkout(String id) async {
-    final res =
-        await _client.from('workouts').select().eq('id', id).maybeSingle();
-    if (res == null) return null;
-    return Workout.fromJson(res);
+    return AppCache.get<Workout?>(
+      key: 'workout:$id',
+      ttl: _workoutTtl,
+      fetch: () async {
+        final res = await _client
+            .from('workouts')
+            .select()
+            .eq('id', id)
+            .maybeSingle();
+        if (res == null) return null;
+        return Workout.fromJson(res);
+      },
+      encode: (w) => w == null ? null : jsonEncode(w.toJson()),
+      decode: (cached) {
+        if (cached == null) return null;
+        return Workout.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+      },
+    );
   }
 
   static Future<void> updateWorkout(
@@ -191,6 +284,8 @@ class WorkoutService {
     if (cooldownMinutes != null) updates['cooldown_minutes'] = cooldownMinutes;
     if (updates.isEmpty) return;
     await _client.from('workouts').update(updates).eq('id', id);
+    await _invalidateWorkoutsList();
+    await _invalidateWorkout(id);
   }
 
   static Future<void> reorderExercises(
@@ -201,14 +296,23 @@ class WorkoutService {
           .update({'order': i})
           .eq('id', exerciseIds[i]);
     }
+    await _invalidateWorkoutExercises(workoutId);
   }
 
   static Future<void> removeExerciseFromWorkout(
       String workoutExerciseId) async {
+    // Fetch the workout_id first so we can invalidate the right cache.
+    final row = await _client
+        .from('workout_exercises')
+        .select('workout_id')
+        .eq('id', workoutExerciseId)
+        .maybeSingle();
     await _client
         .from('workout_exercises')
         .delete()
         .eq('id', workoutExerciseId);
+    final workoutId = row?['workout_id'] as String?;
+    if (workoutId != null) await _invalidateWorkoutExercises(workoutId);
   }
 
   static Future<void> updateWorkoutExercise(
@@ -233,7 +337,14 @@ class WorkoutService {
     updates['duration_minutes'] = durationMinutes;
     if (supersetGroup != _absent) updates['superset_group'] = supersetGroup;
     if (isDropSet != _absent) updates['is_drop_set'] = isDropSet;
-    await _client.from('workout_exercises').update(updates).eq('id', id);
+    final res = await _client
+        .from('workout_exercises')
+        .update(updates)
+        .eq('id', id)
+        .select('workout_id')
+        .maybeSingle();
+    final workoutId = res?['workout_id'] as String?;
+    if (workoutId != null) await _invalidateWorkoutExercises(workoutId);
   }
 
   static const _absent = Object();
@@ -241,10 +352,14 @@ class WorkoutService {
   /// Replaces the exercise_id of a workout_exercise row (used during session swap).
   static Future<void> updateExerciseInWorkout(
       String workoutExerciseId, String newExerciseId) async {
-    await _client
+    final res = await _client
         .from('workout_exercises')
         .update({'exercise_id': newExerciseId})
-        .eq('id', workoutExerciseId);
+        .eq('id', workoutExerciseId)
+        .select('workout_id')
+        .maybeSingle();
+    final workoutId = res?['workout_id'] as String?;
+    if (workoutId != null) await _invalidateWorkoutExercises(workoutId);
   }
 
   /// Soft-delete a workout (sets deleted_at, hidden from the app but recoverable).
@@ -254,6 +369,9 @@ class WorkoutService {
         .from('workouts')
         .update({'deleted_at': DateTime.now().toIso8601String()})
         .eq('id', id);
+    await _invalidateWorkoutsList();
+    await _invalidateWorkout(id);
+    await _invalidateWorkoutExercises(id);
   }
 
   /// Creates a copy of a workout with all its exercises.
@@ -281,5 +399,14 @@ class WorkoutService {
       );
     }
     return copy;
+  }
+
+  /// Clear all workout-related caches for the current user.
+  /// Called on logout to prevent data leaking between accounts.
+  static Future<void> clearAllCaches() async {
+    await AppCache.invalidatePrefix('workouts:');
+    await AppCache.invalidatePrefix('workout:');
+    await AppCache.invalidatePrefix('workout_exercises:');
+    await AppCache.invalidatePrefix('workout_group:');
   }
 }

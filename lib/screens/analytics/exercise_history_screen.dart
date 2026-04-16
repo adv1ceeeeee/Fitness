@@ -5,6 +5,7 @@ import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 
 class ExerciseHistoryScreen extends StatefulWidget {
   final Exercise exercise;
@@ -86,6 +87,7 @@ class _ExerciseHistoryScreenState extends State<ExerciseHistoryScreen>
                   children: [
                     if (ex.gifUrl != null)
                       CachedNetworkImage(
+                        cacheManager: AppImageCacheManager.instance,
                         imageUrl: ex.gifUrl!,
                         height: 160,
                         width: double.infinity,

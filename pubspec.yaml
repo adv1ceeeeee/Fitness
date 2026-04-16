@@ -19,6 +19,7 @@ dependencies:
   path_provider: ^2.1.2
   share_plus: ^10.0.0
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
   uuid: ^4.4.0
   connectivity_plus: ^6.0.3
   flutter_typeahead: ^5.2.0
