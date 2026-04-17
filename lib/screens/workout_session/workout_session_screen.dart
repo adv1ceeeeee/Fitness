@@ -1544,6 +1544,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                                 isActive: i == activeIndex && !_sets[i].completed,
                                 weightController: _weightControllers[i],
                                 comparison: _setComparisons[i],
+                                inputMode: we.exercise?.effectiveInputMode ??
+                                    ExerciseInputMode.weighted,
                                 onRepsChanged: (v) {
                                   setState(() => _sets[i] = _sets[i].copyWith(reps: v));
                                   _saveDraft();
@@ -1626,6 +1628,8 @@ class _SetBlock extends StatelessWidget {
   final ValueChanged<int?> onRpeChanged;
   final VoidCallback? onComplete;
   final VoidCallback? onWarmupToggle;
+  /// Input mode — defaults to `weighted` so existing call sites keep original UI.
+  final ExerciseInputMode inputMode;
 
   const _SetBlock({
     required this.index,
@@ -1637,6 +1641,7 @@ class _SetBlock extends StatelessWidget {
     required this.onRpeChanged,
     this.onComplete,
     this.onWarmupToggle,
+    this.inputMode = ExerciseInputMode.weighted,
   });
 
   @override
@@ -1670,53 +1675,55 @@ class _SetBlock extends StatelessWidget {
           children: [
             _SetBadge(number: index + 1, done: done, active: isActive && !warmup, isWarmup: warmup),
             const SizedBox(width: 4),
-            // Поле ввода веса
-            SizedBox(
-              width: 48,
-              height: 36,
-              child: TextField(
-                controller: weightController,
-                enabled: !done,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: done
-                      ? AppColors.textSecondary
-                      : AppColors.textPrimary,
-                ),
-                decoration: InputDecoration(
-                  hintText: '—',
-                  hintStyle:
-                      const TextStyle(color: AppColors.textSecondary),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 8),
-                  filled: true,
-                  fillColor: AppColors.surface,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
+            // Поле ввода веса — только для weighted. Для bodyweight/cardio скрыто.
+            if (inputMode == ExerciseInputMode.weighted) ...[
+              SizedBox(
+                width: 48,
+                height: 36,
+                child: TextField(
+                  controller: weightController,
+                  enabled: !done,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: done
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                        color: AppColors.accent, width: 1.2),
-                  ),
-                  disabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
+                  decoration: InputDecoration(
+                    hintText: '—',
+                    hintStyle:
+                        const TextStyle(color: AppColors.textSecondary),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 8),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(
+                          color: AppColors.accent, width: 1.2),
+                    ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 4),
+            ],
             Expanded(
               child: _Stepper(
                 value: data.reps,
@@ -1727,17 +1734,20 @@ class _SetBlock extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            Expanded(
-              child: _Stepper(
-                value: data.rpe ?? 0,
-                min: 0,
-                max: 10,
-                enabled: !done,
-                zeroLabel: '—',
-                onChanged: (v) => onRpeChanged(v == 0 ? null : v),
+            // RPE — для weighted и bodyweight. Для cardio скрыт.
+            if (inputMode != ExerciseInputMode.cardio) ...[
+              Expanded(
+                child: _Stepper(
+                  value: data.rpe ?? 0,
+                  min: 0,
+                  max: 10,
+                  enabled: !done,
+                  zeroLabel: '—',
+                  onChanged: (v) => onRpeChanged(v == 0 ? null : v),
+                ),
               ),
-            ),
-            const SizedBox(width: 2),
+              const SizedBox(width: 2),
+            ],
             if (!done)
               GestureDetector(
                 onTap: onWarmupToggle,

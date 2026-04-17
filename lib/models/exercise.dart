@@ -1,3 +1,9 @@
+/// How a user enters data for an exercise during a workout.
+/// - [weighted]: weight + reps + RPE (default — all strength exercises)
+/// - [bodyweight]: reps + RPE only (no external load)
+/// - [cardio]: time-based (no weight, no RPE) — bike, run, rowing
+enum ExerciseInputMode { weighted, bodyweight, cardio }
+
 class Exercise {
   final String id;
   final String name;
@@ -37,6 +43,14 @@ class Exercise {
   String get displayName => nameRu ?? name;
 
   bool get isCustom => !isStandard && userId != null;
+
+  /// Input mode derived from category/equipment. Stable default is `weighted`,
+  /// so every existing strength exercise keeps its current UI unchanged.
+  ExerciseInputMode get effectiveInputMode {
+    if (category == 'cardio') return ExerciseInputMode.cardio;
+    if (equipmentType == 'bodyweight') return ExerciseInputMode.bodyweight;
+    return ExerciseInputMode.weighted;
+  }
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
     return Exercise(
