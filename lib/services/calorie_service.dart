@@ -46,15 +46,19 @@ double estimateSetKcal({
   required int reps,
   int? rpe,
   double? userWeightKg,
+  int? durationSecondsOverride,
 }) {
-  if (reps <= 0) return 0.0;
+  final useDuration =
+      durationSecondsOverride != null && durationSecondsOverride > 0;
+  if (reps <= 0 && !useDuration) return 0.0;
 
   final baseMet = _kMetByCategory[category] ?? 4.5;
   final effectiveRpe = (rpe ?? 7).clamp(1, 10);
   final metAdj = baseMet + ((effectiveRpe - 5).clamp(0, 5) * 0.3);
 
-  // ~6 seconds per rep: eccentric (2-3 s) + pause + concentric (1-2 s) + inter-rep reset
-  final durationHours = reps * 6.0 / 3600.0;
+  // Strength: ~6 s/rep. Cardio: real elapsed seconds if provided.
+  final durationSeconds = useDuration ? durationSecondsOverride : reps * 6;
+  final durationHours = durationSeconds / 3600.0;
   final userWt = userWeightKg ?? _kDefaultUserWeightKg;
 
   final kcalActive = metAdj * userWt * durationHours;

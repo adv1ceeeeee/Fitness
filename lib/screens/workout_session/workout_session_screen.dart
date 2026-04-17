@@ -507,13 +507,26 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       }
     }
 
+    // Route fields by input mode. Weighted path is unchanged from before.
+    final mode = we.exercise?.effectiveInputMode ?? ExerciseInputMode.weighted;
+    final isCardio = mode == ExerciseInputMode.cardio;
+    final isBodyweight = mode == ExerciseInputMode.bodyweight;
+
+    // For cardio, `setData.reps` holds minutes (1..300) — convert to seconds.
+    final durationSeconds = isCardio ? setData.reps * 60 : null;
+    final weightToSave =
+        (isCardio || isBodyweight) ? null : (weightKg > 0 ? weightKg : null);
+    final repsToSave = isCardio ? null : setData.reps;
+    final rpeToSave = isCardio ? null : setData.rpe;
+
     // Estimate kcal for this set
-    final kcalEstimated = setData.reps > 0
+    final kcalEstimated = (isCardio || setData.reps > 0)
         ? estimateSetKcal(
             category: we.exercise?.category ?? 'chest',
             reps: setData.reps,
             rpe: setData.rpe,
             userWeightKg: _userWeightKg,
+            durationSecondsOverride: durationSeconds,
           )
         : null;
 
@@ -524,25 +537,27 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       widget.sessionId,
       we.id,
       index + 1,
-      weight: weightKg > 0 ? weightKg : null,
-      reps: setData.reps,
+      weight: weightToSave,
+      reps: repsToSave,
       repsTarget: setData.repsTarget,
-      rpe: setData.rpe,
+      rpe: rpeToSave,
       restSeconds: restSecondsToSave,
       kcalEstimated: kcalEstimated,
       isWarmup: setData.isWarmup,
       startedAt: setStartedAt,
+      durationSeconds: durationSeconds,
     );
 
     if (!saved && mounted) {
       final sessionId = widget.sessionId;
       final weId = we.id;
       final setNum = index + 1;
-      final w = weightKg > 0 ? weightKg : null;
-      final r = setData.reps;
-      final rpe = setData.rpe;
+      final w = weightToSave;
+      final r = repsToSave;
+      final rpe = rpeToSave;
       final rest = restSecondsToSave;
       final warmup = setData.isWarmup;
+      final dur = durationSeconds;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Не удалось сохранить подход'),
@@ -550,7 +565,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             label: 'Повторить',
             onPressed: () => TrainingService.saveSet(
               sessionId, weId, setNum,
-              weight: w, reps: r, rpe: rpe, restSeconds: rest, isWarmup: warmup,
+              weight: w, reps: r, rpe: rpe, restSeconds: rest,
+              isWarmup: warmup, durationSeconds: dur,
             ),
           ),
         ),
@@ -1728,8 +1744,10 @@ class _SetBlock extends StatelessWidget {
               child: _Stepper(
                 value: data.reps,
                 min: 1,
-                max: 999,
+                max: inputMode == ExerciseInputMode.cardio ? 300 : 999,
                 enabled: !done,
+                suffix:
+                    inputMode == ExerciseInputMode.cardio ? 'мин' : null,
                 onChanged: onRepsChanged,
               ),
             ),
@@ -1873,6 +1891,7 @@ class _Stepper extends StatelessWidget {
   final int max;
   final bool enabled;
   final String? zeroLabel;
+  final String? suffix;
   final ValueChanged<int> onChanged;
 
   const _Stepper({
@@ -1882,6 +1901,7 @@ class _Stepper extends StatelessWidget {
     required this.enabled,
     required this.onChanged,
     this.zeroLabel,
+    this.suffix,
   });
 
   @override
@@ -1898,16 +1918,32 @@ class _Stepper extends StatelessWidget {
             onTap: () => onChanged(value - 1)),
         const SizedBox(width: 2),
         SizedBox(
-          width: 22,
-          child: Text(display,
-              textAlign: TextAlign.center,
+          width: suffix == null ? 22 : 42,
+          child: Text.rich(
+            TextSpan(
+              text: display,
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: enabled
                     ? AppColors.textPrimary
                     : AppColors.textSecondary,
-              )),
+              ),
+              children: suffix == null
+                  ? null
+                  : [
+                      TextSpan(
+                        text: ' $suffix',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+            ),
+            textAlign: TextAlign.center,
+          ),
         ),
         const SizedBox(width: 2),
         _MiniBtn(

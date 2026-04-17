@@ -10,6 +10,10 @@ class SetRecord {
   final bool isWarmup;
   final DateTime? performedAt;
   final int? repsTarget;
+  /// Duration in seconds for cardio sets. Null for strength/bodyweight.
+  final int? durationSeconds;
+  /// Distance in meters for cardio sets. Null for strength/bodyweight.
+  final double? distanceM;
 
   SetRecord({
     required this.id,
@@ -23,6 +27,8 @@ class SetRecord {
     this.isWarmup = false,
     this.performedAt,
     this.repsTarget,
+    this.durationSeconds,
+    this.distanceM,
   });
 
   factory SetRecord.fromJson(Map<String, dynamic> json) {
@@ -40,6 +46,8 @@ class SetRecord {
           ? DateTime.tryParse(json['performed_at'] as String)
           : null,
       repsTarget: json['reps_target'] as int?,
+      durationSeconds: json['duration_seconds'] as int?,
+      distanceM: (json['distance_m'] as num?)?.toDouble(),
     );
   }
 
@@ -53,5 +61,7 @@ class SetRecord {
         'rpe': rpe,
         'completed': completed,
         'is_warmup': isWarmup,
+        if (durationSeconds != null) 'duration_seconds': durationSeconds,
+        if (distanceM != null) 'distance_m': distanceM,
       };
 }

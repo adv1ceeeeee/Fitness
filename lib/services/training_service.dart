@@ -225,6 +225,8 @@ class TrainingService {
     double? kcalEstimated,
     bool isWarmup = false,
     DateTime? startedAt,
+    int? durationSeconds,
+    double? distanceM,
   }) async {
     try {
       await retryWithBackoff(() => _client.from('sets').insert({
@@ -241,6 +243,8 @@ class TrainingService {
             if (repsTarget != null) 'reps_target': repsTarget,
             if (restSeconds != null) 'rest_seconds': restSeconds,
             if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
+            if (durationSeconds != null) 'duration_seconds': durationSeconds,
+            if (distanceM != null) 'distance_m': distanceM,
           }));
       return true;
     } catch (e) {

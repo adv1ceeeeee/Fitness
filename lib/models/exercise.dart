@@ -22,6 +22,9 @@ class Exercise {
   /// Difficulty: 'beginner', 'intermediate', 'advanced'
   final String? difficulty;
   final String? equipmentType;
+  /// Explicit DB override: 'weighted' | 'bodyweight' | 'cardio' | null.
+  /// When null, [effectiveInputMode] falls back to category/equipment.
+  final String? inputMode;
 
   Exercise({
     required this.id,
@@ -38,15 +41,25 @@ class Exercise {
     this.movementType,
     this.difficulty,
     this.equipmentType,
+    this.inputMode,
   });
 
   String get displayName => nameRu ?? name;
 
   bool get isCustom => !isStandard && userId != null;
 
-  /// Input mode derived from category/equipment. Stable default is `weighted`,
-  /// so every existing strength exercise keeps its current UI unchanged.
+  /// Input mode: explicit DB override takes priority, else derived from
+  /// category/equipment. Stable default is `weighted`, so every existing
+  /// strength exercise keeps its current UI unchanged.
   ExerciseInputMode get effectiveInputMode {
+    switch (inputMode) {
+      case 'cardio':
+        return ExerciseInputMode.cardio;
+      case 'bodyweight':
+        return ExerciseInputMode.bodyweight;
+      case 'weighted':
+        return ExerciseInputMode.weighted;
+    }
     if (category == 'cardio') return ExerciseInputMode.cardio;
     if (equipmentType == 'bodyweight') return ExerciseInputMode.bodyweight;
     return ExerciseInputMode.weighted;
@@ -68,6 +81,7 @@ class Exercise {
       movementType: json['movement_type'] as String?,
       difficulty: json['difficulty'] as String?,
       equipmentType: json['equipment_type'] as String?,
+      inputMode: json['input_mode'] as String?,
     );
   }
 
