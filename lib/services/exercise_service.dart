@@ -71,15 +71,26 @@ class ExerciseService {
     required String name,
     required String category,
     String? description,
+    String? nameRu,
+    String? inputMode,
+    String? equipmentType,
   }) async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) throw Exception('Not authenticated');
 
+    final trimmedName = name.trim();
+    final trimmedDesc = description?.trim();
+    final trimmedNameRu = nameRu?.trim();
+
     final res = await _client.from('exercises').insert({
-      'name': name.trim(),
+      'name': trimmedName,
       'category': category,
-      if (description != null && description.isNotEmpty)
-        'description': description.trim(),
+      if (trimmedNameRu != null && trimmedNameRu.isNotEmpty)
+        'name_ru': trimmedNameRu,
+      if (trimmedDesc != null && trimmedDesc.isNotEmpty)
+        'description': trimmedDesc,
+      if (inputMode != null) 'input_mode': inputMode,
+      if (equipmentType != null) 'equipment_type': equipmentType,
       'is_standard': false,
       'user_id': userId,
     }).select().single();
