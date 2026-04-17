@@ -1448,6 +1448,7 @@ class _WorkoutCardContent extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.cardBorder, width: 1),
       ),
       padding: const EdgeInsets.all(20),
       child: Row(
@@ -1597,7 +1598,10 @@ class _InactiveWorkoutCard extends StatelessWidget {
 
     return Material(
       color: AppColors.card,
-      borderRadius: BorderRadius.circular(16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.cardBorder, width: 1),
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),

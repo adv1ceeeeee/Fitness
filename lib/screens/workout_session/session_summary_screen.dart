@@ -421,19 +421,18 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                   ),
                   const SizedBox(height: 24),
                   // ── Save button ────────────────────────────────────────
-                  SizedBox(
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _saving ? null : _save,
-                      child: _saving
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Сохранить тренировку'),
-                    ),
+                  GradientButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text('Сохранить тренировку'),
                   ),
                   const SizedBox(height: 16),
                 ],

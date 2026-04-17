@@ -108,9 +108,17 @@ class _GlassNavBar extends StatelessWidget {
 
     return ClipRect(
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
         child: Container(
-          color: const Color(0xCC000000),
+          decoration: BoxDecoration(
+            color: const Color(0xBB000000),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.08),
+                width: 0.5,
+              ),
+            ),
+          ),
           child: SizedBox(
             height: 56 + bottomPadding,
             child: Padding(
@@ -494,28 +502,35 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       children: [
         GestureDetector(
           onLongPress: isActive ? _onStopLongPress : null,
-          child: SizedBox(
+          onTap: isActive ? _onStopTap : _onPlayTap,
+          child: Container(
             width: 60,
             height: 60,
-            child: FloatingActionButton(
-              heroTag: 'playStopFab',
-              onPressed: isActive ? _onStopTap : _onPlayTap,
-              backgroundColor:
-                  isActive ? AppColors.error : AppColors.accent,
-              elevation: 0,
-              shape: const CircleBorder(),
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: Transform.translate(
-                  offset: Offset(isActive ? 0 : 2, 0),
-                  child: Icon(
-                    isActive
-                        ? CupertinoIcons.stop_fill
-                        : CupertinoIcons.play_fill,
-                    key: ValueKey(isActive),
-                    color: Colors.white,
-                    size: 26,
-                  ),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: isActive ? null : AppColors.accentGradient,
+              color: isActive ? AppColors.error : null,
+              boxShadow: [
+                BoxShadow(
+                  color: (isActive ? AppColors.error : AppColors.accent)
+                      .withValues(alpha: 0.4),
+                  blurRadius: 16,
+                  spreadRadius: 0,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Transform.translate(
+                offset: Offset(isActive ? 0 : 2, 0),
+                child: Icon(
+                  isActive
+                      ? CupertinoIcons.stop_fill
+                      : CupertinoIcons.play_fill,
+                  key: ValueKey(isActive),
+                  color: Colors.white,
+                  size: 26,
                 ),
               ),
             ),
@@ -596,7 +611,10 @@ class _StartChoiceSheet extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Material(
                       color: AppColors.card,
-                      borderRadius: BorderRadius.circular(14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: BorderSide(color: AppColors.cardBorder, width: 1),
+                      ),
                       child: InkWell(
                         onTap: () => Navigator.pop(context, c),
                         borderRadius: BorderRadius.circular(14),
@@ -765,13 +783,10 @@ class _RecoverySheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
+          GradientButton(
+            onPressed: onResume,
             height: 50,
-            child: ElevatedButton(
-              onPressed: onResume,
-              child: const Text('Продолжить'),
-            ),
+            child: const Text('Продолжить'),
           ),
           const SizedBox(height: 10),
           SizedBox(

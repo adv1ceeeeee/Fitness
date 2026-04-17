@@ -28,16 +28,38 @@ class AppColors {
   // ── Accent ──────────────────────────────────────────────────────────────────
   static const Color accent = Color(0xFF0066FF); // SportWAI electric blue
   static const Color accentDark = Color(0xFF338AFF); // lighter variant
+  static const Color accentLight = Color(0xFF0099FF); // gradient end
 
   // ── Text ────────────────────────────────────────────────────────────────────
   static const Color textPrimary = Color(0xFFFFFFFF);
   static const Color textSecondary = Color(0xFF8E8E93); // iOS label secondary
+  static const Color textTertiary = Color(0xFF636366); // hints, captions
 
   // ── Semantic ─────────────────────────────────────────────────────────────────
   static const Color error = Color(0xFFFF453A); // iOS red
   static const Color success = Color(0xFF30D158); // iOS green
   static const Color warning = Color(0xFFFF9F0A); // iOS orange
   static const Color separator = Color(0xFF38383A); // iOS separator dark
+
+  // ── Card border ─────────────────────────────────────────────────────────────
+  static final Color cardBorder = Colors.white.withValues(alpha: 0.06);
+
+  // ── Gradients ───────────────────────────────────────────────────────────────
+  static const LinearGradient accentGradient = LinearGradient(
+    colors: [accent, accentLight],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  // ── Glow / Shadow ───────────────────────────────────────────────────────────
+  static List<BoxShadow> get accentGlow => [
+    BoxShadow(
+      color: accent.withValues(alpha: 0.35),
+      blurRadius: 16,
+      spreadRadius: 0,
+      offset: const Offset(0, 4),
+    ),
+  ];
 }
 
 class AppTheme {
@@ -50,7 +72,8 @@ class AppTheme {
       bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w400, color: Color(0xFF000000), letterSpacing: -0.43),
       bodyMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: Color(0xFF000000), letterSpacing: -0.32),
       bodySmall: TextStyle(fontSize: 15, fontWeight: FontWeight.w400, color: Color(0xFF6C6C70), letterSpacing: -0.24),
-      labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: Color(0xFF6C6C70), letterSpacing: 0),
+      labelMedium: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF6C6C70), letterSpacing: -0.08),
+      labelSmall: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: Color(0xFF8E8E93), letterSpacing: 0),
     );
 
     return ThemeData(
@@ -291,11 +314,18 @@ class AppTheme {
         color: AppColors.textSecondary,
         letterSpacing: -0.24,
       ),
+      // Label medium — 13pt for secondary captions
+      labelMedium: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        color: AppColors.textSecondary,
+        letterSpacing: -0.08,
+      ),
       // Caption — iOS 12pt regular
       labelSmall: const TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w400,
-        color: AppColors.textSecondary,
+        color: AppColors.textTertiary,
         letterSpacing: 0,
       ),
     );
@@ -424,12 +454,13 @@ class AppTheme {
             const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
 
-      // Card
+      // Card — subtle border for depth on OLED black
       cardTheme: CardThemeData(
         color: AppColors.card,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: AppColors.cardBorder, width: 1),
         ),
         margin: EdgeInsets.zero,
       ),
@@ -514,6 +545,93 @@ class AppTheme {
         backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Reusable visual helpers ─────────────────────────────────────────────────
+
+/// Card-like container with the standard subtle border for dark theme.
+/// Use instead of raw Container/BoxDecoration when you need the "polished card" look.
+class AppCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+  final EdgeInsetsGeometry? margin;
+  final double borderRadius;
+  final Color? color;
+
+  const AppCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.margin,
+    this.borderRadius = 14,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: padding,
+      margin: margin,
+      decoration: BoxDecoration(
+        color: color ?? (isDark ? AppColors.card : Colors.white),
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: isDark
+            ? Border.all(color: AppColors.cardBorder, width: 1)
+            : null,
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Gradient-filled button matching ElevatedButton dimensions.
+class GradientButton extends StatelessWidget {
+  final VoidCallback? onPressed;
+  final Widget child;
+  final double height;
+  final double borderRadius;
+
+  const GradientButton({
+    super.key,
+    required this.onPressed,
+    required this.child,
+    this.height = 56,
+    this.borderRadius = 14,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return Container(
+      width: double.infinity,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: enabled ? AppColors.accentGradient : null,
+        color: enabled ? null : AppColors.surface,
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: enabled ? AppColors.accentGlow : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(borderRadius),
+          child: Center(
+            child: DefaultTextStyle.merge(
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.43,
+              ),
+              child: child,
+            ),
+          ),
         ),
       ),
     );

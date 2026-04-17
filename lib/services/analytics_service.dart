@@ -1733,7 +1733,7 @@ class AnalyticsService {
     // Fetch exercise names
     final weRes = await _client
         .from('workout_exercises')
-        .select('id, exercises(id, name)')
+        .select('id, exercises(id, name, name_ru)')
         .inFilter('id', volumePerWe.keys.toList());
 
     // Deduplicate by exercise_id — sum volumes across different workout_exercise rows
@@ -1746,7 +1746,8 @@ class AnalyticsService {
       final weId = we['id'] as String;
       final vol = volumePerWe[weId] ?? 0;
       volumePerExercise[exId] = (volumePerExercise[exId] ?? 0) + vol;
-      namePerExercise[exId] = ex['name'] as String;
+      namePerExercise[exId] = ex['name_ru'] as String? ??
+          ex['name'] as String;
     }
 
     final result = volumePerExercise.entries

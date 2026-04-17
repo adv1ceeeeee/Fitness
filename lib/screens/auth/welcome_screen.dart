@@ -52,17 +52,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 textAlign: TextAlign.center,
               ),
               const Spacer(flex: 4),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: () => context.push('/login'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Войти с паролем'),
-                ),
+              GradientButton(
+                onPressed: () => context.push('/login'),
+                child: const Text('Войти с паролем'),
               ),
               const SizedBox(height: 16),
               SizedBox(
