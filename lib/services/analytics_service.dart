@@ -1687,6 +1687,69 @@ class AnalyticsService {
     }
   }
 
+  /// Total cardio minutes across all completed non-warmup cardio sets since
+  /// [since] (default: all-time). Returns 0 when the sets table lacks the
+  /// [duration_seconds] column (pre-056 schema).
+  static Future<int> getTotalCardioMinutes({DateTime? since}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      var query = _client
+          .from('sets')
+          .select('duration_seconds, training_sessions!inner(user_id, date)')
+          .eq('training_sessions.user_id', userId)
+          .eq('completed', true)
+          .eq('is_warmup', false)
+          .not('duration_seconds', 'is', null);
+      if (since != null) {
+        query = query.gte(
+            'training_sessions.date', since.toIso8601String().split('T')[0]);
+      }
+      final res = await query;
+      int totalSeconds = 0;
+      for (final row in res as List) {
+        totalSeconds += (row['duration_seconds'] as num?)?.toInt() ?? 0;
+      }
+      return totalSeconds ~/ 60;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AnalyticsService] getTotalCardioMinutes error: $e');
+      }
+      return 0;
+    }
+  }
+
+  /// Total cardio distance in meters across all completed non-warmup cardio
+  /// sets since [since]. Returns 0 when the column is missing.
+  static Future<double> getTotalCardioDistanceM({DateTime? since}) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return 0;
+    try {
+      var query = _client
+          .from('sets')
+          .select('distance_m, training_sessions!inner(user_id, date)')
+          .eq('training_sessions.user_id', userId)
+          .eq('completed', true)
+          .eq('is_warmup', false)
+          .not('distance_m', 'is', null);
+      if (since != null) {
+        query = query.gte(
+            'training_sessions.date', since.toIso8601String().split('T')[0]);
+      }
+      final res = await query;
+      double total = 0;
+      for (final row in res as List) {
+        total += (row['distance_m'] as num?)?.toDouble() ?? 0;
+      }
+      return total;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AnalyticsService] getTotalCardioDistanceM error: $e');
+      }
+      return 0;
+    }
+  }
+
   /// Top [limit] exercises by total volume (weight × reps) in the last 30 days.
   /// Each entry: {name: String, total_volume: double}
   static Future<List<Map<String, dynamic>>> getTopExercisesByVolume(
