@@ -328,6 +328,69 @@ ProgressionRec? evaluateProgression(
   return null; // данных недостаточно или всё в норме
 }
 
+// ─── Cardio progression ───────────────────────────────────────────────────────
+//
+// Cardio progression is time- or distance-based. Weight/RPE-based signals from
+// [evaluateProgression] do not apply. This evaluator is separate and additive:
+// call sites decide which one to invoke based on the exercise's input mode.
+
+/// Suggest a cardio progression step (increase duration or distance).
+///
+/// [last]        — most recent cardio set: {duration_seconds?, distance_m?}
+/// [secondLast]  — previous cardio set; used to detect plateau
+/// [increaseMin] — how many minutes to suggest adding (default 2)
+///
+/// Returns null when data is insufficient. Returns an `increase` rec if the
+/// user has matched or beaten their previous duration/distance for two
+/// consecutive sessions; a `maintain` rec if they fell short last time.
+ProgressionRec? evaluateCardioProgression(
+  Map<String, dynamic>? last, {
+  Map<String, dynamic>? secondLast,
+  int increaseMin = 2,
+}) {
+  if (last == null) return null;
+  final lastDur = (last['duration_seconds'] as num?)?.toInt();
+  final lastDist = (last['distance_m'] as num?)?.toDouble();
+  if (lastDur == null && lastDist == null) return null;
+
+  final prevDur = (secondLast?['duration_seconds'] as num?)?.toInt();
+
+  // Regression — plateau or backslide relative to previous session.
+  if (prevDur != null && lastDur != null && lastDur < prevDur) {
+    final diffMin = ((prevDur - lastDur) / 60).ceil();
+    return ProgressionRec(
+      direction: ProgressionDirection.maintain,
+      message:
+          'В прошлый раз было на $diffMin мин больше — повтори прежний объём.',
+    );
+  }
+
+  // Consistent or improving — suggest pushing further.
+  final baseMin = lastDur != null ? (lastDur ~/ 60) : null;
+  if (baseMin != null && baseMin > 0) {
+    final target = baseMin + increaseMin;
+    final repeated = prevDur != null && lastDur! >= prevDur;
+    final msg = repeated
+        ? 'Две сессии подряд по $baseMin мин — попробуй $target мин.'
+        : 'Добавь $increaseMin мин к прошлому объёму ($baseMin мин).';
+    return ProgressionRec(
+      direction: ProgressionDirection.increase,
+      message: msg,
+    );
+  }
+
+  // Distance-only fallback (e.g. run tracker without duration).
+  if (lastDist != null && lastDist > 0) {
+    final km = lastDist / 1000;
+    return ProgressionRec(
+      direction: ProgressionDirection.increase,
+      message: 'Попробуй пройти ${(km + 0.5).toStringAsFixed(1)} км.',
+    );
+  }
+
+  return null;
+}
+
 // ─── Muscle balance recommendation ────────────────────────────────────────────
 
 class MuscleImbalanceRec {
