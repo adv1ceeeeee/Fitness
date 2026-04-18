@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/services/exercise_service.dart';
 
 class CreateExerciseScreen extends StatefulWidget {
-  const CreateExerciseScreen({super.key});
+  /// When non-null, the screen opens in edit mode and pre-fills every field.
+  final Exercise? existing;
+
+  const CreateExerciseScreen({super.key, this.existing});
 
   @override
   State<CreateExerciseScreen> createState() => _CreateExerciseScreenState();
 }
 
 class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
-  final _nameCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  String _category = 'chest';
-  String _inputMode = 'weighted';
-  String _equipment = 'barbell';
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _descCtrl;
+  late String _category;
+  late String _inputMode;
+  late String _equipment;
   bool _saving = false;
+
+  bool get _isEdit => widget.existing != null;
 
   static const _categories = [
     ('chest', 'Грудь'),
@@ -43,10 +49,37 @@ class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    final ex = widget.existing;
+    _nameCtrl = TextEditingController(text: ex?.displayName ?? '');
+    _descCtrl = TextEditingController(
+        text: ex?.descriptionRu ?? ex?.description ?? '');
+    _category = ex?.category ?? 'chest';
+
+    // Prefer the explicit DB input_mode; fall back to derived mode so edit
+    // mode reflects what the user actually sees in the session.
+    final modeEnum = ex?.effectiveInputMode ?? ExerciseInputMode.weighted;
+    _inputMode = ex?.inputMode ?? _modeToKey(modeEnum);
+    _equipment = ex?.equipmentType ?? 'barbell';
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
     super.dispose();
+  }
+
+  static String _modeToKey(ExerciseInputMode m) {
+    switch (m) {
+      case ExerciseInputMode.weighted:
+        return 'weighted';
+      case ExerciseInputMode.bodyweight:
+        return 'bodyweight';
+      case ExerciseInputMode.cardio:
+        return 'cardio';
+    }
   }
 
   /// Sync default input mode + equipment when the category changes, so
@@ -93,24 +126,39 @@ class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
     // `name` equal to the same string so DB joins/searches still work.
     final isCyrillic = _looksCyrillic(rawName);
     final nameForDb = rawName;
-    final nameRuForDb = isCyrillic ? rawName : null;
+    final nameRuForDb = isCyrillic ? rawName : '';
 
     setState(() => _saving = true);
     try {
-      final exercise = await ExerciseService.createExercise(
-        name: nameForDb,
-        nameRu: nameRuForDb,
-        category: _category,
-        description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-        inputMode: _inputMode,
-        equipmentType: _equipment,
-      );
+      final desc = _descCtrl.text.trim();
+      final exercise = _isEdit
+          ? await ExerciseService.updateExercise(
+              id: widget.existing!.id,
+              name: nameForDb,
+              nameRu: nameRuForDb,
+              category: _category,
+              description: desc,
+              inputMode: _inputMode,
+              equipmentType: _equipment,
+            )
+          : await ExerciseService.createExercise(
+              name: nameForDb,
+              nameRu: nameRuForDb.isEmpty ? null : nameRuForDb,
+              category: _category,
+              description: desc.isEmpty ? null : desc,
+              inputMode: _inputMode,
+              equipmentType: _equipment,
+            );
       if (mounted) Navigator.of(context).pop(exercise);
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось создать упражнение')),
+          SnackBar(
+            content: Text(_isEdit
+                ? 'Не удалось сохранить изменения'
+                : 'Не удалось создать упражнение'),
+          ),
         );
       }
     }
@@ -157,7 +205,7 @@ class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Новое упражнение'),
+        title: Text(_isEdit ? 'Изменить упражнение' : 'Новое упражнение'),
         actions: [
           TextButton(
             onPressed: _saving ? null : _save,
@@ -167,9 +215,9 @@ class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(
-                    'Создать',
-                    style: TextStyle(
+                : Text(
+                    _isEdit ? 'Сохранить' : 'Создать',
+                    style: const TextStyle(
                       color: AppColors.accent,
                       fontWeight: FontWeight.w600,
                     ),
@@ -183,7 +231,7 @@ class _CreateExerciseScreenState extends State<CreateExerciseScreen> {
           _sectionLabel('Название'),
           TextField(
             controller: _nameCtrl,
-            autofocus: true,
+            autofocus: !_isEdit,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(hintText: 'Например: Болгарские выпады'),
           ),

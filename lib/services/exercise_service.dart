@@ -104,6 +104,40 @@ class ExerciseService {
     await AppCache.invalidatePrefix('exercises_all_v2:');
   }
 
+  /// Updates a user-owned exercise. Only non-null fields are touched; a null
+  /// parameter means "leave as is". RLS policies ensure users can only edit
+  /// exercises they own.
+  static Future<Exercise> updateExercise({
+    required String id,
+    String? name,
+    String? nameRu,
+    String? category,
+    String? description,
+    String? inputMode,
+    String? equipmentType,
+  }) async {
+    final patch = <String, dynamic>{
+      if (name != null) 'name': name.trim(),
+      if (nameRu != null) 'name_ru': nameRu.trim().isEmpty ? null : nameRu.trim(),
+      if (category != null) 'category': category,
+      if (description != null)
+        'description': description.trim().isEmpty ? null : description.trim(),
+      if (inputMode != null) 'input_mode': inputMode,
+      if (equipmentType != null) 'equipment_type': equipmentType,
+    };
+    if (patch.isEmpty) {
+      throw ArgumentError('updateExercise called with no fields to update');
+    }
+    final res = await _client
+        .from('exercises')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+    await AppCache.invalidatePrefix('exercises_all_v2:');
+    return Exercise.fromJson(res);
+  }
+
   /// Returns best estimated 1RM (Epley: w*(1+r/30)) per exercise_id
   /// for the current user. Only completed non-warmup sets with weight > 0.
   static Future<Map<String, double>> getBest1RMs() async {

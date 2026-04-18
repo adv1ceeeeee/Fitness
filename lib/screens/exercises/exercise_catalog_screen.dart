@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
+import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/image_cache_manager.dart';
 
@@ -362,34 +363,164 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
   }
 
   Widget _exerciseTile(Exercise ex) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        child: ListTile(
-          onTap: () => _showExerciseDetail(ex),
-          leading: Icon(
-            ex.category == 'cardio'
-                ? Icons.directions_run
-                : Icons.fitness_center,
-            color: AppColors.accent,
-          ),
-          title: Text(ex.displayName,
-              style: const TextStyle(color: AppColors.textPrimary)),
-          subtitle: Text(
-            Exercise.categoryDisplayName(ex.category),
-            style:
-                const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          trailing: ex.gifUrl != null
-              ? const Icon(Icons.play_circle_outline,
-                  color: AppColors.textSecondary, size: 20)
-              : null,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    final tile = Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        onTap: () => _showExerciseDetail(ex),
+        leading: Icon(
+          ex.category == 'cardio'
+              ? Icons.directions_run
+              : Icons.fitness_center,
+          color: AppColors.accent,
         ),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(ex.displayName,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  overflow: TextOverflow.ellipsis),
+            ),
+            if (ex.isCustom) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('Моё',
+                    style: TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ],
+        ),
+        subtitle: Text(
+          Exercise.categoryDisplayName(ex.category),
+          style:
+              const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        trailing: ex.gifUrl != null
+            ? const Icon(Icons.play_circle_outline,
+                color: AppColors.textSecondary, size: 20)
+            : null,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
+
+    // Standard exercises are read-only — no swipe actions.
+    if (!ex.isCustom) {
+      return Padding(padding: const EdgeInsets.only(bottom: 8), child: tile);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Dismissible(
+        key: ValueKey('ex_${ex.id}'),
+        direction: DismissDirection.horizontal,
+        background: _swipeBg(
+          color: AppColors.accent,
+          icon: Icons.edit_outlined,
+          label: 'Изменить',
+          alignment: Alignment.centerLeft,
+        ),
+        secondaryBackground: _swipeBg(
+          color: AppColors.error,
+          icon: Icons.delete_outline,
+          label: 'Удалить',
+          alignment: Alignment.centerRight,
+        ),
+        confirmDismiss: (direction) async {
+          if (direction == DismissDirection.startToEnd) {
+            // Edit — open screen, keep item in list regardless of outcome.
+            await _editExercise(ex);
+            return false;
+          }
+          // endToStart — destructive. Confirm, then allow real dismissal.
+          return _confirmAndDelete(ex);
+        },
+        child: tile,
+      ),
+    );
+  }
+
+  Widget _swipeBg({
+    required Color color,
+    required IconData icon,
+    required String label,
+    required Alignment alignment,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      alignment: alignment,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editExercise(Exercise ex) async {
+    final updated = await Navigator.of(context).push<Exercise>(
+      MaterialPageRoute(builder: (_) => CreateExerciseScreen(existing: ex)),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      final idx = _allExercises.indexWhere((e) => e.id == updated.id);
+      if (idx != -1) _allExercises[idx] = updated;
+    });
+  }
+
+  Future<bool> _confirmAndDelete(Exercise ex) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить упражнение?'),
+        content: Text(
+          '"${ex.displayName}" будет удалено безвозвратно. '
+          'Также оно исчезнет из всех программ, где используется.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return false;
+    try {
+      await ExerciseService.deleteExercise(ex.id);
+      if (mounted) {
+        setState(() => _allExercises.removeWhere((e) => e.id == ex.id));
+      }
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось удалить упражнение')),
+        );
+      }
+      return false;
+    }
   }
 }
