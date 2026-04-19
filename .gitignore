@@ -53,3 +53,18 @@ scripts/exercisedb_mapping.csv
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Release signing — keystore + passwords must never be committed
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+
+# Build outputs (tracked via .gitkeep placeholders only)
+builds/**/*.apk
+builds/**/*.aab
+builds/**/*.ipa
+
+# Personal local notes / credentials (never committed)
+*.local.md
+*.local.txt
+*.local.json

@@ -1,0 +1,4 @@
+storePassword=YOUR_KEYSTORE_PASSWORD_HERE
+keyPassword=YOUR_KEYSTORE_PASSWORD_HERE
+keyAlias=sportify
+storeFile=sportify-release.jks
