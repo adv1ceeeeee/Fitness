@@ -51,8 +51,8 @@ scripts/exercisedb_mapping.csv
 # Sentry native crash data
 .sentry-native/
 
-# Claude Code local settings
-.claude/settings.local.json
+# Claude Code local settings + session state
+.claude/
 
 # Release signing — keystore + passwords must never be committed
 android/key.properties
