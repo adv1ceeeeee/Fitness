@@ -23,6 +23,7 @@ import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/services/gamification_service.dart';
+import 'package:sportwai/utils/twemoji.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:sportwai/services/image_cache_manager.dart';
 import 'package:confetti/confetti.dart';
@@ -2170,7 +2171,7 @@ class _PrBannerState extends State<_PrBanner>
                     ),
                     child: Row(
                       children: [
-                        const Text('🏆', style: TextStyle(fontSize: 32)),
+                        const Twemoji('🏆', size: 32),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(

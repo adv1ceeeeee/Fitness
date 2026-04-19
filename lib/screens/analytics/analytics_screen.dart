@@ -20,6 +20,7 @@ import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/streak_freeze_service.dart';
+import 'package:sportwai/utils/twemoji.dart';
 import 'package:sportwai/widgets/skeleton.dart';
 
 class AnalyticsScreen extends StatefulWidget {
@@ -56,17 +57,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   bool _bodyDailyAvg = false; // false = last measurement, true = average
 
   static const _bodyMetricOptions = <String, String>{
-    'weight_kg':        'Вес (кг)',
-    'neck_cm':          'Шея (см)',
-    'shoulders_cm':     'Плечи (см)',
-    'chest_cm':         'Грудь (см)',
-    'waist_cm':         'Талия (см)',
-    'hips_cm':          'Бёдра (см)',
-    'left_thigh_cm':    'Бедро лев. (см)',
-    'right_thigh_cm':   'Бедро пр. (см)',
-    'left_calf_cm':     'Голень лев. (см)',
-    'right_calf_cm':    'Голень пр. (см)',
-    'left_forearm_cm':  'Предплечье лев. (см)',
+    'weight_kg': 'Вес (кг)',
+    'neck_cm': 'Шея (см)',
+    'shoulders_cm': 'Плечи (см)',
+    'chest_cm': 'Грудь (см)',
+    'waist_cm': 'Талия (см)',
+    'hips_cm': 'Бёдра (см)',
+    'left_thigh_cm': 'Бедро лев. (см)',
+    'right_thigh_cm': 'Бедро пр. (см)',
+    'left_calf_cm': 'Голень лев. (см)',
+    'right_calf_cm': 'Голень пр. (см)',
+    'left_forearm_cm': 'Предплечье лев. (см)',
     'right_forearm_cm': 'Предплечье пр. (см)',
   };
 
@@ -97,8 +98,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   Map<String, int> _muscleBalance = {};
   Map<String, double> _muscleFrequency = {};
   List<Map<String, dynamic>> _caloriesPerSession = [];
-  ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek})?
-      _weekComparison;
+  ({
+    double volumeThisWeek,
+    double volumeLastWeek,
+    int sessionsThisWeek,
+    int sessionsLastWeek
+  })? _weekComparison;
 
   // New state variables
   List<Map<String, dynamic>> _topExercises = [];
@@ -239,17 +244,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       _bestStreak = (results[1] as int?) ?? _bestStreak;
       _workoutsThisWeek = (results[2] as int?) ?? _workoutsThisWeek;
       _volumeThisWeek = (results[3] as double?) ?? _volumeThisWeek;
-      _trackedExercises = (results[4] as List<Map<String, dynamic>>?) ?? _trackedExercises;
-      _bodyHistory = (results[5] as List<Map<String, dynamic>>?) ?? _bodyHistory;
-      _weeklyVolume = (results[6] as List<Map<String, dynamic>>?) ?? _weeklyVolume;
+      _trackedExercises =
+          (results[4] as List<Map<String, dynamic>>?) ?? _trackedExercises;
+      _bodyHistory =
+          (results[5] as List<Map<String, dynamic>>?) ?? _bodyHistory;
+      _weeklyVolume =
+          (results[6] as List<Map<String, dynamic>>?) ?? _weeklyVolume;
       if (muscleBalanceRaw != null) {
-        _muscleBalance = muscleBalanceRaw.map((k, v) => MapEntry(k, (v as num).toInt()));
+        _muscleBalance =
+            muscleBalanceRaw.map((k, v) => MapEntry(k, (v as num).toInt()));
       }
       if (muscleFreqRaw != null) {
-        _muscleFrequency = muscleFreqRaw.map((k, v) => MapEntry(k, (v as num).toDouble()));
+        _muscleFrequency =
+            muscleFreqRaw.map((k, v) => MapEntry(k, (v as num).toDouble()));
       }
-      _caloriesPerSession = (results[9] as List<Map<String, dynamic>>?) ?? _caloriesPerSession;
-      _communityAvgWeeklyVolume = (results[10] as double?) ?? _communityAvgWeeklyVolume;
+      _caloriesPerSession =
+          (results[9] as List<Map<String, dynamic>>?) ?? _caloriesPerSession;
+      _communityAvgWeeklyVolume =
+          (results[10] as double?) ?? _communityAvgWeeklyVolume;
       if (weekCmpRaw != null) {
         _weekComparison = (
           volumeThisWeek: (weekCmpRaw['volumeThisWeek'] as num).toDouble(),
@@ -263,9 +275,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           (k, v) => MapEntry(DateTime.parse(k), (v as num).toDouble()),
         );
       }
-      _sessionDurations = (results[13] as List<Map<String, dynamic>>?) ?? _sessionDurations;
-      _sessionRpes = (results[14] as List<Map<String, dynamic>>?) ?? _sessionRpes;
-      _exerciseProgressList = (results[15] as List<Map<String, dynamic>>?) ?? _exerciseProgressList;
+      _sessionDurations =
+          (results[13] as List<Map<String, dynamic>>?) ?? _sessionDurations;
+      _sessionRpes =
+          (results[14] as List<Map<String, dynamic>>?) ?? _sessionRpes;
+      _exerciseProgressList =
+          (results[15] as List<Map<String, dynamic>>?) ?? _exerciseProgressList;
       _loading = false;
     });
   }
@@ -391,7 +406,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     if (_sharing) return;
     setState(() => _sharing = true);
     try {
-      final boundary = _shareKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary = _shareKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
       if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -416,20 +432,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     final cutoff4w = now.subtract(const Duration(days: 28));
     final cutoff8w = now.subtract(const Duration(days: 56));
 
-    final recent = bodyHistory.where((b) {
-      final d = DateTime.tryParse(b['date'] as String? ?? '');
-      return d != null && d.isAfter(cutoff4w);
-    }).map((b) => (b['weight_kg'] as num?)?.toDouble()).whereType<double>().toList();
+    final recent = bodyHistory
+        .where((b) {
+          final d = DateTime.tryParse(b['date'] as String? ?? '');
+          return d != null && d.isAfter(cutoff4w);
+        })
+        .map((b) => (b['weight_kg'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
 
-    final prev = bodyHistory.where((b) {
-      final d = DateTime.tryParse(b['date'] as String? ?? '');
-      return d != null && d.isAfter(cutoff8w) && !d.isAfter(cutoff4w);
-    }).map((b) => (b['weight_kg'] as num?)?.toDouble()).whereType<double>().toList();
+    final prev = bodyHistory
+        .where((b) {
+          final d = DateTime.tryParse(b['date'] as String? ?? '');
+          return d != null && d.isAfter(cutoff8w) && !d.isAfter(cutoff4w);
+        })
+        .map((b) => (b['weight_kg'] as num?)?.toDouble())
+        .whereType<double>()
+        .toList();
 
     if (recent.isEmpty || prev.isEmpty) return null;
     final recentAvg = recent.reduce((a, b) => a + b) / recent.length;
     final prevAvg = prev.reduce((a, b) => a + b) / prev.length;
-    return recentAvg - prevAvg; // positive = weight gained, negative = weight lost
+    return recentAvg -
+        prevAvg; // positive = weight gained, negative = weight lost
   }
 
   static const _goalOptions = <String, String>{
@@ -627,7 +652,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                       if (k != null) setState(() => _selectedBodyMetric = k);
                     },
                     dailyAvg: _bodyDailyAvg,
-                    onToggleDailyAvg: () => setState(() => _bodyDailyAvg = !_bodyDailyAvg),
+                    onToggleDailyAvg: () =>
+                        setState(() => _bodyDailyAvg = !_bodyDailyAvg),
                   ),
                   // Tab 4: Инсайты
                   _InsightsTab(
@@ -674,7 +700,12 @@ class _OverviewTab extends StatelessWidget {
   final int totalWorkouts;
   final int workoutsThisWeek;
   final double volumeThisWeek;
-  final ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek})? weekComparison;
+  final ({
+    double volumeThisWeek,
+    double volumeLastWeek,
+    int sessionsThisWeek,
+    int sessionsLastWeek
+  })? weekComparison;
   final Map<DateTime, double> heatmapData;
   final List<Achievement> achievements;
 
@@ -877,19 +908,18 @@ Map<int, double> weekdayVolumeFrom(Map<DateTime, double> data) {
   final all = Map.fromEntries(
     metricData.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
   );
-  final curEntries = all.entries.where((e) => _afterCutoff(e.key, cutoff)).toList();
+  final curEntries =
+      all.entries.where((e) => _afterCutoff(e.key, cutoff)).toList();
   if (curEntries.length < 2) return null;
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final windowDays = today.difference(cutoff).inDays;
   final prevStart = cutoff.subtract(Duration(days: windowDays));
-  final prevEntries = all.entries
-      .where((e) {
-        final d = DateTime.tryParse(e.key);
-        if (d == null) return false;
-        return !d.isBefore(prevStart) && d.isBefore(cutoff);
-      })
-      .toList();
+  final prevEntries = all.entries.where((e) {
+    final d = DateTime.tryParse(e.key);
+    if (d == null) return false;
+    return !d.isBefore(prevStart) && d.isBefore(cutoff);
+  }).toList();
   if (prevEntries.isEmpty) return null;
   final curVal = curEntries.last.value;
   final prevVal = prevEntries.last.value;
@@ -960,8 +990,7 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
   Map<String, double> get _filteredExerciseProgress {
     final cutoff = _range.cutoff;
     return Map.fromEntries(
-      widget.exerciseProgress.entries
-          .where((e) => _afterCutoff(e.key, cutoff)),
+      widget.exerciseProgress.entries.where((e) => _afterCutoff(e.key, cutoff)),
     );
   }
 
@@ -1023,7 +1052,8 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _RangeChips(selected: _range, onChanged: (r) => setState(() => _range = r)),
+            _RangeChips(
+                selected: _range, onChanged: (r) => setState(() => _range = r)),
             const SizedBox(height: 20),
             const Text(
               'Активность',
@@ -1059,10 +1089,13 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
             const SizedBox(height: 4),
             Text(
               'кг × повт. · ${_range.label == 'Всё' ? 'всё время' : 'последние ${_range.label}'}',
-              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              style:
+                  const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 12),
-            _VolumeBarChart(weeks: _filteredVolume, communityAvg: widget.communityAvgWeeklyVolume),
+            _VolumeBarChart(
+                weeks: _filteredVolume,
+                communityAvg: widget.communityAvgWeeklyVolume),
             if (_range != _DateRange.all) ...[
               const SizedBox(height: 10),
               () {
@@ -1070,12 +1103,15 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
                 if (cmp == null) return const SizedBox.shrink();
                 final vDiff = cmp.volume;
                 final sDiff = cmp.sessions;
-                final vColor = vDiff >= 0 ? const Color(0xFF30D158) : AppColors.error;
-                final sColor = sDiff >= 0 ? const Color(0xFF30D158) : AppColors.error;
+                final vColor =
+                    vDiff >= 0 ? const Color(0xFF30D158) : AppColors.error;
+                final sColor =
+                    sDiff >= 0 ? const Color(0xFF30D158) : AppColors.error;
                 final vSign = vDiff >= 0 ? '+' : '';
                 final sSign = sDiff >= 0 ? '+' : '';
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: AppColors.card,
                     borderRadius: BorderRadius.circular(12),
@@ -1157,10 +1193,12 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
             ),
             const SizedBox(height: 12),
             if (widget.trackedExercises.isEmpty)
-              _emptyCard('Завершите тренировку с весом,\nчтобы увидеть прогресс')
+              _emptyCard(
+                  'Завершите тренировку с весом,\nчтобы увидеть прогресс')
             else ...[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.card,
                   borderRadius: BorderRadius.circular(12),
@@ -1176,7 +1214,9 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
                   items: widget.trackedExercises
                       .map((ex) => DropdownMenuItem(
                             value: ex,
-                            child: Text(ex['name'] as String),
+                            child: Text(
+                                (ex['name_ru'] as String?) ??
+                                    ex['name'] as String),
                           ))
                       .toList(),
                   onChanged: widget.onExerciseChanged,
@@ -1252,7 +1292,8 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
             ),
             const SizedBox(height: 12),
             if (_filteredCalories.isEmpty)
-              _emptyCard('Завершите тренировку,\nчтобы увидеть данные о калориях')
+              _emptyCard(
+                  'Завершите тренировку,\nчтобы увидеть данные о калориях')
             else
               _CaloriesChart(sessions: _filteredCalories),
             if (_weekdayVolume.isNotEmpty) ...[
@@ -1327,7 +1368,8 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
     );
   }
 
-  Widget _emptyCard(String msg, {IconData icon = Icons.bar_chart_rounded}) => Container(
+  Widget _emptyCard(String msg, {IconData icon = Icons.bar_chart_rounded}) =>
+      Container(
         padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
         decoration: BoxDecoration(
           color: AppColors.card,
@@ -1337,12 +1379,15 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 36, color: AppColors.textSecondary.withValues(alpha: 0.35)),
+              Icon(icon,
+                  size: 36,
+                  color: AppColors.textSecondary.withValues(alpha: 0.35)),
               const SizedBox(height: 10),
               Text(
                 msg,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 13, height: 1.4),
               ),
             ],
           ),
@@ -1383,8 +1428,7 @@ class _BodyTab extends StatefulWidget {
   State<_BodyTab> createState() => _BodyTabState();
 }
 
-class _BodyTabState extends State<_BodyTab>
-    with AutomaticKeepAliveClientMixin {
+class _BodyTabState extends State<_BodyTab> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 
@@ -1407,8 +1451,8 @@ class _BodyTabState extends State<_BodyTab>
     if (_sharing) return;
     setState(() => _sharing = true);
     try {
-      final boundary =
-          _chartKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary = _chartKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
       if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -1446,7 +1490,8 @@ class _BodyTabState extends State<_BodyTab>
   /// Linear extrapolation on the HP trend: returns forecast value [stepsAhead]
   /// data-points into the future, or null if not enough data.
   double? _forecast(Map<String, double> data, {int stepsAhead = 4}) {
-    final sorted = data.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final sorted = data.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
     if (sorted.length < 5) return null;
     final hp = _ProgressChart._hpFilter(sorted.map((e) => e.value).toList());
     final lookback = hp.length.clamp(4, 10);
@@ -1455,7 +1500,10 @@ class _BodyTabState extends State<_BodyTab>
     final n = recent.length.toDouble();
     double sx = 0, sy = 0, sxy = 0, sx2 = 0;
     for (int i = 0; i < recent.length; i++) {
-      sx += i; sy += recent[i]; sxy += i * recent[i]; sx2 += i * i;
+      sx += i;
+      sy += recent[i];
+      sxy += i * recent[i];
+      sx2 += i * i;
     }
     final denom = n * sx2 - sx * sx;
     if (denom.abs() < 1e-9) return null;
@@ -1529,16 +1577,20 @@ class _BodyTabState extends State<_BodyTab>
                 ),
               )
             else ...[
-              _RangeChips(selected: _range, onChanged: (r) => setState(() => _range = r)),
+              _RangeChips(
+                  selected: _range,
+                  onChanged: (r) => setState(() => _range = r)),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.card,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: DropdownButton<String>(
-                  value: widget.availableBodyMetrics.contains(widget.selectedBodyMetric)
+                  value: widget.availableBodyMetrics
+                          .contains(widget.selectedBodyMetric)
                       ? widget.selectedBodyMetric
                       : widget.availableBodyMetrics.first,
                   isExpanded: true,
@@ -1564,7 +1616,8 @@ class _BodyTabState extends State<_BodyTab>
                       onTap: widget.onToggleDailyAvg,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
                           color: widget.dailyAvg
                               ? AppColors.accent.withValues(alpha: 0.15)
@@ -1590,7 +1643,9 @@ class _BodyTabState extends State<_BodyTab>
                             ),
                             const SizedBox(width: 5),
                             Text(
-                              widget.dailyAvg ? 'Среднее за день' : 'Последнее за день',
+                              widget.dailyAvg
+                                  ? 'Среднее за день'
+                                  : 'Последнее за день',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: widget.dailyAvg
@@ -1642,7 +1697,8 @@ class _BodyTabState extends State<_BodyTab>
                   }
                   return Container(
                     margin: const EdgeInsets.only(top: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: AppColors.card,
                       borderRadius: BorderRadius.circular(12),
@@ -1652,7 +1708,8 @@ class _BodyTabState extends State<_BodyTab>
                       children: [
                         const Text(
                           'vs предыдущий период',
-                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
                         ),
                         Text(
                           '$sign${d.toStringAsFixed(1)}${delta.unit}',
@@ -1675,7 +1732,8 @@ class _BodyTabState extends State<_BodyTab>
                       widget.selectedBodyMetric == 'body_fat_pct';
                   if (!isWeight) return const SizedBox.shrink();
                   final sign = diff >= 0 ? '+' : '';
-                  final unit = widget.selectedBodyMetric == 'body_fat_pct' ? '%' : ' кг';
+                  final unit =
+                      widget.selectedBodyMetric == 'body_fat_pct' ? '%' : ' кг';
                   final color = diff.abs() < 0.3
                       ? AppColors.textSecondary
                       : (widget.selectedBodyMetric == 'weight_kg'
@@ -1683,7 +1741,8 @@ class _BodyTabState extends State<_BodyTab>
                           : (diff < 0 ? AppColors.success : AppColors.error));
                   return Container(
                     margin: const EdgeInsets.only(top: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: AppColors.card,
                       borderRadius: BorderRadius.circular(12),
@@ -1692,7 +1751,8 @@ class _BodyTabState extends State<_BodyTab>
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.trending_flat_rounded, size: 16, color: color),
+                        Icon(Icons.trending_flat_rounded,
+                            size: 16, color: color),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -1883,8 +1943,19 @@ class _MonthCalendar extends StatelessWidget {
   const _MonthCalendar({required this.heatmapData});
 
   static const _months = [
-    '', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+    '',
+    'Январь',
+    'Февраль',
+    'Март',
+    'Апрель',
+    'Май',
+    'Июнь',
+    'Июль',
+    'Август',
+    'Сентябрь',
+    'Октябрь',
+    'Ноябрь',
+    'Декабрь',
   ];
 
   static const _weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -1918,18 +1989,20 @@ class _MonthCalendar extends StatelessWidget {
           const SizedBox(height: 10),
           // Weekday header
           Row(
-            children: _weekdays.map((d) => Expanded(
-              child: Center(
-                child: Text(
-                  d,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            )).toList(),
+            children: _weekdays
+                .map((d) => Expanded(
+                      child: Center(
+                        child: Text(
+                          d,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ))
+                .toList(),
           ),
           const SizedBox(height: 6),
           // Calendar grid — up to 6 rows of 7
@@ -1949,7 +2022,8 @@ class _MonthCalendar extends StatelessWidget {
                       }
                       final date = DateTime(now.year, now.month, day);
                       final isFuture = date.isAfter(today);
-                      final volume = isFuture ? 0.0 : (heatmapData[date] ?? 0.0);
+                      final volume =
+                          isFuture ? 0.0 : (heatmapData[date] ?? 0.0);
                       final worked = volume > 0;
                       final isToday = date == today;
 
@@ -1966,7 +2040,8 @@ class _MonthCalendar extends StatelessWidget {
                                       : AppColors.surface,
                               shape: BoxShape.circle,
                               border: isToday
-                                  ? Border.all(color: AppColors.accent, width: 1.5)
+                                  ? Border.all(
+                                      color: AppColors.accent, width: 1.5)
                                   : null,
                             ),
                             child: Center(
@@ -1978,7 +2053,8 @@ class _MonthCalendar extends StatelessWidget {
                                   color: worked
                                       ? Colors.white
                                       : isFuture
-                                          ? AppColors.textSecondary.withValues(alpha: 0.3)
+                                          ? AppColors.textSecondary
+                                              .withValues(alpha: 0.3)
                                           : AppColors.textSecondary,
                                 ),
                               ),
@@ -2100,7 +2176,8 @@ class _TopExercisesCard extends StatelessWidget {
                           value: frac.clamp(0.0, 1.0),
                           minHeight: 4,
                           backgroundColor: AppColors.surface,
-                          valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              AppColors.accent),
                         ),
                       ),
                     ),
@@ -2126,8 +2203,19 @@ class _WeeklyHeatmap extends StatelessWidget {
 
   static const _dayLabels = ['', 'Пн', '', 'Ср', '', 'Пт', ''];
   static const _monthNames = [
-    '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
-    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+    '',
+    'янв',
+    'фев',
+    'мар',
+    'апр',
+    'май',
+    'июн',
+    'июл',
+    'авг',
+    'сен',
+    'окт',
+    'ноя',
+    'дек',
   ];
 
   Color _cellColor(double vol, double maxVol, bool isFuture) {
@@ -2136,7 +2224,7 @@ class _WeeklyHeatmap extends StatelessWidget {
     if (maxVol == 0) return AppColors.accent.withValues(alpha: 0.5);
     final t = vol / maxVol;
     if (t < 0.25) return AppColors.accent.withValues(alpha: 0.28);
-    if (t < 0.5)  return AppColors.accent.withValues(alpha: 0.52);
+    if (t < 0.5) return AppColors.accent.withValues(alpha: 0.52);
     if (t < 0.75) return AppColors.accent.withValues(alpha: 0.76);
     return AppColors.accent;
   }
@@ -2159,8 +2247,9 @@ class _WeeklyHeatmap extends StatelessWidget {
     final maxVol = data.values.fold<double>(0, (a, b) => a > b ? a : b);
 
     return LayoutBuilder(builder: (context, constraints) {
-      final cellSize = ((constraints.maxWidth - dayLabelW - gap * (weeks + 1)) / weeks)
-          .clamp(8.0, 18.0);
+      final cellSize =
+          ((constraints.maxWidth - dayLabelW - gap * (weeks + 1)) / weeks)
+              .clamp(8.0, 18.0);
 
       // Build month label positions
       final monthLabels = <Widget>[];
@@ -2174,7 +2263,8 @@ class _WeeklyHeatmap extends StatelessWidget {
             top: 0,
             child: Text(
               _monthNames[m],
-              style: const TextStyle(fontSize: 9, color: AppColors.textSecondary),
+              style:
+                  const TextStyle(fontSize: 9, color: AppColors.textSecondary),
             ),
           ));
         }
@@ -2196,22 +2286,24 @@ class _WeeklyHeatmap extends StatelessWidget {
               SizedBox(
                 width: dayLabelW,
                 child: Column(
-                  children: List.generate(7, (d) => SizedBox(
-                    height: cellSize + gap,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Text(
-                          _dayLabels[d],
-                          style: const TextStyle(
-                            fontSize: 8,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  )),
+                  children: List.generate(
+                      7,
+                      (d) => SizedBox(
+                            height: cellSize + gap,
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Text(
+                                  _dayLabels[d],
+                                  style: const TextStyle(
+                                    fontSize: 8,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )),
                 ),
               ),
               // Week columns
@@ -2227,7 +2319,8 @@ class _WeeklyHeatmap extends StatelessWidget {
                         final cell = Container(
                           width: cellSize,
                           height: cellSize,
-                          margin: const EdgeInsets.only(bottom: gap, right: gap),
+                          margin:
+                              const EdgeInsets.only(bottom: gap, right: gap),
                           decoration: BoxDecoration(
                             color: _cellColor(vol, maxVol, isFuture),
                             borderRadius: BorderRadius.circular(2),
@@ -2344,7 +2437,8 @@ class _ExerciseProgressCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: const Color(0xFF30D158).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
@@ -2383,7 +2477,8 @@ class _WeekdayVolumeChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxVal = weekdayVolume.values.fold<double>(0, (a, b) => a > b ? a : b);
+    final maxVal =
+        weekdayVolume.values.fold<double>(0, (a, b) => a > b ? a : b);
     final barGroups = List.generate(7, (i) {
       final wd = i + 1;
       final val = weekdayVolume[wd] ?? 0.0;
@@ -2414,8 +2509,10 @@ class _WeekdayVolumeChart extends StatelessWidget {
             borderData: FlBorderData(show: false),
             barTouchData: BarTouchData(enabled: false),
             titlesData: FlTitlesData(
-              leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              leftTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
               topTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
@@ -2552,8 +2649,10 @@ class _SessionLineChart extends StatelessWidget {
                   },
                 ),
               ),
-              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              topTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
             ),
             lineBarsData: [
               LineChartBarData(
@@ -2673,7 +2772,8 @@ class _WellnessTrendChartState extends State<_WellnessTrendChart> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: active ? Colors.white : AppColors.textSecondary,
+                            color:
+                                active ? Colors.white : AppColors.textSecondary,
                           ),
                         ),
                       ),
@@ -2753,26 +2853,32 @@ class _WellnessLineChart extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 24,
-              interval: points.length <= 6
-                  ? 1
-                  : (points.length / 4).ceilToDouble(),
+              interval:
+                  points.length <= 6 ? 1 : (points.length / 4).ceilToDouble(),
               getTitlesWidget: (value, _) {
                 final idx = value.toInt();
-                if (idx < 0 || idx >= points.length) return const SizedBox.shrink();
+                if (idx < 0 || idx >= points.length) {
+                  return const SizedBox.shrink();
+                }
                 final parts = points[idx].key.split('-');
-                final label = parts.length >= 3 ? '${parts[2]}.${parts[1]}' : points[idx].key;
+                final label = parts.length >= 3
+                    ? '${parts[2]}.${parts[1]}'
+                    : points[idx].key;
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
                     label,
-                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                    style: const TextStyle(
+                        fontSize: 10, color: AppColors.textSecondary),
                   ),
                 );
               },
             ),
           ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         lineBarsData: [
           LineChartBarData(
@@ -2902,7 +3008,16 @@ class _InsightsSection extends StatelessWidget {
     this.bodyWeightDelta,
   });
 
-  static const _weekdayNames = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+  static const _weekdayNames = [
+    '',
+    'Понедельник',
+    'Вторник',
+    'Среда',
+    'Четверг',
+    'Пятница',
+    'Суббота',
+    'Воскресенье'
+  ];
   static const _muscleLabels = {
     'chest': 'Грудь',
     'back': 'Спина',
@@ -2926,13 +3041,16 @@ class _InsightsSection extends StatelessWidget {
         }
       }
       if (weekdayCount.isNotEmpty) {
-        final bestWd = weekdayCount.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+        final bestWd = weekdayCount.entries
+            .reduce((a, b) => a.value >= b.value ? a : b)
+            .key;
         final count = weekdayCount[bestWd]!;
         cards.add(_InsightCard(
           icon: Icons.calendar_today_rounded,
           color: AppColors.accent,
           title: 'Лучший день для тренировок',
-          body: '${_weekdayNames[bestWd]} — вы тренируетесь в этот день чаще всего ($count раз за последние 6 месяцев).',
+          body:
+              '${_weekdayNames[bestWd]} — вы тренируетесь в этот день чаще всего ($count раз за последние 6 месяцев).',
           confidence: 0.6,
         ));
       }
@@ -2941,9 +3059,12 @@ class _InsightsSection extends StatelessWidget {
     // 2. Volume trend: last 4 weeks vs previous 4 weeks
     if (weeklyVolume.length >= 8) {
       final recent = weeklyVolume.sublist(weeklyVolume.length - 4);
-      final older = weeklyVolume.sublist(weeklyVolume.length - 8, weeklyVolume.length - 4);
-      final recentAvg = recent.fold(0.0, (s, w) => s + (w['volume'] as double)) / 4;
-      final olderAvg = older.fold(0.0, (s, w) => s + (w['volume'] as double)) / 4;
+      final older = weeklyVolume.sublist(
+          weeklyVolume.length - 8, weeklyVolume.length - 4);
+      final recentAvg =
+          recent.fold(0.0, (s, w) => s + (w['volume'] as double)) / 4;
+      final olderAvg =
+          older.fold(0.0, (s, w) => s + (w['volume'] as double)) / 4;
       if (olderAvg > 0) {
         final pct = ((recentAvg - olderAvg) / olderAvg * 100).round();
         final up = pct >= 0;
@@ -2952,7 +3073,8 @@ class _InsightsSection extends StatelessWidget {
             ? 'За последние 4 недели ваш объём вырос на $pct% по сравнению с предыдущим периодом. Отлично!'
             : 'За последние 4 недели объём снизился на ${pct.abs()}%. Попробуйте добавить нагрузку.';
         if (!up && bodyWeightDelta != null && bodyWeightDelta! < -2) {
-          volumeBody = '$volumeBody Учтите, вы также похудели на ${bodyWeightDelta!.abs().toStringAsFixed(1)} кг — часть снижения объёма естественна.';
+          volumeBody =
+              '$volumeBody Учтите, вы также похудели на ${bodyWeightDelta!.abs().toStringAsFixed(1)} кг — часть снижения объёма естественна.';
         }
         cards.add(_InsightCard(
           icon: up ? Icons.trending_up_rounded : Icons.trending_down_rounded,
@@ -2968,13 +3090,15 @@ class _InsightsSection extends StatelessWidget {
     final topLevelBalance = Map.fromEntries(
         muscleBalance.entries.where((e) => !e.key.contains(':')));
     if (topLevelBalance.isNotEmpty) {
-      final top = topLevelBalance.entries.reduce((a, b) => a.value >= b.value ? a : b);
+      final top =
+          topLevelBalance.entries.reduce((a, b) => a.value >= b.value ? a : b);
       final label = _muscleLabels[top.key] ?? top.key;
       cards.add(_InsightCard(
         icon: Icons.fitness_center_rounded,
         color: const Color(0xFFBF5AF2),
         title: 'Самая тренируемая группа',
-        body: '$label лидирует по объёму подходов за последние 30 дней (${top.value} подходов). Следите за балансом.',
+        body:
+            '$label лидирует по объёму подходов за последние 30 дней (${top.value} подходов). Следите за балансом.',
         confidence: 0.8,
       ));
     }
@@ -3038,12 +3162,17 @@ class _InsightsSection extends StatelessWidget {
       final totalWeeks = weekWorkouts.length;
       if (totalWeeks >= 4) {
         final pct = (activeWeeks / totalWeeks * 100).round();
-        final emoji = pct >= 75 ? '🔥' : pct >= 50 ? '✅' : '📈';
+        final emoji = pct >= 75
+            ? '🔥'
+            : pct >= 50
+                ? '✅'
+                : '📈';
         cards.add(_InsightCard(
           icon: Icons.repeat_rounded,
           color: AppColors.warning,
           title: 'Регулярность за 12 недель',
-          body: '$emoji В $activeWeeks из $totalWeeks недель вы тренировались 2 раза и более — это $pct% активных недель.',
+          body:
+              '$emoji В $activeWeeks из $totalWeeks недель вы тренировались 2 раза и более — это $pct% активных недель.',
           confidence: 0.7,
         ));
       }
@@ -3068,7 +3197,8 @@ class _InsightsSection extends StatelessWidget {
         int workedWithPoorSleep = 0;
         for (final entry in heatmapData.entries) {
           if (entry.value <= 0) continue;
-          final dateStr = '${entry.key.year}-${entry.key.month.toString().padLeft(2, '0')}-${entry.key.day.toString().padLeft(2, '0')}';
+          final dateStr =
+              '${entry.key.year}-${entry.key.month.toString().padLeft(2, '0')}-${entry.key.day.toString().padLeft(2, '0')}';
           if (!allLoggedDays.contains(dateStr)) continue;
           if (goodSleepDays.contains(dateStr)) {
             workedWithGoodSleep++;
@@ -3083,7 +3213,8 @@ class _InsightsSection extends StatelessWidget {
             icon: Icons.bedtime_rounded,
             color: const Color(0xFF34C759),
             title: 'Сон и тренировки',
-            body: '$pct% ваших тренировок приходится на дни с 7+ часами сна. Хороший сон помогает тренироваться стабильнее.',
+            body:
+                '$pct% ваших тренировок приходится на дни с 7+ часами сна. Хороший сон помогает тренироваться стабильнее.',
             confidence: 0.7,
           ));
         }
@@ -3116,8 +3247,12 @@ class _InsightsSection extends StatelessWidget {
         final ws = toMonday(date);
         final stress = row['stress'];
         final energy = row['energy'];
-        if (stress != null) weekStress.putIfAbsent(ws, () => []).add((stress as num).toDouble());
-        if (energy != null) weekEnergy.putIfAbsent(ws, () => []).add((energy as num).toDouble());
+        if (stress != null) {
+          weekStress.putIfAbsent(ws, () => []).add((stress as num).toDouble());
+        }
+        if (energy != null) {
+          weekEnergy.putIfAbsent(ws, () => []).add((energy as num).toDouble());
+        }
       }
 
       double avg(List<double> l) => l.reduce((a, b) => a + b) / l.length;
@@ -3126,8 +3261,14 @@ class _InsightsSection extends StatelessWidget {
           .where((e) => weekVolMap.containsKey(e.key))
           .toList();
       if (stressWeeks.length >= 6) {
-        final hi = stressWeeks.where((e) => avg(e.value) > 6).map((e) => weekVolMap[e.key]!).toList();
-        final lo = stressWeeks.where((e) => avg(e.value) <= 4).map((e) => weekVolMap[e.key]!).toList();
+        final hi = stressWeeks
+            .where((e) => avg(e.value) > 6)
+            .map((e) => weekVolMap[e.key]!)
+            .toList();
+        final lo = stressWeeks
+            .where((e) => avg(e.value) <= 4)
+            .map((e) => weekVolMap[e.key]!)
+            .toList();
         if (hi.length >= 2 && lo.length >= 2) {
           final avgHi = avg(hi);
           final avgLo = avg(lo);
@@ -3153,8 +3294,14 @@ class _InsightsSection extends StatelessWidget {
           .where((e) => weekVolMap.containsKey(e.key))
           .toList();
       if (energyWeeks.length >= 6) {
-        final hi = energyWeeks.where((e) => avg(e.value) >= 7).map((e) => weekVolMap[e.key]!).toList();
-        final lo = energyWeeks.where((e) => avg(e.value) <= 4).map((e) => weekVolMap[e.key]!).toList();
+        final hi = energyWeeks
+            .where((e) => avg(e.value) >= 7)
+            .map((e) => weekVolMap[e.key]!)
+            .toList();
+        final lo = energyWeeks
+            .where((e) => avg(e.value) <= 4)
+            .map((e) => weekVolMap[e.key]!)
+            .toList();
         if (hi.length >= 2 && lo.length >= 2) {
           final avgHi = avg(hi);
           final avgLo = avg(lo);
@@ -3192,7 +3339,8 @@ class _InsightsSection extends StatelessWidget {
     // 8. Community: volume comparison
     if (communityAvgWeeklyVolume != null && weeklyVolume.length >= 4) {
       final recent4 = weeklyVolume.sublist(weeklyVolume.length - 4);
-      final userAvgVol = recent4.fold(0.0, (s, w) => s + (w['volume'] as num).toDouble()) / 4;
+      final userAvgVol =
+          recent4.fold(0.0, (s, w) => s + (w['volume'] as num).toDouble()) / 4;
       if (userAvgVol > 0) {
         final diff = userAvgVol - communityAvgWeeklyVolume!;
         final pct = communityAvgWeeklyVolume! > 0
@@ -3203,7 +3351,8 @@ class _InsightsSection extends StatelessWidget {
             icon: Icons.groups_rounded,
             color: const Color(0xFF30D158),
             title: 'Объём vs сообщество',
-            body: 'Ваш средний недельный объём за последние 4 недели на $pct% выше среднего по приложению. Отличный результат!',
+            body:
+                'Ваш средний недельный объём за последние 4 недели на $pct% выше среднего по приложению. Отличный результат!',
             confidence: 0.5,
           ));
         } else if (pct >= 10) {
@@ -3211,7 +3360,8 @@ class _InsightsSection extends StatelessWidget {
             icon: Icons.groups_rounded,
             color: AppColors.accent,
             title: 'Объём vs сообщество',
-            body: 'Ваш средний недельный объём на $pct% ниже среднего по приложению. Есть куда расти — попробуйте постепенно увеличивать нагрузку.',
+            body:
+                'Ваш средний недельный объём на $pct% ниже среднего по приложению. Есть куда расти — попробуйте постепенно увеличивать нагрузку.',
             confidence: 0.5,
           ));
         }
@@ -3222,7 +3372,8 @@ class _InsightsSection extends StatelessWidget {
     if (deloadMetrics != null) {
       final deloadRec = evaluateDeload(
         recentAvgVolume: (deloadMetrics!['recentAvgVolume'] as num).toDouble(),
-        baselineAvgVolume: (deloadMetrics!['baselineAvgVolume'] as num).toDouble(),
+        baselineAvgVolume:
+            (deloadMetrics!['baselineAvgVolume'] as num).toDouble(),
         consecutiveWeeks: deloadMetrics!['consecutiveWeeks'] as int,
       );
       if (deloadRec != null) {
@@ -3266,7 +3417,8 @@ class _InsightsSection extends StatelessWidget {
               icon: Icons.emoji_events_rounded,
               color: const Color(0xFFFFD60A),
               title: 'Частота vs сообщество',
-              body: 'Вы тренируетесь в среднем ${userAvgFreq.toStringAsFixed(1)} раз/нед — это больше среднего по приложению (${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} раз/нед). Так держать!',
+              body:
+                  'Вы тренируетесь в среднем ${userAvgFreq.toStringAsFixed(1)} раз/нед — это больше среднего по приложению (${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} раз/нед). Так держать!',
               confidence: 0.5,
             ));
           } else {
@@ -3274,7 +3426,8 @@ class _InsightsSection extends StatelessWidget {
               icon: Icons.groups_rounded,
               color: AppColors.accent,
               title: 'Частота vs сообщество',
-              body: 'Среднее по приложению — ${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} тренировок/нед, у вас ${userAvgFreq.toStringAsFixed(1)}. Попробуйте добавить ещё одну тренировку в неделю.',
+              body:
+                  'Среднее по приложению — ${communityAvgWorkoutsPerWeek!.toStringAsFixed(1)} тренировок/нед, у вас ${userAvgFreq.toStringAsFixed(1)}. Попробуйте добавить ещё одну тренировку в неделю.',
               confidence: 0.5,
             ));
           }
@@ -3286,8 +3439,12 @@ class _InsightsSection extends StatelessWidget {
     if (muscleVolumeTrend != null && muscleVolumeTrend!.isNotEmpty) {
       final worst = muscleVolumeTrend!.entries
           .where((e) => e.value['trend']! < -20)
-          .fold<MapEntry<String, Map<String, double>>?>(null, (prev, e) =>
-              prev == null || e.value['trend']! < prev.value['trend']! ? e : prev);
+          .fold<MapEntry<String, Map<String, double>>?>(
+              null,
+              (prev, e) =>
+                  prev == null || e.value['trend']! < prev.value['trend']!
+                      ? e
+                      : prev);
       if (worst != null) {
         final label = _muscleLabels[worst.key] ?? worst.key;
         final pct = worst.value['trend']!.round().abs();
@@ -3295,7 +3452,8 @@ class _InsightsSection extends StatelessWidget {
           icon: Icons.trending_down_rounded,
           color: AppColors.error,
           title: 'Снижение объёма: $label',
-          body: 'За последние 4 недели объём на $label упал на $pct% по сравнению с предыдущим месяцем. Проверьте программу.',
+          body:
+              'За последние 4 недели объём на $label упал на $pct% по сравнению с предыдущим месяцем. Проверьте программу.',
           confidence: 0.75,
         ));
       }
@@ -3310,7 +3468,8 @@ class _InsightsSection extends StatelessWidget {
             icon: Icons.warning_amber_rounded,
             color: AppColors.error,
             title: 'Слишком частые нагрузки: $label',
-            body: 'В среднем вы тренируете $label каждые ${entry.value.toStringAsFixed(1)} дня — мышцам нужно минимум 2-3 дня для восстановления.',
+            body:
+                'В среднем вы тренируете $label каждые ${entry.value.toStringAsFixed(1)} дня — мышцам нужно минимум 2-3 дня для восстановления.',
             confidence: 0.7,
           ));
           break; // one insight is enough
@@ -3427,10 +3586,7 @@ class _StreakCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                freezeActive ? '🛡️' : '🔥',
-                style: const TextStyle(fontSize: 32),
-              ),
+              Twemoji(freezeActive ? '🛡️' : '🔥', size: 32),
               const SizedBox(width: 12),
               Expanded(
                 child: Row(
@@ -3449,7 +3605,9 @@ class _StreakCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: freezeActive ? const Color(0xFF4FC3F7) : AppColors.textPrimary,
+                        color: freezeActive
+                            ? const Color(0xFF4FC3F7)
+                            : AppColors.textPrimary,
                       ),
                     ),
                   ],
@@ -3459,7 +3617,8 @@ class _StreakCard extends StatelessWidget {
                 Tooltip(
                   message: 'Заморозка стрика доступна',
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
@@ -3467,9 +3626,13 @@ class _StreakCard extends StatelessWidget {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('🛡️', style: TextStyle(fontSize: 13)),
+                        Twemoji('🛡️', size: 13),
                         SizedBox(width: 4),
-                        Text('×1', style: TextStyle(fontSize: 12, color: Color(0xFF4FC3F7), fontWeight: FontWeight.w600)),
+                        Text('×1',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF4FC3F7),
+                                fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -3493,7 +3656,8 @@ class _StreakCard extends StatelessWidget {
               _AnimatedCounter(
                 value: totalWorkouts.toDouble(),
                 format: (v) => v.round().toString(),
-                style: const TextStyle(fontSize: 16, color: AppColors.textSecondary),
+                style: const TextStyle(
+                    fontSize: 16, color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -3583,8 +3747,12 @@ class _ProgressChart extends StatelessWidget {
       for (int row = col + 1; row < n; row++) {
         if (a[row][col].abs() > a[maxRow][col].abs()) maxRow = row;
       }
-      final tmpRow = a[col]; a[col] = a[maxRow]; a[maxRow] = tmpRow;
-      final tmpB = b[col]; b[col] = b[maxRow]; b[maxRow] = tmpB;
+      final tmpRow = a[col];
+      a[col] = a[maxRow];
+      a[maxRow] = tmpRow;
+      final tmpB = b[col];
+      b[col] = b[maxRow];
+      b[maxRow] = tmpB;
       if (a[col][col].abs() < 1e-12) continue;
       for (int row = col + 1; row < n; row++) {
         final f = a[row][col] / a[col][col];
@@ -3628,13 +3796,18 @@ class _ProgressChart extends StatelessWidget {
     final hpSpots = sorted.length >= 3
         ? () {
             final tau = _hpFilter(sorted.map((e) => e.value).toList());
-            return List.generate(tau.length, (i) => FlSpot(i.toDouble(), tau[i]));
+            return List.generate(
+                tau.length, (i) => FlSpot(i.toDouble(), tau[i]));
           }()
         : <FlSpot>[];
 
     final dataMin = sorted.map((e) => e.value).reduce((a, b) => a < b ? a : b);
     final dataMax = sorted.map((e) => e.value).reduce((a, b) => a > b ? a : b);
-    final allValues = [dataMin, dataMax, if (communityAvg != null) communityAvg!];
+    final allValues = [
+      dataMin,
+      dataMax,
+      if (communityAvg != null) communityAvg!
+    ];
     final minY = allValues.reduce((a, b) => a < b ? a : b);
     final maxY = allValues.reduce((a, b) => a > b ? a : b);
     final yPad = maxY == minY ? 5.0 : (maxY - minY) * 0.2;
@@ -3682,12 +3855,18 @@ class _ProgressChart extends StatelessWidget {
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 28,
-                    interval: sorted.length <= 6 ? 1 : (sorted.length / 4).ceilToDouble(),
+                    interval: sorted.length <= 6
+                        ? 1
+                        : (sorted.length / 4).ceilToDouble(),
                     getTitlesWidget: (value, meta) {
                       final idx = value.toInt();
-                      if (idx < 0 || idx >= sorted.length) return const SizedBox.shrink();
+                      if (idx < 0 || idx >= sorted.length) {
+                        return const SizedBox.shrink();
+                      }
                       final parts = sorted[idx].key.split('-');
-                      final label = parts.length >= 3 ? '${parts[2]}.${parts[1]}' : sorted[idx].key;
+                      final label = parts.length >= 3
+                          ? '${parts[2]}.${parts[1]}'
+                          : sorted[idx].key;
                       return Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
@@ -3701,19 +3880,23 @@ class _ProgressChart extends StatelessWidget {
                     },
                   ),
                 ),
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
               ),
               lineTouchData: LineTouchData(
                 touchTooltipData: LineTouchTooltipData(
-                  getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
-                    s.y.toStringAsFixed(1),
-                    const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  )).toList(),
+                  getTooltipItems: (spots) => spots
+                      .map((s) => LineTooltipItem(
+                            s.y.toStringAsFixed(1),
+                            const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ))
+                      .toList(),
                 ),
               ),
               lineBarsData: [
@@ -3767,11 +3950,15 @@ class _ProgressChart extends StatelessWidget {
             children: [
               Container(width: 18, height: 2, color: AppColors.accent),
               const SizedBox(width: 6),
-              const Text('Факт', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              const Text('Факт',
+                  style:
+                      TextStyle(fontSize: 11, color: AppColors.textSecondary)),
               const SizedBox(width: 16),
               const _DashedLine(color: hpColor),
               const SizedBox(width: 6),
-              const Text('Тренд', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              const Text('Тренд',
+                  style:
+                      TextStyle(fontSize: 11, color: AppColors.textSecondary)),
             ],
           ),
         ],
@@ -3800,10 +3987,13 @@ class _DashedPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..strokeWidth = 2;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2;
     double x = 0;
     while (x < size.width) {
-      canvas.drawLine(Offset(x, size.height / 2), Offset((x + 4).clamp(0, size.width), size.height / 2), paint);
+      canvas.drawLine(Offset(x, size.height / 2),
+          Offset((x + 4).clamp(0, size.width), size.height / 2), paint);
       x += 8;
     }
   }
@@ -3877,9 +4067,8 @@ class _CaloriesChart extends StatelessWidget {
                   }
                   final date = sessions[idx]['date'] as String? ?? '';
                   final parts = date.split('-');
-                  final label = parts.length >= 3
-                      ? '${parts[2]}.${parts[1]}'
-                      : date;
+                  final label =
+                      parts.length >= 3 ? '${parts[2]}.${parts[1]}' : date;
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
@@ -3893,10 +4082,10 @@ class _CaloriesChart extends StatelessWidget {
                 },
               ),
             ),
-            topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           barGroups: List.generate(
             sessions.length,
@@ -3996,7 +4185,8 @@ class _AchievementCell extends StatelessWidget {
           color: locked ? AppColors.surface : AppColors.card,
           borderRadius: BorderRadius.circular(14),
           border: a.unlocked
-              ? Border.all(color: a.rarity.color.withValues(alpha: 0.6), width: 1.5)
+              ? Border.all(
+                  color: a.rarity.color.withValues(alpha: 0.6), width: 1.5)
               : Border.all(color: AppColors.surface, width: 1),
         ),
         padding: const EdgeInsets.fromLTRB(6, 8, 6, 6),
@@ -4004,19 +4194,36 @@ class _AchievementCell extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (isHiddenLocked)
-              Icon(Icons.help_outline_rounded, size: 24,
+              Icon(Icons.help_outline_rounded,
+                  size: 24,
                   color: AppColors.textSecondary.withValues(alpha: 0.3))
             else
               ColorFiltered(
                 colorFilter: locked
                     ? const ColorFilter.matrix([
-                        0.25, 0, 0, 0, 0,
-                        0, 0.25, 0, 0, 0,
-                        0, 0, 0.25, 0, 0,
-                        0, 0, 0, 0.6, 0,
+                        0.25,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0.25,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0.25,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0.6,
+                        0,
                       ])
                     : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
-                child: Text(a.emoji, style: const TextStyle(fontSize: 24)),
+                child: Twemoji(a.emoji, size: 24),
               ),
             const SizedBox(height: 5),
             Text(
@@ -4126,7 +4333,8 @@ class _ShareCard extends StatelessWidget {
                   color: AppColors.accent,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.fitness_center, color: Colors.white, size: 22),
+                child: const Icon(Icons.fitness_center,
+                    color: Colors.white, size: 22),
               ),
               const SizedBox(width: 12),
               Column(
@@ -4142,7 +4350,8 @@ class _ShareCard extends StatelessWidget {
                   ),
                   Text(
                     'Прогресс $name',
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
+                    style:
+                        const TextStyle(fontSize: 13, color: Color(0xFF8E8E93)),
                   ),
                 ],
               ),
@@ -4151,7 +4360,7 @@ class _ShareCard extends StatelessWidget {
           const SizedBox(height: 24),
           Row(
             children: [
-              const Text('🔥', style: TextStyle(fontSize: 36)),
+              const Twemoji('🔥', size: 36),
               const SizedBox(width: 12),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -4211,7 +4420,8 @@ class _MiniStat extends StatelessWidget {
   final String value;
   final String label;
 
-  const _MiniStat({required this.icon, required this.value, required this.label});
+  const _MiniStat(
+      {required this.icon, required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -4223,7 +4433,7 @@ class _MiniStat extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(icon, style: const TextStyle(fontSize: 18)),
+          Twemoji(icon, size: 18),
           const SizedBox(height: 4),
           Text(
             value,
@@ -4251,7 +4461,8 @@ class _NavCard extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _NavCard({required this.icon, required this.label, required this.onTap});
+  const _NavCard(
+      {required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -4268,7 +4479,8 @@ class _NavCard extends StatelessWidget {
               Icon(icon, color: AppColors.accent),
               const SizedBox(width: 12),
               Text(label,
-                  style: const TextStyle(fontSize: 15, color: AppColors.textPrimary)),
+                  style: const TextStyle(
+                      fontSize: 15, color: AppColors.textPrimary)),
               const Spacer(),
               const Icon(Icons.chevron_right,
                   color: AppColors.textSecondary, size: 20),
@@ -4326,16 +4538,20 @@ class _VolumeBarChart extends StatelessWidget {
                       final vol = rod.toY.round();
                       return BarTooltipItem(
                         '${weeks[groupIndex]['label']}\n$vol кг',
-                        const TextStyle(color: AppColors.textPrimary, fontSize: 12),
+                        const TextStyle(
+                            color: AppColors.textPrimary, fontSize: 12),
                       );
                     },
                   ),
                 ),
                 titlesData: FlTitlesData(
                   show: true,
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
@@ -4378,7 +4594,8 @@ class _VolumeBarChart extends StatelessWidget {
                             ? AppColors.accent
                             : AppColors.accent.withValues(alpha: 0.45),
                         width: 14,
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4)),
                       ),
                     ],
                   );
@@ -4401,13 +4618,17 @@ class _VolumeBarChart extends StatelessWidget {
                     borderData: FlBorderData(show: false),
                     titlesData: const FlTitlesData(
                       leftTitles: AxisTitles(
-                          sideTitles: SideTitles(showTitles: false, reservedSize: 0)),
+                          sideTitles:
+                              SideTitles(showTitles: false, reservedSize: 0)),
                       rightTitles: AxisTitles(
-                          sideTitles: SideTitles(showTitles: false, reservedSize: 0)),
+                          sideTitles:
+                              SideTitles(showTitles: false, reservedSize: 0)),
                       topTitles: AxisTitles(
-                          sideTitles: SideTitles(showTitles: false, reservedSize: 0)),
+                          sideTitles:
+                              SideTitles(showTitles: false, reservedSize: 0)),
                       bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(showTitles: false, reservedSize: 24)),
+                          sideTitles:
+                              SideTitles(showTitles: false, reservedSize: 24)),
                     ),
                     lineBarsData: [
                       LineChartBarData(
@@ -4431,7 +4652,9 @@ class _VolumeBarChart extends StatelessWidget {
     );
   }
 
-  Widget _emptyCard(String msg, {IconData icon = Icons.fitness_center_rounded}) => Container(
+  Widget _emptyCard(String msg,
+          {IconData icon = Icons.fitness_center_rounded}) =>
+      Container(
         padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
         decoration: BoxDecoration(
             color: AppColors.card, borderRadius: BorderRadius.circular(16)),
@@ -4439,12 +4662,15 @@ class _VolumeBarChart extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 36, color: AppColors.textSecondary.withValues(alpha: 0.35)),
+              Icon(icon,
+                  size: 36,
+                  color: AppColors.textSecondary.withValues(alpha: 0.35)),
               const SizedBox(height: 10),
               Text(
                 msg,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 13, height: 1.4),
               ),
             ],
           ),
@@ -4487,18 +4713,28 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
   Map<String, List<Map<String, dynamic>>>? _breakdown;
   bool _loadingBreakdown = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Pre-load so the exercise list is visible without any interaction.
+    _loadBreakdown();
+  }
+
   Future<void> _loadBreakdown() async {
     if (_breakdown != null || _loadingBreakdown) return;
     setState(() => _loadingBreakdown = true);
     final data = await AnalyticsService.getMuscleGroupExerciseBreakdown();
-    if (mounted) setState(() { _breakdown = data; _loadingBreakdown = false; });
+    if (mounted) {
+      setState(() {
+        _breakdown = data;
+        _loadingBreakdown = false;
+      });
+    }
   }
 
   void _tapCategory(String cat) {
-    if (_selectedCategory == cat) {
-      setState(() => _selectedCategory = null);
-      return;
-    }
+    // The breakdown panel is always visible; tapping just switches category.
+    if (_selectedCategory == cat) return;
     setState(() => _selectedCategory = cat);
     _loadBreakdown();
   }
@@ -4523,12 +4759,15 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
     final entries = widget.balance.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    // Always keep a category selected so the breakdown panel stays visible.
+    final activeCategory = _selectedCategory ?? entries.first.key;
+
     final sections = entries.asMap().entries.map((e) {
       final colorIndex = e.key % _colors.length;
       final count = e.value.value;
       final pct = count / total;
       final color = _colors[colorIndex];
-      final isSelected = _selectedCategory == e.value.key;
+      final isSelected = activeCategory == e.value.key;
       return PieChartSectionData(
         value: count.toDouble(),
         color: color,
@@ -4543,9 +4782,7 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
       );
     }).toList();
 
-    final exercises = _selectedCategory != null
-        ? (_breakdown?[_selectedCategory] ?? [])
-        : <Map<String, dynamic>>[];
+    final exercises = _breakdown?[activeCategory] ?? <Map<String, dynamic>>[];
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -4572,7 +4809,8 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
                       pieTouchData: PieTouchData(
                         touchCallback: (event, response) {
                           if (!event.isInterestedForInteractions) return;
-                          final idx = response?.touchedSection?.touchedSectionIndex;
+                          final idx =
+                              response?.touchedSection?.touchedSectionIndex;
                           if (idx != null && idx >= 0 && idx < entries.length) {
                             _tapCategory(entries[idx].key);
                           }
@@ -4594,7 +4832,7 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
                       final pct = count / total;
                       final label = _labels[cat] ?? cat;
                       final color = _colors[colorIndex];
-                      final isSelected = _selectedCategory == cat;
+                      final isSelected = activeCategory == cat;
                       return GestureDetector(
                         onTap: () => _tapCategory(cat),
                         child: Padding(
@@ -4645,99 +4883,107 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
-            child: _selectedCategory == null
-                ? const SizedBox.shrink()
-                : _loadingBreakdown
+            child: _loadingBreakdown && _breakdown == null
+                ? const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: SizedBox(
+                      height: 32,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  )
+                : exercises.isEmpty
                     ? const Padding(
                         padding: EdgeInsets.only(top: 12),
-                        child: SizedBox(
-                          height: 32,
-                          child: Center(child: CircularProgressIndicator()),
+                        child: Text(
+                          'Нет данных по упражнениям',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       )
-                    : exercises.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.only(top: 12),
-                            child: Text(
-                              'Нет данных по упражнениям',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Divider(
+                                color: AppColors.separator, height: 1),
+                            const SizedBox(height: 12),
+                            Text(
+                              _labels[activeCategory] ?? activeCategory,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
                               ),
                             ),
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.only(top: 14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Divider(color: AppColors.separator, height: 1),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _labels[_selectedCategory] ?? _selectedCategory!,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ...exercises.map((ex) {
-                                  final name = ex['name'] as String;
-                                  final sets = ex['sets'] as int;
-                                  final maxSets = (exercises.first['sets'] as int).toDouble();
-                                  final frac = maxSets > 0 ? sets / maxSets : 0.0;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 8),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(height: 8),
+                            ...exercises.map((ex) {
+                              final name = ex['name'] as String;
+                              final sets = ex['sets'] as int;
+                              final maxSets =
+                                  (exercises.first['sets'] as int).toDouble();
+                              final frac = maxSets > 0 ? sets / maxSets : 0.0;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
                                             children: [
-                                              Row(
-                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      name,
-                                                      style: const TextStyle(
-                                                        fontSize: 12,
-                                                        color: AppColors.textPrimary,
-                                                      ),
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
+                                              Expanded(
+                                                child: Text(
+                                                  name,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color:
+                                                        AppColors.textPrimary,
                                                   ),
-                                                  Text(
-                                                    '$sets пд.',
-                                                    style: const TextStyle(
-                                                      fontSize: 11,
-                                                      color: AppColors.textSecondary,
-                                                    ),
-                                                  ),
-                                                ],
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
                                               ),
-                                              const SizedBox(height: 4),
-                                              ClipRRect(
-                                                borderRadius: BorderRadius.circular(3),
-                                                child: LinearProgressIndicator(
-                                                  value: frac.clamp(0.0, 1.0),
-                                                  minHeight: 3,
-                                                  backgroundColor: AppColors.surface,
-                                                  valueColor: const AlwaysStoppedAnimation<Color>(
-                                                      AppColors.accent),
+                                              Text(
+                                                '$sets пд.',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color:
+                                                      AppColors.textSecondary,
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      ],
+                                          const SizedBox(height: 4),
+                                          ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(3),
+                                            child: LinearProgressIndicator(
+                                              value: frac.clamp(0.0, 1.0),
+                                              minHeight: 3,
+                                              backgroundColor:
+                                                  AppColors.surface,
+                                              valueColor:
+                                                  const AlwaysStoppedAnimation<
+                                                      Color>(AppColors.accent),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  );
-                                }),
-                              ],
-                            ),
-                          ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
           ),
         ],
       ),
@@ -4748,7 +4994,12 @@ class _MuscleBalanceChartState extends State<_MuscleBalanceChart> {
 // ─── Week comparison ──────────────────────────────────────────────────────────
 
 class _WeekComparisonCard extends StatelessWidget {
-  final ({double volumeThisWeek, double volumeLastWeek, int sessionsThisWeek, int sessionsLastWeek}) cmp;
+  final ({
+    double volumeThisWeek,
+    double volumeLastWeek,
+    int sessionsThisWeek,
+    int sessionsLastWeek
+  }) cmp;
 
   const _WeekComparisonCard({required this.cmp});
 
@@ -4833,7 +5084,8 @@ class _CmpColumn extends StatelessWidget {
     return Column(
       children: [
         Text(label,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         const SizedBox(height: 4),
         Text(
           thisWeek,
@@ -4850,7 +5102,8 @@ class _CmpColumn extends StatelessWidget {
             const SizedBox(width: 2),
             Text(
               lastWeek,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ],
         ),
@@ -4867,7 +5120,13 @@ class _MuscleFrequencyChart extends StatelessWidget {
   const _MuscleFrequencyChart({required this.frequency});
 
   static const _categoryOrder = [
-    'chest', 'back', 'shoulders', 'arms', 'legs', 'core', 'cardio',
+    'chest',
+    'back',
+    'shoulders',
+    'arms',
+    'legs',
+    'core',
+    'cardio',
   ];
 
   @override
@@ -4907,7 +5166,8 @@ class _MuscleFrequencyChart extends StatelessWidget {
                 interval: 1,
                 getTitlesWidget: (v, _) => Text(
                   v.toInt().toString(),
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
+                  style: const TextStyle(
+                      color: AppColors.textSecondary, fontSize: 10),
                 ),
               ),
             ),
@@ -4928,8 +5188,10 @@ class _MuscleFrequencyChart extends StatelessWidget {
                 },
               ),
             ),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           barGroups: entries.asMap().entries.map((e) {
             return BarChartGroupData(
@@ -4962,4 +5224,3 @@ class _MuscleFrequencyChart extends StatelessWidget {
     return map[cat] ?? cat;
   }
 }
-

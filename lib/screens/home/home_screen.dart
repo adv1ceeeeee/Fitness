@@ -24,6 +24,7 @@ import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
 import 'package:sportwai/services/wellness_service.dart';
+import 'package:sportwai/utils/twemoji.dart';
 import 'package:sportwai/services/recsys_service.dart';
 import 'package:sportwai/services/user_state_service.dart';
 import 'package:sportwai/services/local_storage.dart';
@@ -608,6 +609,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  /// Merge an optimistic value into today's row of [_bodyMetricsHistory] so
+  /// the body-progress chart reflects the change instantly, before the DB
+  /// round-trip completes. `_load()` runs afterwards as the authoritative
+  /// refresh.
+  void _mergeOptimisticMetric(String metric, double value) {
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final updated = List<Map<String, dynamic>>.from(_bodyMetricsHistory);
+    final idx = updated.indexWhere((m) => m['date'] == today);
+    if (idx >= 0) {
+      updated[idx] = {...updated[idx], metric: value};
+    } else {
+      updated.add({'date': today, metric: value});
+    }
+    setState(() => _bodyMetricsHistory = updated);
+  }
+
   static const _kOverrideWorkoutKey = 'home_override_workout_id';
 
   Future<void> _loadOverrideWorkout() async {
@@ -820,7 +837,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     }
                     return null;
                   }(),
-                  onSaved: () async {
+                  onOptimistic: (v) => _mergeOptimisticMetric(_goalMetric, v),
+                  onConfirmed: () async {
                     if (mounted) _load();
                   },
                 ),
@@ -1039,6 +1057,8 @@ class _EnergyReadinessCard extends StatelessWidget {
       _    => 'Критическая усталость — рекомендуется полный отдых.',
     };
 
+    final fillFactor = (state.reserve / 100.0).clamp(0.0, 1.0);
+
     return Container(
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
@@ -1052,28 +1072,63 @@ class _EnergyReadinessCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Готовность: ${state.label} ($pct%)',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: color,
+            // Animated readiness fill — grows from 0 to `reserve`% on mount.
+            Positioned.fill(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: fillFactor),
+                duration: const Duration(milliseconds: 900),
+                curve: Curves.easeOutCubic,
+                builder: (_, value, __) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: value,
+                    heightFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            color.withValues(alpha: 0.28),
+                            color.withValues(alpha: 0.08),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(icon, color: color, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Готовность: ${state.label} ($pct%)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: color,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1776,7 +1831,7 @@ class _StreakChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('🔥', style: TextStyle(fontSize: 13)),
+          const Twemoji('🔥', size: 13),
           const SizedBox(width: 4),
           Text(
             _label(),
@@ -2600,12 +2655,21 @@ class _ActionCard extends StatelessWidget {
 class _QuickWeightCard extends StatefulWidget {
   final String metric;
   final double? currentValue;
-  final Future<void> Function() onSaved;
+
+  /// Called synchronously the moment the user submits a value — before any
+  /// DB round-trip. Lets the parent update its state (e.g. body-progress
+  /// chart) optimistically so the UI reacts instantly.
+  final void Function(double value) onOptimistic;
+
+  /// Fired after the DB write confirms. Fire-and-forget — use this to kick
+  /// off an authoritative refresh in the background.
+  final Future<void> Function()? onConfirmed;
 
   const _QuickWeightCard({
     this.metric = 'weight_kg',
     this.currentValue,
-    required this.onSaved,
+    required this.onOptimistic,
+    this.onConfirmed,
   });
 
   @override
@@ -2614,8 +2678,8 @@ class _QuickWeightCard extends StatefulWidget {
 
 class _QuickWeightCardState extends State<_QuickWeightCard> {
   late TextEditingController _ctrl;
-  bool _saving = false;
   bool _saved = false;
+  bool _inFlight = false;
   // Only used for weight_kg (multi-log per day)
   List<Map<String, dynamic>> _todayWeightLogs = [];
 
@@ -2629,7 +2693,11 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
   @override
   void didUpdateWidget(_QuickWeightCard old) {
     super.didUpdateWidget(old);
-    if (old.metric != widget.metric || old.currentValue != widget.currentValue) {
+    // Only reset when the chosen metric changes. We intentionally do NOT
+    // rebuild the controller or reload logs on currentValue changes: the
+    // parent updates currentValue right after the optimistic save, and we
+    // don't want to wipe the freshly-inserted optimistic row.
+    if (old.metric != widget.metric) {
       _ctrl.dispose();
       _ctrl = _buildController();
       _todayWeightLogs = [];
@@ -2659,13 +2727,48 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
   bool get _isWeight => widget.metric == 'weight_kg';
 
   Future<void> _save({bool updateDaily = true}) async {
+    if (_inFlight) return;
     final v = double.tryParse(_ctrl.text.replaceAll(',', '.'));
     if (v == null || v <= 0) return;
-    setState(() => _saving = true);
+
+    // Snapshot current state for rollback in case the DB write fails.
+    final previousLogs = List<Map<String, dynamic>>.from(_todayWeightLogs);
+
+    // ── Optimistic UI: reflect the new value instantly ─────────────────────
+    final optimistic = <String, dynamic>{
+      'weight_kg': v,
+      'measured_at': DateTime.now().toUtc().toIso8601String(),
+      '_optimistic': true,
+    };
+    setState(() {
+      _inFlight = true;
+      _saved = true;
+      if (_isWeight) {
+        if (updateDaily && previousLogs.isNotEmpty) {
+          // "Обновить" replaces today's latest reading.
+          _todayWeightLogs = [
+            ...previousLogs.sublist(0, previousLogs.length - 1),
+            optimistic,
+          ];
+        } else {
+          _todayWeightLogs = [...previousLogs, optimistic];
+        }
+      }
+    });
+    widget.onOptimistic(v);
+
+    // Hide the check-mark after 2s regardless of DB result.
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _saved = false);
+    });
+
+    // ── Background DB write ────────────────────────────────────────────────
     try {
       if (_isWeight) {
         await BodyMetricsService.logWeight(v, updateDaily: updateDaily);
-        await _loadWeightLogs();
+        // Replace optimistic row with the authoritative copy.
+        final logs = await BodyMetricsService.getTodayWeightLogs();
+        if (mounted) setState(() => _todayWeightLogs = logs);
       } else {
         await BodyMetricsService.upsert(
           weightKg:       widget.metric == 'weight_kg'       ? v : null,
@@ -2677,17 +2780,19 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
           shouldersCm:    widget.metric == 'shoulders_cm'    ? v : null,
         );
       }
-      await widget.onSaved();
-      if (mounted) setState(() { _saving = false; _saved = true; });
-      await Future.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _saved = false);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить $_label')),
-        );
-      }
+      // Fire-and-forget authoritative refresh so the parent can reconcile.
+      unawaited(widget.onConfirmed?.call() ?? Future.value());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _todayWeightLogs = previousLogs;
+        _saved = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось сохранить $_label')),
+      );
+    } finally {
+      if (mounted) setState(() => _inFlight = false);
     }
   }
 
@@ -2802,35 +2907,26 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
                         key: ValueKey('check'),
                         color: AppColors.accent,
                         size: 28)
-                    : _saving
-                        ? const SizedBox(
-                            key: ValueKey('loader'),
-                            width: 28,
-                            height: 28,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.accent),
-                          )
-                        : hasTodayWeightLogs
-                            ? Row(
-                                key: const ValueKey('two-btn'),
-                                children: [
-                                  _actionButton(
-                                    label: 'Обновить',
-                                    onTap: () => _save(updateDaily: true),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _actionButton(
-                                    label: '+ Ещё раз',
-                                    onTap: () => _save(updateDaily: false),
-                                    secondary: true,
-                                  ),
-                                ],
-                              )
-                            : _actionButton(
-                                label: 'Сохранить',
-                                onTap: () => _save(),
+                    : hasTodayWeightLogs
+                        ? Row(
+                            key: const ValueKey('two-btn'),
+                            children: [
+                              _actionButton(
+                                label: 'Обновить',
+                                onTap: () => _save(updateDaily: true),
                               ),
+                              const SizedBox(width: 6),
+                              _actionButton(
+                                label: '+ Ещё раз',
+                                onTap: () => _save(updateDaily: false),
+                                secondary: true,
+                              ),
+                            ],
+                          )
+                        : _actionButton(
+                            label: 'Сохранить',
+                            onTap: () => _save(),
+                          ),
               ),
             ],
           ),
@@ -3230,7 +3326,7 @@ class _QuickStartSheetState extends State<_QuickStartSheet> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   tileColor: AppColors.surface,
-                  leading: Text(t.emoji, style: const TextStyle(fontSize: 28)),
+                  leading: Twemoji(t.emoji, size: 28),
                   title: Text(
                     t.name,
                     style: const TextStyle(
@@ -3508,7 +3604,7 @@ class _SummaryTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(emoji, style: const TextStyle(fontSize: 22)),
+          Twemoji(emoji, size: 22),
           const SizedBox(height: 8),
           Text(
             value,

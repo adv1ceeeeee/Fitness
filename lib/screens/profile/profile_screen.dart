@@ -21,6 +21,8 @@ import 'package:sportwai/widgets/avatar_widget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:sportwai/services/gamification_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -365,6 +367,61 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       defaultTargetPlatform == TargetPlatform.windows ||
       defaultTargetPlatform == TargetPlatform.linux;
 
+  void _openAvatarViewer(String url) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.92),
+      builder: (dialogContext) {
+        return Dialog.fullscreen(
+          backgroundColor: Colors.transparent,
+          child: Stack(
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.of(dialogContext).pop(),
+                child: InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Hero(
+                      tag: 'profile-avatar',
+                      child: CachedNetworkImage(
+                        cacheManager: AppImageCacheManager.instance,
+                        imageUrl: url,
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.accent,
+                          ),
+                        ),
+                        errorWidget: (_, __, ___) => const Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white54,
+                          size: 64,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.of(dialogContext).padding.top + 8,
+                right: 8,
+                child: Material(
+                  color: Colors.black45,
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickAndUploadAvatar() async {
     XFile? file;
 
@@ -589,12 +646,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Center(
                 child: Column(
                   children: [
-                    GestureDetector(
-                      onTap: _uploadingAvatar ? null : _pickAndUploadAvatar,
-                      child: Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          _uploadingAvatar
+                    Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        GestureDetector(
+                          onTap: _uploadingAvatar
+                              ? null
+                              : () {
+                                  final url = _profile?.avatarUrl;
+                                  if (url != null && url.startsWith('http')) {
+                                    _openAvatarViewer(url);
+                                  } else {
+                                    _pickAndUploadAvatar();
+                                  }
+                                },
+                          child: _uploadingAvatar
                               ? const CircleAvatar(
                                   radius: 50,
                                   backgroundColor: AppColors.card,
@@ -607,12 +673,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     ),
                                   ),
                                 )
-                              : AvatarWidget(
-                                  avatarUrl: _profile?.avatarUrl,
-                                  radius: 50,
-                                  fallbackLetter: _avatarLetter,
+                              : Hero(
+                                  tag: 'profile-avatar',
+                                  child: AvatarWidget(
+                                    avatarUrl: _profile?.avatarUrl,
+                                    radius: 50,
+                                    fallbackLetter: _avatarLetter,
+                                  ),
                                 ),
-                          Container(
+                        ),
+                        GestureDetector(
+                          onTap: _uploadingAvatar ? null : _pickAndUploadAvatar,
+                          child: Container(
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
@@ -629,8 +701,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               color: Colors.white,
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     Text(

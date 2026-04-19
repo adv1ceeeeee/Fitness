@@ -17,6 +17,7 @@ import 'package:sportwai/services/gamification_service.dart';
 import 'package:sportwai/services/gamification_config.dart';
 import 'package:sportwai/screens/shared/feedback_sheets.dart';
 import 'package:sportwai/services/feedback_service.dart';
+import 'package:sportwai/utils/twemoji.dart';
 
 class SessionSummaryScreen extends ConsumerStatefulWidget {
   final String sessionId;
@@ -1005,10 +1006,7 @@ class _AchievementUnlockSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          Text(
-            achievement.emoji,
-            style: const TextStyle(fontSize: 64),
-          ),
+          Twemoji(achievement.emoji, size: 64),
           const SizedBox(height: 12),
           const Text(
             'Новое достижение!',

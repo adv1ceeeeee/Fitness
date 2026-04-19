@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/providers/settings_provider.dart';
-import 'package:sportwai/screens/profile/body_model_widget.dart';
+import 'package:sportwai/screens/profile/body_photo_silhouette_widget.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/gamification_service.dart';
@@ -18,6 +18,7 @@ class BodyMetricsScreen extends ConsumerStatefulWidget {
 class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
   List<Map<String, dynamic>> _history = [];
   double? _profileHeight;
+  String? _profileGender;
   bool _loading = true;
 
   // Which history row is currently shown in the silhouette (null = latest)
@@ -35,9 +36,11 @@ class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
       ProfileService.getProfile(),
     ]);
     if (mounted) {
+      final profile = results[1] as dynamic;
       setState(() {
         _history = results[0] as List<Map<String, dynamic>>;
-        _profileHeight = (results[1] as dynamic)?.heightCm as double?;
+        _profileHeight = profile?.heightCm as double?;
+        _profileGender = profile?.gender as String?;
         // Keep displayed row in sync — if it was the latest, update to new latest
         _displayedRow = _history.isNotEmpty ? _history.last : null;
         _loading = false;
@@ -176,8 +179,11 @@ class _BodyMetricsScreenState extends ConsumerState<BodyMetricsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 3D body model (falls back to SVG if model not added yet)
-                  Body3DWidget(measurements: _displayedRow),
+                  BodyPhotoSilhouetteWidget(
+                    measurements: _displayedRow,
+                    gender: _profileGender,
+                    useCm: useCm,
+                  ),
 
                   // Label when viewing a past date
                   if (_displayedRow != null &&

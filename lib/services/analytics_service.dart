@@ -407,7 +407,8 @@ class AnalyticsService {
     if (userId == null) return [];
 
     return AppCache.get<List<Map<String, dynamic>>>(
-      key: 'tracked_exercises:$userId',
+      // v2: payload schema changed — now includes name_ru. Old blobs ignored.
+      key: 'tracked_exercises_v2:$userId',
       ttl: const Duration(minutes: 10),
       fetch: () async {
         final sessRes = await _client
@@ -434,7 +435,7 @@ class AnalyticsService {
 
         final weRes = await _client
             .from('workout_exercises')
-            .select('exercise_id, exercises(id, name)')
+            .select('exercise_id, exercises(id, name, name_ru)')
             .inFilter('id', weIds);
 
         final seen = <String>{};
@@ -444,12 +445,17 @@ class AnalyticsService {
           if (ex != null) {
             final id = ex['id'] as String;
             if (seen.add(id)) {
-              result.add({'id': id, 'name': ex['name'] as String});
+              result.add({
+                'id': id,
+                'name': ex['name'] as String,
+                'name_ru': ex['name_ru'] as String?,
+              });
             }
           }
         }
-        result.sort((a, b) =>
-            (a['name'] as String).compareTo(b['name'] as String));
+        String sortKey(Map<String, dynamic> e) =>
+            (e['name_ru'] as String?) ?? e['name'] as String;
+        result.sort((a, b) => sortKey(a).compareTo(sortKey(b)));
         return result;
       },
       encode: (v) => jsonEncode(v),

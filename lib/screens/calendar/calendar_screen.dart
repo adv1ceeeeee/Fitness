@@ -536,10 +536,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   const Padding(
                     padding: EdgeInsets.fromLTRB(24, 20, 24, 0),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Text(
                           'Календарь',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -549,6 +550,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         SizedBox(height: 4),
                         Text(
                           'Нажмите на дату, чтобы запланировать тренировку',
+                          textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 12,
                             color: AppColors.textSecondary,

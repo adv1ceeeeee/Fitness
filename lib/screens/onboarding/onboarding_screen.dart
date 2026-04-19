@@ -11,6 +11,7 @@ import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/workout_service.dart';
+import 'package:sportwai/utils/twemoji.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -683,7 +684,7 @@ class _GoalCard extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           child: Row(
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 32)),
+              Twemoji(emoji, size: 32),
               const SizedBox(width: 16),
               Text(
                 label,
