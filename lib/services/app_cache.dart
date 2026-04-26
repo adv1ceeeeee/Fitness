@@ -109,6 +109,18 @@ class AppCache {
     return age < maxAge.inMilliseconds;
   }
 
+  /// Write a value to the cache directly, bypassing the fetch step.
+  /// Use after a mutation when you want subsequent [get] calls to see
+  /// the new state immediately, without waiting for a DB round-trip.
+  static Future<void> set<T>({
+    required String key,
+    required T value,
+    required String? Function(T value) encode,
+  }) async {
+    final prefs = await _p;
+    await _store(prefs, key, encode(value));
+  }
+
   /// Invalidate a cached key (forces fresh fetch on next [get] call).
   static Future<void> invalidate(String key) async {
     final prefs = await _p;

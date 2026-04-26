@@ -46,6 +46,42 @@ class Exercise {
 
   String get displayName => nameRu ?? name;
 
+  Exercise copyWith({
+    String? id,
+    String? name,
+    String? nameRu,
+    String? category,
+    String? description,
+    String? descriptionRu,
+    String? imageUrl,
+    bool? isStandard,
+    String? userId,
+    bool? isFavorite,
+    String? gifUrl,
+    String? movementType,
+    String? difficulty,
+    String? equipmentType,
+    String? inputMode,
+  }) {
+    return Exercise(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      nameRu: nameRu ?? this.nameRu,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      descriptionRu: descriptionRu ?? this.descriptionRu,
+      imageUrl: imageUrl ?? this.imageUrl,
+      isStandard: isStandard ?? this.isStandard,
+      userId: userId ?? this.userId,
+      isFavorite: isFavorite ?? this.isFavorite,
+      gifUrl: gifUrl ?? this.gifUrl,
+      movementType: movementType ?? this.movementType,
+      difficulty: difficulty ?? this.difficulty,
+      equipmentType: equipmentType ?? this.equipmentType,
+      inputMode: inputMode ?? this.inputMode,
+    );
+  }
+
   bool get isCustom => !isStandard && userId != null;
 
   /// Input mode: explicit DB override takes priority, else derived from

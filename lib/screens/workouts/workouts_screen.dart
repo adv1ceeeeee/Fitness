@@ -3,14 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/models/training_session.dart';
 import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/cache_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/notification_service.dart';
+import 'package:sportwai/services/profile_service.dart';
+import 'package:sportwai/services/program_generator_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/data/standard_programs.dart';
+import 'package:sportwai/screens/workouts/generate_program_overlay.dart';
+import 'package:sportwai/screens/workouts/quick_profile_wizard_sheet.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
 import 'package:sportwai/widgets/skeleton.dart';
 
@@ -41,6 +46,60 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
     // Refresh when switching back to "Мои программы" tab
     if (_tabController.index == 0 && !_tabController.indexIsChanging) {
       _loadWorkouts();
+    }
+  }
+
+  /// Generates a workout program using profile data. If goal/level are missing,
+  /// shows a quick wizard first; otherwise jumps straight to the loading
+  /// animation. Once the program is materialised in the DB, navigates the user
+  /// into the editor so they can tweak before saving.
+  Future<void> _runProgramGeneration() async {
+    var profile = await ProfileService.getProfile();
+
+    if (!ProgramGeneratorService.canGenerateFor(profile)) {
+      if (!mounted) return;
+      final answers =
+          await QuickProfileWizardSheet.show(context, profile);
+      if (answers == null) return; // user dismissed
+      profile = (profile ?? Profile(
+                id: '',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ))
+          .copyWith(goal: answers.goal, level: answers.level);
+    }
+
+    if (!mounted) return;
+    final navigator = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final result = await showGenerationOverlay<GeneratedProgram>(
+        context,
+        message: 'Подбираем программу под вас',
+        task: () => ProgramGeneratorService.generate(profile!),
+      );
+      EventLogger.workoutCreated(workoutName: result.firstWorkout.name);
+      await _loadWorkouts();
+      if (!mounted) return;
+      navigator.push('/workouts/${result.firstWorkout.id}/exercises');
+      if (result.notFoundExercises.isNotEmpty) {
+        messenger.showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
+            content: Text(
+              'Не нашли в каталоге: ${result.notFoundExercises.join(', ')}. '
+              'Можете добавить вручную.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Не удалось сгенерировать программу: $e')),
+      );
     }
   }
 
@@ -145,6 +204,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                       await context.push('/workouts/create');
                       _loadWorkouts();
                     },
+                    onGenerateTap: _runProgramGeneration,
                     onWorkoutTap: (w) =>
                         context.push('/workouts/${w.id}/exercises'),
                   ),
@@ -173,6 +233,7 @@ class _MyProgramsTab extends StatefulWidget {
   final bool loading;
   final VoidCallback onRefresh;
   final VoidCallback onCreateTap;
+  final VoidCallback onGenerateTap;
   final void Function(Workout) onWorkoutTap;
   final Future<void> Function(String id) onDelete;
 
@@ -182,6 +243,7 @@ class _MyProgramsTab extends StatefulWidget {
     required this.upcomingInfo,
     required this.onRefresh,
     required this.onCreateTap,
+    required this.onGenerateTap,
     required this.onWorkoutTap,
     required this.onDelete,
     this.loading = false,
@@ -466,21 +528,36 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       ),
     );
 
-    if (confirmed == true && mounted) {
+    if (confirmed != true || !mounted) return;
+
+    final deletedIds = selected.map((w) => w.id).toSet();
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Optimistic UI: hide rows immediately so the cards don't drop one-by-one
+    // as each network call resolves.
+    setState(() {
+      _orderedIds.removeWhere(deletedIds.contains);
+      _hiddenIds.removeWhere(deletedIds.contains);
+      _selectedIds = {};
+      _deleteMode = false;
+      _openSwipeId = null;
+    });
+
+    try {
       await Future.wait(selected.map((w) {
         EventLogger.workoutDeleted(workoutName: w.name);
-        return widget.onDelete(w.id);
+        return WorkoutService.deleteWorkout(w.id);
       }));
+    } catch (e) {
       if (mounted) {
-        setState(() {
-          _orderedIds.removeWhere((id) => _selectedIds.contains(id));
-          _hiddenIds.removeWhere((id) => _selectedIds.contains(id));
-          _selectedIds = {};
-          _deleteMode = false;
-          _openSwipeId = null;
-        });
+        messenger.showSnackBar(
+          SnackBar(content: Text('Ошибка удаления: $e')),
+        );
       }
     }
+    // Single refresh at the end — avoids N back-to-back reloads, which made
+    // the list "blink" and items appear to disappear one-by-one.
+    widget.onRefresh();
   }
 
   String _plural(int n, String one, String few, String many) {
@@ -778,6 +855,41 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                           'Создать программу',
                           style: TextStyle(
                             fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Material(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: widget.onGenerateTap,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.accent.withValues(alpha: 0.45),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.auto_awesome,
+                            color: AppColors.accent, size: 22),
+                        SizedBox(width: 10),
+                        Text(
+                          'Сгенерировать программу',
+                          style: TextStyle(
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: AppColors.accent,
                           ),

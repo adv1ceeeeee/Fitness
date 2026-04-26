@@ -88,4 +88,37 @@ void main() {
       expect(keyW1, isNot(keyW2));
     });
   });
+
+  // ── userExistedForSummarizedWeek ───────────────────────────────────────────
+  // The summarized week is the Mon→Sun ending on weeklySummaryKeyFor(now).
+  // For now=Sun 2026-03-15, the week is Mon 2026-03-09 → Sun 2026-03-15.
+
+  group('userExistedForSummarizedWeek', () {
+    final sunday = DateTime(2026, 3, 15); // "now" — Sunday
+
+    test('null createdAt → assume existed (default true)', () {
+      expect(userExistedForSummarizedWeek(null, sunday), isTrue);
+    });
+
+    test('user registered today (Sunday) → false', () {
+      expect(userExistedForSummarizedWeek(sunday, sunday), isFalse);
+    });
+
+    test('user registered Saturday (within summarized week) → false', () {
+      expect(userExistedForSummarizedWeek(DateTime(2026, 3, 14), sunday), isFalse);
+    });
+
+    test('user registered on the Monday of summarized week → false', () {
+      // Week starts at Mon 00:00. Account created at exact Mon 00:00 is NOT before.
+      expect(userExistedForSummarizedWeek(DateTime(2026, 3, 9), sunday), isFalse);
+    });
+
+    test('user registered the Sunday before summarized week → true', () {
+      expect(userExistedForSummarizedWeek(DateTime(2026, 3, 8), sunday), isTrue);
+    });
+
+    test('user registered weeks ago → true', () {
+      expect(userExistedForSummarizedWeek(DateTime(2026, 1, 1), sunday), isTrue);
+    });
+  });
 }

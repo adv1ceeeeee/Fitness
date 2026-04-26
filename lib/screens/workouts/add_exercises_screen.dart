@@ -156,12 +156,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     setState(() {
       final idx = _allExercises.indexWhere((e) => e.id == ex.id);
       if (idx != -1) {
-        final old = _allExercises[idx];
-        _allExercises[idx] = Exercise(
-          id: old.id, name: old.name, category: old.category,
-          description: old.description, imageUrl: old.imageUrl,
-          isStandard: old.isStandard, userId: old.userId, isFavorite: newVal,
-        );
+        _allExercises[idx] = _allExercises[idx].copyWith(isFavorite: newVal);
       }
     });
     await ExerciseService.toggleFavorite(ex.id, add: newVal);
@@ -1166,8 +1161,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 0,
+        toolbarHeight: 72,
         title: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Hero(
               tag: 'workout-icon-${widget.workoutId}',
@@ -1185,21 +1181,31 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(sectionTitle),
-                if (days.isNotEmpty)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    days.map((d) => _dayLabels[d]).join(' · '),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.normal,
-                    ),
+                    sectionTitle,
+                    maxLines: 2,
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 16, height: 1.15),
                   ),
-              ],
+                  if (days.isNotEmpty)
+                    Text(
+                      days.map((d) => _dayLabels[d]).join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.normal,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
@@ -1603,16 +1609,41 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     buildDefaultDragHandles: false,
-                    onReorder: (oldIndex, newIndex) {
+                    onReorder: (oldIndex, newIndex) async {
+                      // Indexes come from _visibleExercises; map them back to
+                      // _programExercises so the day filter doesn't shift the
+                      // wrong items around.
+                      if (newIndex > oldIndex) newIndex--;
+                      final movedItem = _visibleExercises[oldIndex];
+                      final movedRealIdx =
+                          _programExercises.indexOf(movedItem);
+                      final WorkoutExercise? anchorItem =
+                          newIndex < _visibleExercises.length
+                              ? _visibleExercises[newIndex]
+                              : null;
                       setState(() {
-                        if (newIndex > oldIndex) newIndex--;
-                        final item = _programExercises.removeAt(oldIndex);
-                        _programExercises.insert(newIndex, item);
+                        _programExercises.removeAt(movedRealIdx);
+                        final insertIdx = anchorItem == null
+                            ? _programExercises.length
+                            : _programExercises.indexOf(anchorItem);
+                        _programExercises.insert(
+                            insertIdx < 0 ? _programExercises.length : insertIdx,
+                            movedItem);
                       });
-                      WorkoutService.reorderExercises(
-                        widget.workoutId,
-                        _programExercises.map((e) => e.id).toList(),
-                      );
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await WorkoutService.reorderExercises(
+                          widget.workoutId,
+                          _programExercises.map((e) => e.id).toList(),
+                        );
+                      } catch (e) {
+                        if (mounted) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                                content: Text('Не удалось сохранить порядок')),
+                          );
+                        }
+                      }
                     },
                     children: _visibleExercises.asMap().entries.map((entry) {
                       final i = entry.key;
@@ -1677,9 +1708,37 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                if (_searchQuery.isNotEmpty)
-                  ..._buildExerciseTiles(_filteredFlat)
-                else
+                if (_searchQuery.isNotEmpty || _favoritesOnly) ...[
+                  if (_filteredFlat.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Icon(
+                              _favoritesOnly
+                                  ? Icons.star_outline_rounded
+                                  : Icons.search_off_rounded,
+                              size: 40,
+                              color: AppColors.textSecondary
+                                  .withValues(alpha: 0.5),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _favoritesOnly
+                                  ? 'Нет избранных упражнений.\nНажмите ⭐ на любом упражнении, чтобы добавить.'
+                                  : 'Ничего не найдено',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    ..._buildExerciseTiles(_filteredFlat),
+                ] else
                   ...catalogWidgets,
 
                 const SizedBox(height: 8),

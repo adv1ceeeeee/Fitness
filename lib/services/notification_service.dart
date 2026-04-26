@@ -478,6 +478,17 @@ class NotificationService {
   /// Safe to call on every app open and after every workout completion.
   static void refreshWeeklySummary() {
     if (!AppStorage.notificationsEnabled || !AppStorage.weeklySummaryEnabled) return;
+    // Skip while the user hasn't lived through a full Mon→Sun yet —
+    // the upcoming Sunday push would just say "0 workouts" with no context.
+    final createdAtRaw = AuthService.currentUser?.createdAt;
+    if (createdAtRaw != null) {
+      final created = DateTime.tryParse(createdAtRaw)?.toLocal();
+      if (created != null &&
+          DateTime.now().difference(created) < const Duration(days: 7)) {
+        cancelWeeklySummary();
+        return;
+      }
+    }
     AnalyticsService.getWeeklySummaryData().then((data) {
       scheduleWeeklySummary(
         workoutsCount: data.workouts,

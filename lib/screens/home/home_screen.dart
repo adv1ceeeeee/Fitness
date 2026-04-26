@@ -86,6 +86,23 @@ String weeklySummaryKeyFor(DateTime now) {
 /// showing the previous week's summary).
 bool shouldShowWeeklySummaryOn(DateTime now) => now.weekday % 7 <= 2;
 
+/// Returns the Monday (00:00) of the week that the weekly summary covers,
+/// given the current date. The summary covers the most recent Mon→Sun block
+/// ending on the Sunday returned by [weeklySummaryKeyFor].
+DateTime weeklySummaryWeekStart(DateTime now) {
+  final daysSinceSunday = now.weekday % 7; // 0=Sun, 1=Mon … 6=Sat
+  final sunday = DateTime(now.year, now.month, now.day - daysSinceSunday);
+  return sunday.subtract(const Duration(days: 6));
+}
+
+/// True when the user existed for the whole week being summarized.
+/// New users registered partway through (or after) that week have nothing
+/// meaningful to look back on, so the summary is skipped for them.
+bool userExistedForSummarizedWeek(DateTime? userCreatedAt, DateTime now) {
+  if (userCreatedAt == null) return true;
+  return userCreatedAt.isBefore(weeklySummaryWeekStart(now));
+}
+
 /// Format the "+X кг" / "+X повт." badge text for an achievement card.
 String achievementDiffText(WorkoutInsight insight) {
   final diff = insight.newValue - insight.prevValue;
@@ -422,6 +439,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!AppStorage.weeklySummaryEnabled) return;
     final now = DateTime.now();
     if (!shouldShowWeeklySummaryOn(now)) return;
+
+    // Skip for users who registered after the start of the summarized week —
+    // they have no data from that week to recap.
+    final createdAt = AuthService.currentUser?.createdAt;
+    final createdAtDt = createdAt != null ? DateTime.tryParse(createdAt) : null;
+    if (!userExistedForSummarizedWeek(createdAtDt?.toLocal(), now)) return;
 
     final weekKey = weeklySummaryKeyFor(now);
     if (AppStorage.lastWeeklySummaryShownWeek == weekKey) return;

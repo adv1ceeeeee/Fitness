@@ -55,6 +55,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   Widget build(BuildContext context) {
     final isOnline = ref.isOnline;
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return Scaffold(
       extendBody: true, // body renders behind the glass bottom bar
       body: Column(
@@ -84,7 +85,7 @@ class _MainShellState extends ConsumerState<MainShell> {
           Expanded(child: widget.navigationShell),
         ],
       ),
-      floatingActionButton: const _PlayStopFab(),
+      floatingActionButton: keyboardOpen ? null : const _PlayStopFab(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: _GlassNavBar(
         currentIndex: widget.navigationShell.currentIndex,
