@@ -3617,22 +3617,26 @@ class _StreakCard extends StatelessWidget {
                 Tooltip(
                   message: 'Заморозка стрика доступна',
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                      color: const Color(0xFF4FC3F7).withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFF4FC3F7).withValues(alpha: 0.45),
+                        width: 1,
+                      ),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Twemoji('🛡️', size: 13),
-                        SizedBox(width: 4),
+                        Twemoji('🛡️', size: 18),
+                        SizedBox(width: 6),
                         Text('×1',
                             style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 13,
                                 color: Color(0xFF4FC3F7),
-                                fontWeight: FontWeight.w600)),
+                                fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),

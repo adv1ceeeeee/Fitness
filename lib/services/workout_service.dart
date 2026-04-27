@@ -73,10 +73,12 @@ class WorkoutService {
     List<int> restDays = const [],
     int cycleWeeks = 8,
     String? groupId,
+    String? groupName,
     Map<int, String>? dayTimes,
   }) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) throw StateError('createWorkout called while not authenticated');
+    final trimmedGroupName = groupName?.trim();
     final res = await _client.from('workouts').insert({
       'user_id': userId,
       'name': name,
@@ -85,6 +87,8 @@ class WorkoutService {
       'is_standard': false,
       'cycle_weeks': cycleWeeks,
       if (groupId != null) 'group_id': groupId,
+      if (trimmedGroupName != null && trimmedGroupName.isNotEmpty)
+        'group_name': trimmedGroupName,
       if (dayTimes != null && dayTimes.isNotEmpty)
         'day_times': {for (final e in dayTimes.entries) '${e.key}': e.value},
     }).select().single();
@@ -141,10 +145,12 @@ class WorkoutService {
   }
 
   /// Creates multiple workouts that form a multi-section program.
-  /// All sections share the same group_id (= first workout's id).
+  /// All sections share the same group_id (= first workout's id) and, when
+  /// supplied, the same human-readable [groupName].
   static Future<List<Workout>> createWorkoutGroup(
-    List<({String name, List<int> days, List<int> restDays, int cycleWeeks, Map<int, String> dayTimes})> sections,
-  ) async {
+    List<({String name, List<int> days, List<int> restDays, int cycleWeeks, Map<int, String> dayTimes})> sections, {
+    String? groupName,
+  }) async {
     if (sections.isEmpty || sections.length > 7) {
       throw ArgumentError('sections must have 1–7 entries, got ${sections.length}');
     }
@@ -162,9 +168,13 @@ class WorkoutService {
 
     // Use first workout's id as group_id for all sections
     final groupId = first.id;
+    final firstUpdate = <String, dynamic>{'group_id': groupId};
+    if (groupName != null && groupName.trim().isNotEmpty) {
+      firstUpdate['group_name'] = groupName.trim();
+    }
     await _client
         .from('workouts')
-        .update({'group_id': groupId})
+        .update(firstUpdate)
         .eq('id', first.id);
 
     final rest = await Future.wait(
@@ -175,6 +185,7 @@ class WorkoutService {
               restDays: s.restDays,
               cycleWeeks: s.cycleWeeks,
               groupId: groupId,
+              groupName: groupName,
               dayTimes: s.dayTimes,
             ),
           ),
@@ -183,6 +194,19 @@ class WorkoutService {
     await _invalidateWorkoutsList();
     await _invalidateGroup(groupId);
     return [first, ...rest];
+  }
+
+  /// Renames every section that shares [groupId] in one round trip, so the
+  /// denormalised group_name stays in sync. NULL/empty clears the name.
+  static Future<void> renameProgramGroup(
+      String groupId, String? newName) async {
+    final trimmed = newName?.trim();
+    await _client
+        .from('workouts')
+        .update({'group_name': trimmed == null || trimmed.isEmpty ? null : trimmed})
+        .eq('group_id', groupId);
+    await _invalidateWorkoutsList();
+    await _invalidateGroup(groupId);
   }
 
   static Future<void> addExerciseToWorkout(

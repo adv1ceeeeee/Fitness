@@ -10,6 +10,7 @@ import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
+import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/services/exercise_service.dart';
@@ -73,6 +74,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   bool _showCategorySearch = false; // search field inside expanded category
   String _categorySearchQuery = ''; // search query inside expanded category
   final TextEditingController _categorySearchController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   ExerciseSortMode _sortMode = ExerciseSortMode.alphabetical;
   Map<String, double> _userBest1RMs = {};
   Map<String, int> _popularity = {};
@@ -98,6 +100,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   void dispose() {
     _searchDebounce?.cancel();
     _categorySearchController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -183,17 +186,20 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
-    final results = await Future.wait([
-      WorkoutService.getWorkout(widget.workoutId),
-      WorkoutService.getWorkoutExercises(widget.workoutId),
-      ExerciseService.getExercises(),
-    ]);
+    // Force-refresh: this is the editing screen — stale cache here makes the
+    // user think their just-added exercise vanished after switching sections.
+    final results = await AppCache.withForceRefresh(() => Future.wait([
+          WorkoutService.getWorkout(widget.workoutId),
+          WorkoutService.getWorkoutExercises(widget.workoutId),
+          ExerciseService.getExercises(),
+        ]));
     final w = results[0] as Workout?;
     final ex = results[1] as List<WorkoutExercise>;
     final all = results[2] as List<Exercise>;
     // If this is a section of a multi-section program, load siblings too.
     final sections = (w?.groupId != null)
-        ? await WorkoutService.getSectionsByGroupId(w!.groupId!)
+        ? await AppCache.withForceRefresh(
+            () => WorkoutService.getSectionsByGroupId(w!.groupId!))
         : <Workout>[];
     if (!mounted) return;
     setState(() {
@@ -1030,16 +1036,35 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       initialTargetWeight: null,
       initialDurationMinutes: 30,
       saveLabel: 'Добавить в программу',
-      onSave: (s, r, rest, tw, dur) => WorkoutService.addExerciseToWorkout(
-        widget.workoutId,
-        ex.id,
-        sets: s,
-        repsRange: r,
-        restSeconds: rest,
-        targetWeight: tw,
-        durationMinutes: dur,
-        day: _selectedDay,
-      ),
+      onSave: (s, r, rest, tw, dur) async {
+        await WorkoutService.addExerciseToWorkout(
+          widget.workoutId,
+          ex.id,
+          sets: s,
+          repsRange: r,
+          restSeconds: rest,
+          targetWeight: tw,
+          durationMinutes: dur,
+          day: _selectedDay,
+        );
+        // Reset the catalog view back to the grouped/categorised list so
+        // the user sees the exercise they just added in the program above
+        // instead of staring at the same search results / open category.
+        if (mounted) {
+          _searchDebounce?.cancel();
+          _searchController.clear();
+          _categorySearchController.clear();
+          setState(() {
+            _searchQuery = '';
+            _categorySearchQuery = '';
+            _openCategory = null;
+            _selectedCategoryKey = null;
+            _selectedMovementType = null;
+            _showMovementFilter = false;
+            _showCategorySearch = false;
+          });
+        }
+      },
     );
   }
 
@@ -1399,6 +1424,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: TextField(
+              controller: _searchController,
               onChanged: _onSearchChanged,
               decoration: InputDecoration(
                 hintText: 'Поиск упражнений',

@@ -31,6 +31,17 @@ class _SectionData {
       _selectionHistory.isEmpty ? null : _selectionHistory.last;
 
   void selectDay(int day) {
+    // Inherit start time from the most recently selected day that has one
+    // set — saves the user from re-entering the same time for every new day.
+    // They can still override per day in the wheel afterwards.
+    if (!dayTimes.containsKey(day)) {
+      for (final prev in _selectionHistory.reversed) {
+        if (dayTimes[prev] != null) {
+          dayTimes[day] = dayTimes[prev]!;
+          break;
+        }
+      }
+    }
     _selectionHistory.remove(day); // avoid duplicates
     _selectionHistory.add(day);
     selectedDays.add(day);
@@ -62,6 +73,7 @@ class CreateWorkoutScreen extends StatefulWidget {
 
 class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   final List<_SectionData> _sections = [_SectionData()];
+  final TextEditingController _programNameController = TextEditingController();
   int _cycleWeeks = 8;
   bool _isLoading = false;
   String? _error;
@@ -74,6 +86,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     for (final s in _sections) {
       s.dispose();
     }
+    _programNameController.dispose();
     super.dispose();
   }
 
@@ -105,6 +118,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
       } else {
         s.selectDay(day);
       }
+      _maybeAutofillRestName(s);
       _error = null;
     });
   }
@@ -117,8 +131,23 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
         s.deselectDay(day);
         s.restDays.add(day);
       }
+      _maybeAutofillRestName(s);
       _error = null;
     });
+  }
+
+  /// Pre-fills the section name with "Отдых" once it becomes a rest-only
+  /// section, so the user doesn't have to type a name for a recovery day.
+  /// If they later add workout days, the placeholder reverts automatically.
+  void _maybeAutofillRestName(_SectionData s) {
+    final isRestOnly = s.selectedDays.isEmpty && s.restDays.isNotEmpty;
+    final current = s.nameController.text.trim();
+    if (isRestOnly && current.isEmpty) {
+      s.nameController.text = 'Отдых';
+    } else if (!isRestOnly && current == 'Отдых') {
+      // User added workout days — clear the auto-fill so they can name it.
+      s.nameController.text = '';
+    }
   }
 
   /// Returns days already used in other sections (workout OR rest).
@@ -168,15 +197,35 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   }
 
   Future<void> _createAndNext() async {
+    // Multi-section programs need a parent name so the user can find them
+    // again on the workouts list (where sections share a card group).
+    if (_sections.length > 1 &&
+        _programNameController.text.trim().isEmpty) {
+      setState(() {
+        _error = 'Введите название программы';
+        _shakeCount++;
+      });
+      return;
+    }
+
     // Validate each section
     for (int i = 0; i < _sections.length; i++) {
       final s = _sections[i];
       final label = _sections.length > 1 ? ' раздела ${i + 1}' : '';
+      final isRestOnly =
+          s.selectedDays.isEmpty && s.restDays.isNotEmpty;
+
+      // Auto-fill "Отдых" for rest-only sections so the user doesn't have to
+      // type a name for what's just a recovery day.
+      if (isRestOnly && s.nameController.text.trim().isEmpty) {
+        s.nameController.text = 'Отдых';
+      }
+
       if (s.nameController.text.trim().isEmpty) {
         setState(() { _error = 'Введите название$label'; _shakeCount++; });
         return;
       }
-      if (s.selectedDays.isEmpty) {
+      if (s.selectedDays.isEmpty && s.restDays.isEmpty) {
         setState(() { _error = 'Выберите дни тренировок$label'; _shakeCount++; });
         return;
       }
@@ -209,6 +258,9 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                   dayTimes: s.dayTimesForDb,
                 ))
             .toList(),
+        groupName: _sections.length > 1
+            ? _programNameController.text.trim()
+            : null,
       );
 
       // Schedule rest-day notifications for all rest days across sections
@@ -448,6 +500,24 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                 ),
               ),
             ),
+            // Program-level name (only for multi-section programs).
+            // Single-section programs use the section name as their identity,
+            // so a separate program name would just be noise.
+            if (isMulti) ...[
+              const Text(
+                'Название программы',
+                style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _programNameController,
+                decoration: const InputDecoration(
+                  hintText: 'Например: Сплит ПЛТ, Мой 4-дневный сплит',
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
             // Sections
             for (int i = 0; i < _sections.length; i++) ...[
               _buildSection(i, isMulti: isMulti),
@@ -680,31 +750,44 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                   const SizedBox(height: 6),
                   NotificationListener<ScrollNotification>(
                     onNotification: (_) => true,
-                    child: SizedBox(
-                      height: 140,
-                      child: CupertinoTheme(
-                        data: const CupertinoThemeData(
-                          brightness: Brightness.dark,
-                          textTheme: CupertinoTextThemeData(
-                            dateTimePickerTextStyle: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w500,
+                    child: Center(
+                      child: SizedBox(
+                        height: 140,
+                        // Narrow width so the grey selection band doesn't span
+                        // the full screen — makes it much harder to grab the
+                        // wheel by accident when scrolling the page.
+                        width: 180,
+                        child: CupertinoTheme(
+                          data: const CupertinoThemeData(
+                            brightness: Brightness.dark,
+                            textTheme: CupertinoTextThemeData(
+                              dateTimePickerTextStyle: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
-                        child: CupertinoDatePicker(
-                          // Keyed by sectionIndex + activeDay so the picker resets
-                          // to 00:00 each time the active day changes.
-                          key: ValueKey('tw_${sectionIndex}_$activeDay'),
-                          mode: CupertinoDatePickerMode.time,
-                          use24hFormat: true,
-                          initialDateTime: DateTime(2000, 1, 1, 0, 0),
-                          onDateTimeChanged: (dt) {
-                            // Update in-place — no setState needed (no visual rebuild required).
-                            section.dayTimes[activeDay] =
-                                TimeOfDay(hour: dt.hour, minute: dt.minute);
-                          },
+                          child: CupertinoDatePicker(
+                            // Keyed by sectionIndex + activeDay so the picker
+                            // re-initialises whenever the active day changes,
+                            // picking up any inherited time from selectDay().
+                            key: ValueKey('tw_${sectionIndex}_$activeDay'),
+                            mode: CupertinoDatePickerMode.time,
+                            use24hFormat: true,
+                            initialDateTime: DateTime(
+                              2000,
+                              1,
+                              1,
+                              section.dayTimes[activeDay]?.hour ?? 0,
+                              section.dayTimes[activeDay]?.minute ?? 0,
+                            ),
+                            onDateTimeChanged: (dt) {
+                              // Update in-place — no setState needed (no visual rebuild required).
+                              section.dayTimes[activeDay] =
+                                  TimeOfDay(hour: dt.hour, minute: dt.minute);
+                            },
+                          ),
                         ),
                       ),
                     ),

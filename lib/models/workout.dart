@@ -12,6 +12,10 @@ class Workout {
   final int warmupMinutes;
   final int cooldownMinutes;
   final String? groupId;
+  /// Human-readable name of the parent multi-section program. Denormalised:
+  /// all sections of the same group share the same value. NULL for single-
+  /// section programs (display falls back to [name]).
+  final String? groupName;
   final DateTime createdAt;
   final DateTime updatedAt;
   List<WorkoutExercise>? exercises;
@@ -29,6 +33,7 @@ class Workout {
     this.warmupMinutes = 0,
     this.cooldownMinutes = 0,
     this.groupId,
+    this.groupName,
     required this.createdAt,
     required this.updatedAt,
     this.exercises,
@@ -53,6 +58,7 @@ class Workout {
       warmupMinutes: json['warmup_minutes'] as int? ?? 0,
       cooldownMinutes: json['cooldown_minutes'] as int? ?? 0,
       groupId: json['group_id'] as String?,
+      groupName: json['group_name'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
       dayTimes: _parseDayTimes(json['day_times']),
@@ -87,6 +93,7 @@ class Workout {
         'warmup_minutes': warmupMinutes,
         'cooldown_minutes': cooldownMinutes,
         if (groupId != null) 'group_id': groupId,
+        if (groupName != null) 'group_name': groupName,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };

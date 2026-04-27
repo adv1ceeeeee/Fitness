@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -292,17 +293,53 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     await prefs.setStringList(_kHidden, _hiddenIds.toList());
   }
 
-  // Active programs (have scheduled days) — reorderable
+  // Active programs (have scheduled days) — reorderable.
+  // Sections of the same multi-section program are kept contiguous and sorted
+  // by their first weekday (so Mon comes before Wed which comes before Fri),
+  // regardless of the order they were created in.
   List<Workout> get _sortedWorkouts {
     final active = widget.workouts.where((w) => w.days.isNotEmpty).toList();
     final Map<String, int> orderMap = {
       for (int i = 0; i < _orderedIds.length; i++) _orderedIds[i]: i,
     };
-    return active..sort((a, b) {
-      final ia = orderMap[a.id] ?? 999999;
-      final ib = orderMap[b.id] ?? 999999;
-      return ia.compareTo(ib);
-    });
+
+    int minDay(Workout w) =>
+        w.days.isEmpty ? 99 : w.days.reduce((a, b) => a < b ? a : b);
+
+    // Bucket position of the group: the smallest user-drag rank of any of its
+    // sections (so dragging any one section moves the whole group together);
+    // un-ranked groups fall back to the smallest first-weekday in the group.
+    String bucketKey(Workout w) => w.groupId ?? w.id;
+    final groupRank = <String, int>{};
+    final groupMinDay = <String, int>{};
+    for (final w in active) {
+      final k = bucketKey(w);
+      final r = orderMap[w.id];
+      if (r != null) {
+        groupRank[k] = math.min(groupRank[k] ?? r, r);
+      }
+      final d = minDay(w);
+      groupMinDay[k] = math.min(groupMinDay[k] ?? d, d);
+    }
+
+    return active
+      ..sort((a, b) {
+        final ka = bucketKey(a);
+        final kb = bucketKey(b);
+        if (ka != kb) {
+          // Cross-group ordering: respect drag rank, then min weekday, then id.
+          final ra = groupRank[ka];
+          final rb = groupRank[kb];
+          if (ra != null && rb != null && ra != rb) return ra.compareTo(rb);
+          if (ra != null && rb == null) return -1;
+          if (ra == null && rb != null) return 1;
+          final cmp = (groupMinDay[ka] ?? 99).compareTo(groupMinDay[kb] ?? 99);
+          if (cmp != 0) return cmp;
+          return ka.compareTo(kb);
+        }
+        // Same group: ascending by first weekday so Mon → Wed → Fri.
+        return minDay(a).compareTo(minDay(b));
+      });
   }
 
   // Inactive workouts that have an upcoming (future, non-skipped) session
@@ -817,6 +854,14 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     final sorted = _sortedWorkouts;
     final upcoming = _upcomingWorkouts;
     final inactive = _inactiveWorkouts;
+    // Count sections per group so we can show a "часть программы из N дней"
+    // hint on cards that belong to multi-section programs.
+    final groupSizes = <String, int>{};
+    for (final w in sorted) {
+      final key = w.groupId ?? w.id;
+      groupSizes[key] = (groupSizes[key] ?? 0) + 1;
+    }
+    int sizeOf(Workout w) => groupSizes[w.groupId ?? w.id] ?? 1;
 
     return NotificationListener<ScrollNotification>(
       onNotification: (_) {
@@ -1254,6 +1299,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                       child: _SwipeableCard(
                         workout: sorted[i],
                         index: i,
+                        groupSize: sizeOf(sorted[i]),
                         inDeleteMode: _deleteMode,
                         isHidden: _hiddenIds.contains(sorted[i].id),
                         isOpen: !_deleteMode && _openSwipeId == sorted[i].id,
@@ -1296,6 +1342,8 @@ class _SwipeableCard extends StatefulWidget {
   final bool isHidden;
   final bool isOpen;
   final bool inDeleteMode;
+  /// Total number of sections in this workout's program (1 = standalone).
+  final int groupSize;
   final VoidCallback onOpen;
   final VoidCallback onClose;
   final VoidCallback onTap;
@@ -1311,6 +1359,7 @@ class _SwipeableCard extends StatefulWidget {
     required this.isHidden,
     required this.isOpen,
     this.inDeleteMode = false,
+    this.groupSize = 1,
     required this.onOpen,
     required this.onClose,
     required this.onTap,
@@ -1434,6 +1483,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
                         child: _WorkoutCardContent(
                           workout: widget.workout,
                           index: widget.index,
+                          groupSize: widget.groupSize,
                           inDeleteMode: widget.inDeleteMode,
                           onActionsOpen: widget.inDeleteMode ? null : () {
                             if (widget.isOpen) {
@@ -1534,13 +1584,41 @@ class _WorkoutCardContent extends StatelessWidget {
   final int index;
   final VoidCallback? onActionsOpen;
   final bool inDeleteMode;
+  /// Total sections in this workout's program (1 = standalone). When > 1 we
+  /// show a "Часть программы · N дней" badge so the user can see at a glance
+  /// that this card is one section of a multi-day split.
+  final int groupSize;
 
   const _WorkoutCardContent({
     required this.workout,
     required this.index,
     this.onActionsOpen,
     this.inDeleteMode = false,
+    this.groupSize = 1,
   });
+
+  static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+  static String _pluralDays(int n) {
+    if (n % 10 == 1 && n % 100 != 11) return 'день';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'дня';
+    return 'дней';
+  }
+
+  /// What to put under the card title:
+  ///   • multi-section with a program name → "{section name} · Пн, Ср"
+  ///   • multi-section without a program name → "Часть программы · N дней"
+  ///   • single-section → "X тренировок в неделю"
+  static String _subtitleFor(Workout w, int groupSize) {
+    if (groupSize > 1 && (w.groupName?.isNotEmpty ?? false)) {
+      final dayStr = w.days.map((d) => _dayLabels[d]).join(', ');
+      return dayStr.isEmpty ? w.name : '${w.name} · $dayStr';
+    }
+    if (groupSize > 1) {
+      return 'Часть программы · $groupSize ${_pluralDays(groupSize)}';
+    }
+    return '${w.daysPerWeek} тренировок в неделю';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1587,7 +1665,14 @@ class _WorkoutCardContent extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  workout.name,
+                  // Show the parent program name when one is set for a
+                  // multi-section group; otherwise fall back to the section
+                  // name (current behaviour for legacy / single-section data).
+                  groupSize > 1 && (workout.groupName?.isNotEmpty ?? false)
+                      ? workout.groupName!
+                      : workout.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -1599,7 +1684,9 @@ class _WorkoutCardContent extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        '${workout.daysPerWeek} тренировок в неделю',
+                        _subtitleFor(workout, groupSize),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
