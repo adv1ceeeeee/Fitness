@@ -97,6 +97,32 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   @override
+  void didUpdateWidget(covariant AddExercisesScreen old) {
+    super.didUpdateWidget(old);
+    // GoRouter reuses this State when navigating between sections of the
+    // same group (same route pattern, different :id param). We reset only
+    // the UI-local state (search, open category) and trigger a background
+    // reload — keeping `_workout`/`_programExercises` in place avoids a
+    // full-screen loading spinner on every tab switch.
+    if (old.workoutId != widget.workoutId) {
+      _searchDebounce?.cancel();
+      _searchController.clear();
+      _categorySearchController.clear();
+      setState(() {
+        _searchQuery = '';
+        _categorySearchQuery = '';
+        _openCategory = null;
+        _selectedCategoryKey = null;
+        _selectedMovementType = null;
+        _showMovementFilter = false;
+        _showCategorySearch = false;
+        _selectedDay = null;
+      });
+      _load();
+    }
+  }
+
+  @override
   void dispose() {
     _searchDebounce?.cancel();
     _categorySearchController.dispose();
@@ -185,7 +211,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   Future<void> _load() async {
-    if (mounted) setState(() => _loading = true);
+    // Show the loading skeleton only on initial load (no data yet).
+    // For subsequent reloads (e.g. switching sections or post-add refresh)
+    // keep showing the previous data so the screen does not blink.
+    if (mounted && _workout == null) setState(() => _loading = true);
     // Force-refresh: this is the editing screen — stale cache here makes the
     // user think their just-added exercise vanished after switching sections.
     final results = await AppCache.withForceRefresh(() => Future.wait([

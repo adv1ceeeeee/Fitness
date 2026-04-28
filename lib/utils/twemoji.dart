@@ -23,10 +23,19 @@ class Twemoji extends StatelessWidget {
         style: TextStyle(fontSize: size, height: 1.0),
       );
     }
+    final fallback = Text(
+      emoji,
+      style: TextStyle(fontSize: size, height: 1.0),
+    );
     return SvgPicture.asset(
       asset,
       width: size,
       height: size,
+      // Asset bundle on Windows can momentarily report missing-or-empty for
+      // SVGs during a fresh build, and Twemoji has no business crashing the
+      // UI over that — fall back to the system-font glyph instead.
+      placeholderBuilder: (_) => fallback,
+      errorBuilder: (_, __, ___) => fallback,
     );
   }
 

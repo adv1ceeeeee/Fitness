@@ -25,15 +25,9 @@ class BodyPhotoSilhouetteWidget extends StatelessWidget {
     return Container(
       height: 540,
       decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: const Alignment(0, -0.2),
-          radius: 1.15,
-          colors: [
-            AppColors.accent.withValues(alpha: 0.025),
-            AppColors.card,
-          ],
-          stops: const [0.0, 0.85],
-        ),
+        // Plain solid card — no radial gradient. The blue tint behind the
+        // silhouette competed visually with the body lines and overlay tags.
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: AppColors.textSecondary.withValues(alpha: 0.08),

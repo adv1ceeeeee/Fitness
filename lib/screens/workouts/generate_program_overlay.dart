@@ -35,7 +35,10 @@ class _GenerateProgramOverlayState extends State<GenerateProgramOverlay>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // Wrap in Material so the overlay has Material defaults — without it
+    // text inside an OverlayEntry inherits a yellow-underlined "no Material"
+    // debug style from Flutter on platforms with no DefaultTextStyle ancestor.
+    return Material(
       color: AppColors.background.withValues(alpha: 0.96),
       child: Center(
         child: Column(
@@ -59,6 +62,7 @@ class _GenerateProgramOverlayState extends State<GenerateProgramOverlay>
                 color: AppColors.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
+                decoration: TextDecoration.none,
               ),
             ),
             const SizedBox(height: 8),
@@ -68,6 +72,7 @@ class _GenerateProgramOverlayState extends State<GenerateProgramOverlay>
               style: TextStyle(
                 color: AppColors.textSecondary.withValues(alpha: 0.85),
                 fontSize: 13,
+                decoration: TextDecoration.none,
               ),
             ),
           ],

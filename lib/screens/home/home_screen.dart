@@ -802,11 +802,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onSaved: () async {
                       final log = await WellnessService.getTodayLog();
                       if (!mounted) return;
-                      // Optimistic local update for instant feedback.
+                      // Optimistic local update for instant feedback. We do
+                      // NOT null out `_energyState` — leaving the previous
+                      // value visible avoids the energy bar flickering off
+                      // and back on while the recompute runs.
                       setState(() {
                         _wellnessLogged = true;
                         _wellnessRec = evaluateWellness(log);
-                        _energyState = null; // hide stale energy until refreshed
                       });
                       // Invalidate RecSys cache so next navigation shows
                       // consistent energy + wellness derived from the same log.

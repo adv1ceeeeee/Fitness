@@ -33,10 +33,9 @@ class BodyMetricsService {
     if (userId == null) return;
     final dateStr = (date ?? DateTime.now()).toIso8601String().split('T')[0];
 
-    // Invalidate local cache so screen refreshes immediately
-    await AppCache.invalidate('body_metrics:$userId');
-    version.value++;
-
+    // Upsert FIRST, only then invalidate the cache and notify listeners.
+    // Doing it in the other order let analytics refresh from DB before the
+    // new row was committed, re-caching the stale snapshot.
     await _client.from('body_metrics').upsert(
       {
         'user_id': userId,
@@ -59,6 +58,9 @@ class BodyMetricsService {
       },
       onConflict: 'user_id,date',
     );
+
+    await AppCache.invalidate('body_metrics:$userId');
+    version.value++;
   }
 
   static Future<Map<String, dynamic>?> getLatest() async {

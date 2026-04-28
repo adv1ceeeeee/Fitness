@@ -16,6 +16,7 @@ import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/screens/workouts/generate_program_overlay.dart';
+import 'package:sportwai/screens/workouts/generated_program_review_sheet.dart';
 import 'package:sportwai/screens/workouts/quick_profile_wizard_sheet.dart';
 import 'package:sportwai/screens/workouts/standard_workouts_screen.dart';
 import 'package:sportwai/widgets/skeleton.dart';
@@ -52,8 +53,8 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
 
   /// Generates a workout program using profile data. If goal/level are missing,
   /// shows a quick wizard first; otherwise jumps straight to the loading
-  /// animation. Once the program is materialised in the DB, navigates the user
-  /// into the editor so they can tweak before saving.
+  /// animation. After generation we show a review sheet so the user can
+  /// keep / regenerate / cancel before the draft commits to "Мои программы".
   Future<void> _runProgramGeneration() async {
     var profile = await ProfileService.getProfile();
 
@@ -74,33 +75,52 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
     final navigator = GoRouter.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
-    try {
-      final result = await showGenerationOverlay<GeneratedProgram>(
-        context,
-        message: 'Подбираем программу под вас',
-        task: () => ProgramGeneratorService.generate(profile!),
-      );
-      EventLogger.workoutCreated(workoutName: result.firstWorkout.name);
-      await _loadWorkouts();
+    // Loop so the "Перегенерировать" button can re-enter the flow without
+    // recursing or duplicating wizard logic.
+    while (true) {
       if (!mounted) return;
-      navigator.push('/workouts/${result.firstWorkout.id}/exercises');
-      if (result.notFoundExercises.isNotEmpty) {
-        messenger.showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 6),
-            content: Text(
-              'Не нашли в каталоге: ${result.notFoundExercises.join(', ')}. '
-              'Можете добавить вручную.',
-            ),
-          ),
+      GeneratedProgram? result;
+      try {
+        result = await showGenerationOverlay<GeneratedProgram>(
+          // ignore: use_build_context_synchronously
+          context,
+          message: 'Подбираем программу под вас',
+          task: () => ProgramGeneratorService.generate(profile!),
         );
+      } catch (e) {
+        if (!mounted) return;
+        messenger.showSnackBar(
+          SnackBar(content: Text('Не удалось сгенерировать программу: $e')),
+        );
+        return;
       }
-    } catch (e) {
+
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text('Не удалось сгенерировать программу: $e')),
+      final action = await GeneratedProgramReviewSheet.show(
+        // ignore: use_build_context_synchronously
+        context,
+        result,
       );
+
+      if (action == GeneratedProgramAction.save) {
+        EventLogger.workoutCreated(workoutName: result.firstWorkout.name);
+        await _loadWorkouts();
+        if (!mounted) return;
+        navigator.push('/workouts/${result.firstWorkout.id}/exercises');
+        return;
+      }
+
+      // Regenerate or Cancel — both delete the just-created draft so it does
+      // not pollute "Мои программы". Run deletes in parallel for speed.
+      await Future.wait(
+        result.workouts.map((w) => WorkoutService.deleteWorkout(w.id)),
+      );
+
+      if (action == GeneratedProgramAction.cancel || action == null) {
+        await _loadWorkouts();
+        return;
+      }
+      // action == regenerate → loop again with the same profile.
     }
   }
 
@@ -379,12 +399,16 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     _saveOrder();
   }
 
-  void _toggleHidden(String id) {
+  /// Hide/show every section of a multi-section program in one go.
+  /// Toggle direction is decided by the representative section (first id).
+  void _toggleHiddenGroup(List<String> ids) {
+    if (ids.isEmpty) return;
+    final shouldHide = !_hiddenIds.contains(ids.first);
     setState(() {
-      if (_hiddenIds.contains(id)) {
-        _hiddenIds.remove(id);
+      if (shouldHide) {
+        _hiddenIds.addAll(ids);
       } else {
-        _hiddenIds.add(id);
+        _hiddenIds.removeAll(ids);
       }
       _openSwipeId = null;
     });
@@ -495,12 +519,16 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     }
   }
 
-  void _toggleSelect(String id) {
+  /// Select/unselect every section of a program at once. State is decided by
+  /// whether the representative is currently selected.
+  void _toggleSelectGroup(List<String> ids) {
+    if (ids.isEmpty) return;
+    final shouldSelect = !_selectedIds.contains(ids.first);
     setState(() {
-      if (_selectedIds.contains(id)) {
-        _selectedIds.remove(id);
+      if (shouldSelect) {
+        _selectedIds.addAll(ids);
       } else {
-        _selectedIds.add(id);
+        _selectedIds.removeAll(ids);
       }
     });
   }
@@ -639,6 +667,97 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     }
   }
 
+  /// Group-aware variant — confirms once and deletes every section in the
+  /// program. The N round-trips run in parallel (see WorkoutService.deleteWorkout).
+  Future<void> _confirmDeleteGroup(List<String> ids) async {
+    if (ids.isEmpty) return;
+    if (ids.length == 1) {
+      final w = widget.workouts.firstWhere((x) => x.id == ids.first);
+      return _confirmDelete(w);
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Удалить программу?',
+            style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          'Будут удалены все ${ids.length} ${_plural(ids.length, "день", "дня", "дней")} программы.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена',
+                style: TextStyle(color: AppColors.accent)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                const Text('Удалить', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final idSet = ids.toSet();
+    setState(() {
+      _orderedIds.removeWhere(idSet.contains);
+      _hiddenIds.removeWhere(idSet.contains);
+      _openSwipeId = null;
+    });
+    try {
+      await Future.wait(ids.map((id) {
+        EventLogger.workoutDeleted(workoutName: id);
+        return WorkoutService.deleteWorkout(id);
+      }));
+    } catch (_) {/* swallowed; widget.onRefresh below resyncs */}
+    widget.onRefresh();
+  }
+
+  /// Archive every section in a program in one shot.
+  Future<void> _archiveGroup(List<String> ids) async {
+    if (ids.isEmpty) return;
+    setState(() => _openSwipeId = null);
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('В архив?'),
+        content: Text(
+          ids.length == 1
+              ? 'Программа будет перенесена в архив. Вы сможете восстановить её, добавив дни тренировок.'
+              : 'Все ${ids.length} ${_plural(ids.length, "день", "дня", "дней")} программы будут перенесены в архив.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('В архив',
+                style: TextStyle(color: AppColors.accent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await Future.wait(ids.map((id) =>
+          WorkoutService.updateWorkout(id, days: <int>[])));
+    } catch (_) {
+      if (mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Не удалось переместить в архив')),
+        );
+      }
+    }
+    widget.onRefresh();
+  }
+
   Future<void> _duplicateWorkout(Workout w) async {
     setState(() => _openSwipeId = null);
     if (w.days.isEmpty) {
@@ -665,44 +784,6 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
-    }
-  }
-
-  Future<void> _archiveWorkout(Workout w) async {
-    setState(() => _openSwipeId = null);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.card,
-        title: const Text('В архив?'),
-        content: Text(
-          'Программа «${w.name}» будет перенесена в архив. '
-          'Вы сможете восстановить её, добавив дни тренировок.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена',
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('В архив',
-                style: TextStyle(color: AppColors.accent)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await WorkoutService.updateWorkout(w.id, days: []);
-      widget.onRefresh();
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось переместить в архив')),
-        );
-      }
     }
   }
 
@@ -854,14 +935,39 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     final sorted = _sortedWorkouts;
     final upcoming = _upcomingWorkouts;
     final inactive = _inactiveWorkouts;
-    // Count sections per group so we can show a "часть программы из N дней"
-    // hint on cards that belong to multi-section programs.
+    // Count sections per group + collect day-of-week labels so the program
+    // card can show "Программа · 6 дней · Пн, Ср, Пт" without us having to
+    // re-traverse the workouts list inside the card widget.
     final groupSizes = <String, int>{};
+    final groupDays = <String, List<int>>{};
     for (final w in sorted) {
       final key = w.groupId ?? w.id;
       groupSizes[key] = (groupSizes[key] ?? 0) + 1;
+      (groupDays[key] ??= []).addAll(w.days);
     }
     int sizeOf(Workout w) => groupSizes[w.groupId ?? w.id] ?? 1;
+    List<int> daysOf(Workout w) {
+      final list = (groupDays[w.groupId ?? w.id] ?? const <int>[]).toList()
+        ..sort();
+      return list;
+    }
+
+    // Dedupe to one card per program. The representative is the section with
+    // the smallest first weekday — already the first occurrence in `sorted`
+    // because _sortedWorkouts sorts within a group by min day ascending.
+    final seenGroupKeys = <String>{};
+    final visible = <Workout>[];
+    for (final w in sorted) {
+      final key = w.groupId ?? w.id;
+      if (seenGroupKeys.add(key)) visible.add(w);
+    }
+    // Build the set of all section ids belonging to a given representative.
+    List<String> sectionIdsOf(Workout repr) {
+      final key = repr.groupId ?? repr.id;
+      return [
+        for (final w in sorted) if ((w.groupId ?? w.id) == key) w.id,
+      ];
+    }
 
     return NotificationListener<ScrollNotification>(
       onNotification: (_) {
@@ -1256,9 +1362,9 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                   ),
                 ),
           children: [
-            for (int i = 0; i < sorted.length; i++)
+            for (int i = 0; i < visible.length; i++)
               Padding(
-                key: ValueKey(sorted[i].id),
+                key: ValueKey(visible[i].groupId ?? visible[i].id),
                 padding: const EdgeInsets.only(bottom: 0),
                 child: Row(
                   children: [
@@ -1269,24 +1375,25 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                       alignment: Alignment.center,
                       child: _deleteMode
                           ? GestureDetector(
-                              onTap: () => _toggleSelect(sorted[i].id),
+                              onTap: () => _toggleSelectGroup(
+                                  sectionIdsOf(visible[i])),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 width: 22,
                                 height: 22,
                                 decoration: BoxDecoration(
-                                  color: _selectedIds.contains(sorted[i].id)
+                                  color: _selectedIds.contains(visible[i].id)
                                       ? AppColors.accent
                                       : Colors.transparent,
                                   border: Border.all(
-                                    color: _selectedIds.contains(sorted[i].id)
+                                    color: _selectedIds.contains(visible[i].id)
                                         ? AppColors.accent
                                         : AppColors.textSecondary,
                                     width: 1.5,
                                   ),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: _selectedIds.contains(sorted[i].id)
+                                child: _selectedIds.contains(visible[i].id)
                                     ? const Icon(Icons.check,
                                         size: 14, color: Colors.white)
                                     : null,
@@ -1297,22 +1404,28 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                     // ── Card ─────────────────────────────────────────
                     Expanded(
                       child: _SwipeableCard(
-                        workout: sorted[i],
+                        workout: visible[i],
                         index: i,
-                        groupSize: sizeOf(sorted[i]),
+                        groupSize: sizeOf(visible[i]),
+                        groupDays: daysOf(visible[i]),
                         inDeleteMode: _deleteMode,
-                        isHidden: _hiddenIds.contains(sorted[i].id),
-                        isOpen: !_deleteMode && _openSwipeId == sorted[i].id,
-                        onOpen: () => _setOpen(sorted[i].id),
+                        isHidden: _hiddenIds.contains(visible[i].id),
+                        isOpen: !_deleteMode && _openSwipeId == visible[i].id,
+                        onOpen: () => _setOpen(visible[i].id),
                         onClose: () => _setOpen(null),
                         onTap: _deleteMode
-                            ? () => _toggleSelect(sorted[i].id)
-                            : () => widget.onWorkoutTap(sorted[i]),
-                        onLongPress: () => _showWorkoutHistory(context, sorted[i]),
-                        onToggleHide: () => _toggleHidden(sorted[i].id),
-                        onDelete: () => _confirmDelete(sorted[i]),
-                        onCopy: () => _duplicateWorkout(sorted[i]),
-                        onArchive: () => _archiveWorkout(sorted[i]),
+                            ? () =>
+                                _toggleSelectGroup(sectionIdsOf(visible[i]))
+                            : () => widget.onWorkoutTap(visible[i]),
+                        onLongPress: () =>
+                            _showWorkoutHistory(context, visible[i]),
+                        onToggleHide: () =>
+                            _toggleHiddenGroup(sectionIdsOf(visible[i])),
+                        onDelete: () =>
+                            _confirmDeleteGroup(sectionIdsOf(visible[i])),
+                        onCopy: () => _duplicateWorkout(visible[i]),
+                        onArchive: () =>
+                            _archiveGroup(sectionIdsOf(visible[i])),
                       ),
                     ),
                   ],
@@ -1344,6 +1457,9 @@ class _SwipeableCard extends StatefulWidget {
   final bool inDeleteMode;
   /// Total number of sections in this workout's program (1 = standalone).
   final int groupSize;
+  /// All weekdays covered by the program across its sections (0=Mon…6=Sun).
+  /// Empty list = inherit from workout.days only.
+  final List<int> groupDays;
   final VoidCallback onOpen;
   final VoidCallback onClose;
   final VoidCallback onTap;
@@ -1360,6 +1476,7 @@ class _SwipeableCard extends StatefulWidget {
     required this.isOpen,
     this.inDeleteMode = false,
     this.groupSize = 1,
+    this.groupDays = const [],
     required this.onOpen,
     required this.onClose,
     required this.onTap,
@@ -1484,6 +1601,7 @@ class _SwipeableCardState extends State<_SwipeableCard>
                           workout: widget.workout,
                           index: widget.index,
                           groupSize: widget.groupSize,
+                          groupDays: widget.groupDays,
                           inDeleteMode: widget.inDeleteMode,
                           onActionsOpen: widget.inDeleteMode ? null : () {
                             if (widget.isOpen) {
@@ -1542,9 +1660,14 @@ class _ActionPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same fill + radius as the card itself so the swipe-reveal looks like a
+    // continuation of the card, not a separate rectangular drawer.
     return Container(
       width: width,
-      color: AppColors.card,
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -1585,9 +1708,12 @@ class _WorkoutCardContent extends StatelessWidget {
   final VoidCallback? onActionsOpen;
   final bool inDeleteMode;
   /// Total sections in this workout's program (1 = standalone). When > 1 we
-  /// show a "Часть программы · N дней" badge so the user can see at a glance
-  /// that this card is one section of a multi-day split.
+  /// show a "Программа · 6 дней · Пн, Ср, Пт" subtitle so the user can see at
+  /// a glance that this card represents a multi-day split.
   final int groupSize;
+  /// All weekdays covered by the program (across its sections), used to print
+  /// the day labels in the subtitle for multi-section programs.
+  final List<int> groupDays;
 
   const _WorkoutCardContent({
     required this.workout,
@@ -1595,6 +1721,7 @@ class _WorkoutCardContent extends StatelessWidget {
     this.onActionsOpen,
     this.inDeleteMode = false,
     this.groupSize = 1,
+    this.groupDays = const [],
   });
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -1606,16 +1733,17 @@ class _WorkoutCardContent extends StatelessWidget {
   }
 
   /// What to put under the card title:
-  ///   • multi-section with a program name → "{section name} · Пн, Ср"
-  ///   • multi-section without a program name → "Часть программы · N дней"
+  ///   • multi-section program → "Программа · N дней · Пн, Ср, Пт"
   ///   • single-section → "X тренировок в неделю"
-  static String _subtitleFor(Workout w, int groupSize) {
-    if (groupSize > 1 && (w.groupName?.isNotEmpty ?? false)) {
-      final dayStr = w.days.map((d) => _dayLabels[d]).join(', ');
-      return dayStr.isEmpty ? w.name : '${w.name} · $dayStr';
-    }
+  static String _subtitleFor(Workout w, int groupSize, List<int> groupDays) {
     if (groupSize > 1) {
-      return 'Часть программы · $groupSize ${_pluralDays(groupSize)}';
+      final daySet = (groupDays.isEmpty ? w.days : groupDays)
+          .toSet()
+          .toList()
+        ..sort();
+      final dayStr = daySet.map((d) => _dayLabels[d]).join(', ');
+      final base = 'Программа · $groupSize ${_pluralDays(groupSize)}';
+      return dayStr.isEmpty ? base : '$base · $dayStr';
     }
     return '${w.daysPerWeek} тренировок в неделю';
   }
@@ -1684,7 +1812,7 @@ class _WorkoutCardContent extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        _subtitleFor(workout, groupSize),
+                        _subtitleFor(workout, groupSize, groupDays),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
