@@ -646,13 +646,29 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
+                  // Title row with a dedicated close button — without it the
+                  // sheet has no obvious way to dismiss on desktop where
+                  // swipe-down isn't a thing.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded,
+                            color: AppColors.textSecondary),
+                        tooltip: 'Закрыть',
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
                   ),
                   if (gifUrl != null || (description != null && description.isNotEmpty)) ...[
                     const SizedBox(height: 16),
@@ -1066,24 +1082,34 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       initialDurationMinutes: 30,
       saveLabel: 'Добавить в программу',
       onSave: (s, r, rest, tw, dur) async {
-        await WorkoutService.addExerciseToWorkout(
-          widget.workoutId,
-          ex.id,
+        // ── Optimistic local insert ───────────────────────────────────────
+        // Append to the bottom of the program list immediately so the user
+        // sees the exercise without waiting for the DB round-trip. We give
+        // it a temporary id (`tmp_…`) so the row is identifiable; the next
+        // _load() will replace it with the canonical server row.
+        final tmpId = 'tmp_${DateTime.now().microsecondsSinceEpoch}';
+        final maxExistingOrder = _programExercises
+            .map((e) => e.order)
+            .fold<int>(-1, (acc, o) => o > acc ? o : acc);
+        final optimistic = WorkoutExercise(
+          id: tmpId,
+          workoutId: widget.workoutId,
+          exerciseId: ex.id,
+          order: maxExistingOrder + 1,
           sets: s,
           repsRange: r,
           restSeconds: rest,
           targetWeight: tw,
           durationMinutes: dur,
           day: _selectedDay,
+          exercise: ex,
         );
-        // Reset the catalog view back to the grouped/categorised list so
-        // the user sees the exercise they just added in the program above
-        // instead of staring at the same search results / open category.
         if (mounted) {
           _searchDebounce?.cancel();
           _searchController.clear();
           _categorySearchController.clear();
           setState(() {
+            _programExercises = [..._programExercises, optimistic];
             _searchQuery = '';
             _categorySearchQuery = '';
             _openCategory = null;
@@ -1092,6 +1118,29 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             _showMovementFilter = false;
             _showCategorySearch = false;
           });
+        }
+        // ── Background DB write ───────────────────────────────────────────
+        try {
+          await WorkoutService.addExerciseToWorkout(
+            widget.workoutId,
+            ex.id,
+            sets: s,
+            repsRange: r,
+            restSeconds: rest,
+            targetWeight: tw,
+            durationMinutes: dur,
+            day: _selectedDay,
+          );
+        } catch (_) {
+          // Roll back the optimistic row if the DB write fails so the user
+          // does not see an exercise that does not actually exist server-side.
+          if (mounted) {
+            setState(() {
+              _programExercises = _programExercises
+                  .where((e) => e.id != tmpId)
+                  .toList();
+            });
+          }
         }
       },
     );

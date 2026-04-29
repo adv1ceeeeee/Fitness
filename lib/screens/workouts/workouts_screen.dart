@@ -210,16 +210,35 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                     loading: _loading,
                     onRefresh: _loadWorkouts,
                     onDelete: (id) async {
+                      // Optimistic: drop the row from the in-memory list
+                      // immediately so the user sees the card disappear
+                      // before the network round-trip completes. If the
+                      // delete fails, _loadWorkouts() at the end re-syncs.
+                      final messenger = ScaffoldMessenger.of(context);
+                      final removed =
+                          _workouts.where((w) => w.id == id).toList();
+                      if (mounted) {
+                        setState(() {
+                          _workouts =
+                              _workouts.where((w) => w.id != id).toList();
+                        });
+                      }
                       try {
                         await WorkoutService.deleteWorkout(id);
-                        await _loadWorkouts();
                       } catch (e) {
+                        // Restore on failure so the user does not silently
+                        // lose the workout from view while the row still
+                        // exists in the DB.
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          setState(() {
+                            _workouts = [..._workouts, ...removed];
+                          });
+                          messenger.showSnackBar(
                             SnackBar(content: Text('Ошибка удаления: $e')),
                           );
                         }
                       }
+                      await _loadWorkouts();
                     },
                     onCreateTap: () async {
                       await context.push('/workouts/create');
@@ -363,9 +382,19 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
   }
 
   // Inactive workouts that have an upcoming (future, non-skipped) session
+  /// Rest-only sections live as separate workouts in the DB (so the
+  /// notification system can pick up their rest days), but they should never
+  /// appear as standalone cards anywhere in the list — they belong to their
+  /// parent program.
+  bool _isRestOnlySection(Workout w) =>
+      w.days.isEmpty && w.restDays.isNotEmpty && w.groupId != null;
+
   List<Workout> get _upcomingWorkouts {
     return widget.workouts
-        .where((w) => w.days.isEmpty && widget.upcomingInfo.containsKey(w.id))
+        .where((w) =>
+            w.days.isEmpty &&
+            !_isRestOnlySection(w) &&
+            widget.upcomingInfo.containsKey(w.id))
         .toList()
       ..sort((a, b) {
         final da = widget.upcomingInfo[a.id]?['date'] as String? ?? '';
@@ -377,7 +406,10 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
   // One-time / inactive workouts (no scheduled days) — sorted by last session date
   List<Workout> get _inactiveWorkouts {
     final inactive = widget.workouts
-        .where((w) => w.days.isEmpty && !widget.upcomingInfo.containsKey(w.id))
+        .where((w) =>
+            w.days.isEmpty &&
+            !_isRestOnlySection(w) &&
+            !widget.upcomingInfo.containsKey(w.id))
         .toList();
     inactive.sort((a, b) {
       final da = widget.sessionInfo[a.id]?['date'] as String? ?? '';

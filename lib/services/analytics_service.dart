@@ -70,6 +70,21 @@ class AnalyticsService {
   static Future<int> getCurrentStreak() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return 0;
+    // Streak can silently age out (lagDays > 2 → 0) without any user action,
+    // so a stale-while-revalidate cache will mis-display "1" indefinitely
+    // for users who stopped training. If the cached entry is older than the
+    // TTL we force-refresh, blocking just for this single call.
+    final fresh = await AppCache.isFresh('streak:$userId',
+        maxAge: const Duration(minutes: 5));
+    if (!fresh) {
+      final value = await _fetchCurrentStreak(userId);
+      await AppCache.set<int>(
+        key: 'streak:$userId',
+        value: value,
+        encode: (v) => '$v',
+      );
+      return value;
+    }
     return AppCache.get<int>(
       key: 'streak:$userId',
       ttl: const Duration(minutes: 5),

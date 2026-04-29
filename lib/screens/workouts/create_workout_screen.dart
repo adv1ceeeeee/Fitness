@@ -30,7 +30,7 @@ class _SectionData {
   int? get lastSelectedDay =>
       _selectionHistory.isEmpty ? null : _selectionHistory.last;
 
-  void selectDay(int day) {
+  void selectDay(int day, {TimeOfDay? fallbackTime}) {
     // Inherit start time from the most recently selected day that has one
     // set — saves the user from re-entering the same time for every new day.
     // They can still override per day in the wheel afterwards.
@@ -40,6 +40,12 @@ class _SectionData {
           dayTimes[day] = dayTimes[prev]!;
           break;
         }
+      }
+      // If THIS section has no times yet, inherit from any time set in a
+      // sibling section (passed via fallbackTime) so a multi-section program
+      // shares one starting time by default.
+      if (!dayTimes.containsKey(day) && fallbackTime != null) {
+        dayTimes[day] = fallbackTime;
       }
     }
     _selectionHistory.remove(day); // avoid duplicates
@@ -116,11 +122,25 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
         s.deselectDay(day);
         s.restDays.add(day);
       } else {
-        s.selectDay(day);
+        s.selectDay(day, fallbackTime: _firstSetTimeAcrossSections());
       }
       _maybeAutofillRestName(s);
       _error = null;
     });
+  }
+
+  /// Returns the earliest-set day-time across ALL sections, used to bootstrap
+  /// a freshly selected day in any section so a multi-section program shares
+  /// one start time by default. Iterates sections in creation order so the
+  /// first time the user picked wins.
+  TimeOfDay? _firstSetTimeAcrossSections() {
+    for (final s in _sections) {
+      for (final prev in s._selectionHistory) {
+        final t = s.dayTimes[prev];
+        if (t != null) return t;
+      }
+    }
+    return null;
   }
 
   /// Moves all currently selected workout days to rest days for a section.

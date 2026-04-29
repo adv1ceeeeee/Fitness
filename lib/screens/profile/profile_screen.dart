@@ -727,10 +727,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
               // ── Level badge ──────────────────────────────────────────────
-              if (_playerStats != null) ...[
-                const SizedBox(height: 16),
-                _LevelBadge(stats: _playerStats!),
-              ],
+              // Render a placeholder badge with empty stats until the real
+              // value loads. Without it, the plate "appears" mid-paint and
+              // shifts other content down — looks like a layout jump.
+              const SizedBox(height: 16),
+              _LevelBadge(
+                stats: _playerStats ?? GamificationService.emptyStats(),
+              ),
               const SizedBox(height: 32),
 
               // Личные данные

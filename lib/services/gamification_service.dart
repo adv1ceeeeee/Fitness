@@ -184,6 +184,11 @@ class GamificationService {
     );
   }
 
+  /// Lv 0 / 0 XP placeholder — used as a render fallback before the real
+  /// stats finish loading, so the level badge can paint with the correct
+  /// layout immediately on first navigation.
+  static PlayerStats emptyStats() => _emptyStats();
+
   static PlayerStats _emptyStats() => PlayerStats(
         xpTotal: 0,
         level: 0,
