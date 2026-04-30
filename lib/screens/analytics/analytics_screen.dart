@@ -37,6 +37,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   Profile? _profile;
   int _totalWorkouts = 0;
   int _bestStreak = 0;
+  int _currentStreak = 0;
   int _workoutsThisWeek = 0;
   double _volumeThisWeek = 0;
   bool _loading = true;
@@ -298,7 +299,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       final results = await Future.wait([
         ProfileService.getProfile(),
         AnalyticsService.getTotalWorkouts(),
-        AnalyticsService.getBestStreak(),
+        AnalyticsService.getCurrentStreak(),
         AnalyticsService.getWorkoutsThisWeek(),
         AnalyticsService.getVolumeThisWeek(),
         AnalyticsService.getTrackedExercises(),
@@ -319,13 +320,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         AnalyticsService.getTopExercisesByProgress(),
         AnalyticsService.getStagnantExercises(),
         AnalyticsService.getWellnessPerformanceCorrelation(),
+        AnalyticsService.getBestStreak(),
       ]);
 
       if (mounted) {
         setState(() {
           _profile = results[0] as Profile?;
           _totalWorkouts = results[1] as int;
-          _bestStreak = results[2] as int;
+          _currentStreak = results[2] as int;
           _workoutsThisWeek = results[3] as int;
           _volumeThisWeek = results[4] as double;
           _trackedExercises = results[5] as List<Map<String, dynamic>>;
@@ -351,6 +353,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           _exerciseProgressList = results[20] as List<Map<String, dynamic>>;
           _stagnantExercises = results[21] as List<Map<String, dynamic>>;
           _wellnessCorrelation = results[22] as List<Map<String, dynamic>>;
+          _bestStreak = results[23] as int;
           _loading = false;
         });
         // Load deload metrics independently (doesn't block main render).
@@ -604,6 +607,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     onRefresh: _load,
                     profile: _profile,
                     bestStreak: _bestStreak,
+                    currentStreak: _currentStreak,
                     totalWorkouts: _totalWorkouts,
                     workoutsThisWeek: _workoutsThisWeek,
                     volumeThisWeek: _volumeThisWeek,
@@ -697,6 +701,11 @@ class _OverviewTab extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final Profile? profile;
   final int bestStreak;
+  /// Live "current streak" — the count of consecutive completed days
+  /// touching today (or covered by a freeze). Goes to 0 if the user has
+  /// not trained for 2+ days. Distinct from [bestStreak] which is the
+  /// historical record.
+  final int currentStreak;
   final int totalWorkouts;
   final int workoutsThisWeek;
   final double volumeThisWeek;
@@ -713,6 +722,7 @@ class _OverviewTab extends StatelessWidget {
     required this.onRefresh,
     required this.profile,
     required this.bestStreak,
+    required this.currentStreak,
     required this.totalWorkouts,
     required this.workoutsThisWeek,
     required this.volumeThisWeek,
@@ -733,7 +743,10 @@ class _OverviewTab extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _StreakCard(
-              streak: bestStreak,
+              // Show CURRENT streak — best streak is a record-keeper that
+              // belongs in the insights tab; the headline card was meant to
+              // reflect "are you currently on a streak?".
+              streak: currentStreak,
               totalWorkouts: totalWorkouts,
               freezeActive: StreakFreezeService.freezeIsActive,
               hasFreeze: StreakFreezeService.hasFreeze,
