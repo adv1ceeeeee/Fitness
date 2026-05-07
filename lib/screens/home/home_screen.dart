@@ -315,17 +315,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         key: 'body_metrics:$userId',
         decode: (s) => (jsonDecode(s) as List).cast<Map<String, dynamic>>(),
       ),
+      // Phase-1 peek: streak so the 🔥 chip paints with the right number
+      // immediately on cold open instead of "0 → 5" flash.
+      AppCache.peek<int>(
+        key: 'streak:$userId',
+        decode: (s) => int.tryParse(s) ?? 0,
+      ),
     ]);
 
     final cachedWorkoutsThisWeek = results[0] as int?;
     final cachedBodyMetrics = results[1] as List<Map<String, dynamic>>?;
+    final cachedStreak = results[2] as int?;
 
-    if (cachedWorkoutsThisWeek == null && cachedBodyMetrics == null) return;
+    if (cachedWorkoutsThisWeek == null &&
+        cachedBodyMetrics == null &&
+        cachedStreak == null) {
+      return;
+    }
     if (!mounted) return;
 
     setState(() {
       if (cachedWorkoutsThisWeek != null) {
         _workoutsThisWeek = cachedWorkoutsThisWeek;
+      }
+      if (cachedStreak != null) {
+        _streak = cachedStreak;
       }
       if (cachedBodyMetrics != null) {
         _bodyMetricsHistory = cachedBodyMetrics;
@@ -349,7 +363,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _refreshFresh() async {
     if (!mounted) return;
     try {
-      await AppCache.withForceRefresh(() async {
+      // No withForceRefresh: each getX() handles its own freshness already
+      // (5-min TTL with stale-while-revalidate). Forcing 8 parallel network
+      // calls on every Главная entry was the root cause of the 1-2 sec
+      // skeleton flash users were seeing on every navigation.
       final prefs = await SharedPreferences.getInstance();
       final weeklyGoal = prefs.getInt('weekly_workout_goal') ?? 0;
 
@@ -419,7 +436,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (plannedTime != null) _startCountdown(plannedTime);
       _maybeShowWeeklySummary(weeklyGoal);
       _maybeShowDeloadSuggestion();
-      }); // end withForceRefresh
     } catch (e) {
       if (mounted) {
         setState(() => _loadingWorkout = false);
