@@ -1,7 +1,7 @@
 # SportWAI — Database Reference
 
 > **Для аналитиков.** Полное описание схемы PostgreSQL (Supabase).
-> Актуально на: 2026-03-28 · Последняя миграция: `053_energy_end.sql`
+> Актуально на: 2026-05-08 · Последняя миграция: `059_workout_exercise_weekly_weights.sql`
 
 ---
 
@@ -138,6 +138,7 @@ exercises
 | `name_ru` | TEXT | Русское название (добавлено в мигр. 041) |
 | `category` | TEXT | Группа мышц: `'chest'` \| `'back'` \| `'shoulders'` \| `'arms'` \| `'legs'` \| `'cardio'` \| `'core'` |
 | `description` | TEXT | Описание техники |
+| `description_ru` | TEXT | Русское описание техники |
 | `image_url` | TEXT | URL изображения |
 | `gif_url` | TEXT | URL анимации техники (Storage bucket `exercise-gifs`) |
 | `is_standard` | BOOLEAN | `true` = от команды, `false` = пользовательское |
@@ -185,11 +186,20 @@ exercises
 | `reps_range` | TEXT | Диапазон повторений: `'8-12'`, `'5'`, `'AMRAP'` |
 | `rest_seconds` | INT | Отдых между подходами (сек) |
 | `target_weight` | FLOAT | Целевой вес (кг) |
+| `weekly_target_weights` | JSONB | Вес по неделям цикла: ключ — номер недели строкой (`"1"`), значение — кг |
+| `drop_set_weekly_target_weights` | JSONB | Второй вес дроп-сета по неделям цикла; используется только когда `is_drop_set = true` |
 | `target_rpe` | INT | Целевой RPE 0–10 |
 | `duration_minutes` | INT | Для кардио: длительность вместо повторений |
 | `superset_group` | INT | Упражнения с одинаковым ненулевым значением — суперсет |
 | `is_drop_set` | BOOLEAN | Дроп-сет (снижение веса без отдыха) |
+| `day` | INT | День недели внутри программы: `0=Пн…6=Вс`; NULL = упражнение для всех выбранных дней |
 | `created_at` | TIMESTAMPTZ | |
+
+**Прогресс по неделям цикла:** приложение читает вес текущей недели из
+`weekly_target_weights`. Если для текущей недели значения нет, используется
+ближайший предыдущий недельный вес, затем `target_weight`. Для дроп-сета
+аналогично используется `drop_set_weekly_target_weights`; если отдельного
+значения нет, UI показывает fallback от основного веса.
 
 ---
 

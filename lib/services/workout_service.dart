@@ -77,21 +77,29 @@ class WorkoutService {
     Map<int, String>? dayTimes,
   }) async {
     final userId = AuthService.currentUser?.id;
-    if (userId == null) throw StateError('createWorkout called while not authenticated');
+    if (userId == null) {
+      throw StateError('createWorkout called while not authenticated');
+    }
     final trimmedGroupName = groupName?.trim();
-    final res = await _client.from('workouts').insert({
-      'user_id': userId,
-      'name': name,
-      'days': days,
-      'rest_days': restDays,
-      'is_standard': false,
-      'cycle_weeks': cycleWeeks,
-      if (groupId != null) 'group_id': groupId,
-      if (trimmedGroupName != null && trimmedGroupName.isNotEmpty)
-        'group_name': trimmedGroupName,
-      if (dayTimes != null && dayTimes.isNotEmpty)
-        'day_times': {for (final e in dayTimes.entries) '${e.key}': e.value},
-    }).select().single();
+    final res = await _client
+        .from('workouts')
+        .insert({
+          'user_id': userId,
+          'name': name,
+          'days': days,
+          'rest_days': restDays,
+          'is_standard': false,
+          'cycle_weeks': cycleWeeks,
+          if (groupId != null) 'group_id': groupId,
+          if (trimmedGroupName != null && trimmedGroupName.isNotEmpty)
+            'group_name': trimmedGroupName,
+          if (dayTimes != null && dayTimes.isNotEmpty)
+            'day_times': {
+              for (final e in dayTimes.entries) '${e.key}': e.value
+            },
+        })
+        .select()
+        .single();
 
     await _invalidateWorkoutsList();
     await _invalidateGroup(groupId);
@@ -117,8 +125,10 @@ class WorkoutService {
             .map((e) => Workout.fromJson(e as Map<String, dynamic>))
             .toList();
         list.sort((a, b) {
-          final da = a.days.isEmpty ? 99 : a.days.reduce((x, y) => x < y ? x : y);
-          final db = b.days.isEmpty ? 99 : b.days.reduce((x, y) => x < y ? x : y);
+          final da =
+              a.days.isEmpty ? 99 : a.days.reduce((x, y) => x < y ? x : y);
+          final db =
+              b.days.isEmpty ? 99 : b.days.reduce((x, y) => x < y ? x : y);
           return da.compareTo(db);
         });
         return list;
@@ -137,8 +147,7 @@ class WorkoutService {
   static Future<void> setGroupId(String workoutId, String groupId) async {
     await _client
         .from('workouts')
-        .update({'group_id': groupId})
-        .eq('id', workoutId);
+        .update({'group_id': groupId}).eq('id', workoutId);
     await _invalidateWorkoutsList();
     await _invalidateWorkout(workoutId);
     await _invalidateGroup(groupId);
@@ -148,11 +157,20 @@ class WorkoutService {
   /// All sections share the same group_id (= first workout's id) and, when
   /// supplied, the same human-readable [groupName].
   static Future<List<Workout>> createWorkoutGroup(
-    List<({String name, List<int> days, List<int> restDays, int cycleWeeks, Map<int, String> dayTimes})> sections, {
+    List<
+            ({
+              String name,
+              List<int> days,
+              List<int> restDays,
+              int cycleWeeks,
+              Map<int, String> dayTimes
+            })>
+        sections, {
     String? groupName,
   }) async {
     if (sections.isEmpty || sections.length > 7) {
-      throw ArgumentError('sections must have 1–7 entries, got ${sections.length}');
+      throw ArgumentError(
+          'sections must have 1–7 entries, got ${sections.length}');
     }
 
     // Create first section to get the group ID
@@ -172,10 +190,7 @@ class WorkoutService {
     if (groupName != null && groupName.trim().isNotEmpty) {
       firstUpdate['group_name'] = groupName.trim();
     }
-    await _client
-        .from('workouts')
-        .update(firstUpdate)
-        .eq('id', first.id);
+    await _client.from('workouts').update(firstUpdate).eq('id', first.id);
 
     final rest = await Future.wait(
       sections.skip(1).map(
@@ -201,23 +216,26 @@ class WorkoutService {
   static Future<void> renameProgramGroup(
       String groupId, String? newName) async {
     final trimmed = newName?.trim();
-    await _client
-        .from('workouts')
-        .update({'group_name': trimmed == null || trimmed.isEmpty ? null : trimmed})
-        .eq('group_id', groupId);
+    await _client.from('workouts').update({
+      'group_name': trimmed == null || trimmed.isEmpty ? null : trimmed
+    }).eq('group_id', groupId);
     await _invalidateWorkoutsList();
     await _invalidateGroup(groupId);
   }
 
-  static Future<void> addExerciseToWorkout(
+  static Future<WorkoutExercise> addExerciseToWorkout(
     String workoutId,
     String exerciseId, {
     int sets = 3,
     String repsRange = '8-12',
     int restSeconds = 90,
     double? targetWeight,
+    Map<int, double> weeklyTargetWeights = const {},
+    Map<int, double> dropSetWeeklyTargetWeights = const {},
     int? targetRpe,
     int? durationMinutes,
+    int? supersetGroup,
+    bool isDropSet = false,
     int? day,
   }) async {
     final maxOrder = await _client
@@ -230,19 +248,32 @@ class WorkoutService {
 
     final nextOrder = (maxOrder?['order'] as int? ?? -1) + 1;
 
-    await _client.from('workout_exercises').insert({
-      'workout_id': workoutId,
-      'exercise_id': exerciseId,
-      'order': nextOrder,
-      'sets': sets,
-      'reps_range': repsRange,
-      'rest_seconds': restSeconds,
-      if (targetWeight != null) 'target_weight': targetWeight,
-      if (targetRpe != null) 'target_rpe': targetRpe,
-      if (durationMinutes != null) 'duration_minutes': durationMinutes,
-      if (day != null) 'day': day,
-    });
+    final res = await _client
+        .from('workout_exercises')
+        .insert({
+          'workout_id': workoutId,
+          'exercise_id': exerciseId,
+          'order': nextOrder,
+          'sets': sets,
+          'reps_range': repsRange,
+          'rest_seconds': restSeconds,
+          if (targetWeight != null) 'target_weight': targetWeight,
+          if (weeklyTargetWeights.isNotEmpty)
+            'weekly_target_weights':
+                weeklyTargetWeights.map((k, v) => MapEntry('$k', v)),
+          if (dropSetWeeklyTargetWeights.isNotEmpty)
+            'drop_set_weekly_target_weights':
+                dropSetWeeklyTargetWeights.map((k, v) => MapEntry('$k', v)),
+          if (targetRpe != null) 'target_rpe': targetRpe,
+          if (durationMinutes != null) 'duration_minutes': durationMinutes,
+          if (supersetGroup != null) 'superset_group': supersetGroup,
+          'is_drop_set': isDropSet,
+          if (day != null) 'day': day,
+        })
+        .select('*, exercises(*)')
+        .single();
     await _invalidateWorkoutExercises(workoutId);
+    return WorkoutExercise.fromJson(res);
   }
 
   static Future<List<WorkoutExercise>> getWorkoutExercises(
@@ -276,11 +307,8 @@ class WorkoutService {
       key: 'workout:$id',
       ttl: _workoutTtl,
       fetch: () async {
-        final res = await _client
-            .from('workouts')
-            .select()
-            .eq('id', id)
-            .maybeSingle();
+        final res =
+            await _client.from('workouts').select().eq('id', id).maybeSingle();
         if (res == null) return null;
         return Workout.fromJson(res);
       },
@@ -335,8 +363,7 @@ class WorkoutService {
       for (var i = 0; i < exerciseIds.length; i++)
         _client
             .from('workout_exercises')
-            .update({'order': i})
-            .eq('id', exerciseIds[i]),
+            .update({'order': i}).eq('id', exerciseIds[i]),
     ]);
     await _invalidateWorkoutExercises(workoutId);
   }
@@ -362,9 +389,11 @@ class WorkoutService {
     int? sets,
     String? repsRange,
     int? restSeconds,
-    double? targetWeight,
-    int? targetRpe,
-    int? durationMinutes,
+    Object? targetWeight = _absent,
+    Object? weeklyTargetWeights = _absent,
+    Object? dropSetWeeklyTargetWeights = _absent,
+    Object? targetRpe = _absent,
+    Object? durationMinutes = _absent,
     // Pass a boxed int? to explicitly set superset_group (null clears it).
     // Use [_Absent] sentinel to skip the field entirely.
     Object? supersetGroup = _absent,
@@ -374,9 +403,21 @@ class WorkoutService {
     if (sets != null) updates['sets'] = sets;
     if (repsRange != null) updates['reps_range'] = repsRange;
     if (restSeconds != null) updates['rest_seconds'] = restSeconds;
-    updates['target_weight'] = targetWeight;
-    updates['target_rpe'] = targetRpe;
-    updates['duration_minutes'] = durationMinutes;
+    if (targetWeight != _absent) updates['target_weight'] = targetWeight;
+    if (weeklyTargetWeights != _absent) {
+      final weights = weeklyTargetWeights as Map<int, double>;
+      updates['weekly_target_weights'] =
+          weights.map((k, v) => MapEntry('$k', v));
+    }
+    if (dropSetWeeklyTargetWeights != _absent) {
+      final weights = dropSetWeeklyTargetWeights as Map<int, double>;
+      updates['drop_set_weekly_target_weights'] =
+          weights.map((k, v) => MapEntry('$k', v));
+    }
+    if (targetRpe != _absent) updates['target_rpe'] = targetRpe;
+    if (durationMinutes != _absent) {
+      updates['duration_minutes'] = durationMinutes;
+    }
     if (supersetGroup != _absent) updates['superset_group'] = supersetGroup;
     if (isDropSet != _absent) updates['is_drop_set'] = isDropSet;
     final res = await _client
@@ -409,8 +450,7 @@ class WorkoutService {
   static Future<void> deleteWorkout(String id) async {
     await _client
         .from('workouts')
-        .update({'deleted_at': DateTime.now().toIso8601String()})
-        .eq('id', id);
+        .update({'deleted_at': DateTime.now().toIso8601String()}).eq('id', id);
     await _invalidateWorkoutsList();
     await _invalidateWorkout(id);
     await _invalidateWorkoutExercises(id);
@@ -437,7 +477,13 @@ class WorkoutService {
         repsRange: we.repsRange,
         restSeconds: we.restSeconds,
         targetWeight: we.targetWeight,
+        weeklyTargetWeights: we.weeklyTargetWeights,
+        dropSetWeeklyTargetWeights: we.dropSetWeeklyTargetWeights,
+        targetRpe: we.targetRpe,
         durationMinutes: we.durationMinutes,
+        supersetGroup: we.supersetGroup,
+        isDropSet: we.isDropSet,
+        day: we.day,
       );
     }
     return copy;

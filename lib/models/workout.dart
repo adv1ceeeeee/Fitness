@@ -12,6 +12,7 @@ class Workout {
   final int warmupMinutes;
   final int cooldownMinutes;
   final String? groupId;
+
   /// Human-readable name of the parent multi-section program. Denormalised:
   /// all sections of the same group share the same value. NULL for single-
   /// section programs (display falls back to [name]).
@@ -19,6 +20,7 @@ class Workout {
   final DateTime createdAt;
   final DateTime updatedAt;
   List<WorkoutExercise>? exercises;
+
   /// Per-day start time. Key = day index (0=Mon…6=Sun), value = TimeOfDay.
   final Map<int, TimeOfDay> dayTimes;
 
@@ -99,4 +101,16 @@ class Workout {
       };
 
   int get daysPerWeek => days.length;
+
+  int currentCycleWeek([DateTime? now]) {
+    final totalWeeks = cycleWeeks <= 0 ? 1 : cycleWeeks;
+    final current = now ?? DateTime.now();
+    final startDate = DateTime(createdAt.year, createdAt.month, createdAt.day);
+    final currentDate = DateTime(current.year, current.month, current.day);
+    final elapsedDays = currentDate.difference(startDate).inDays;
+    final week = elapsedDays < 0 ? 1 : (elapsedDays ~/ 7) + 1;
+    if (week < 1) return 1;
+    if (week > totalWeeks) return totalWeeks;
+    return week;
+  }
 }

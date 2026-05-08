@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback, SystemSound, SystemSoundType;
+import 'package:flutter/services.dart'
+    show HapticFeedback, SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sportwai/models/exercise.dart';
@@ -39,9 +40,20 @@ class _SetData {
   bool completed;
   bool isWarmup;
 
-  _SetData({required this.reps, required this.repsTarget, this.rpe, this.completed = false, this.isWarmup = false});
+  _SetData(
+      {required this.reps,
+      required this.repsTarget,
+      this.rpe,
+      this.completed = false,
+      this.isWarmup = false});
 
-  _SetData copyWith({int? reps, int? repsTarget, int? rpe, bool? completed, bool? isWarmup}) => _SetData(
+  _SetData copyWith(
+          {int? reps,
+          int? repsTarget,
+          int? rpe,
+          bool? completed,
+          bool? isWarmup}) =>
+      _SetData(
         reps: reps ?? this.reps,
         repsTarget: repsTarget ?? this.repsTarget,
         rpe: rpe ?? this.rpe,
@@ -80,6 +92,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   _SessionPhase _phase = _SessionPhase.exercise;
   int _warmupMinutes = 0;
   int _cooldownMinutes = 0;
+  int _sessionCycleWeek = 1;
   int _phaseSecondsLeft = 0;
   Timer? _phaseTimer;
   bool _resting = false;
@@ -99,8 +112,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
 
   // Energy / intra-session fatigue RecSys
   Map<String, dynamic>? _todayWellness;
+
   /// Inter-session energy state loaded at session start (from DB checkpoint).
   EnergyState? _sessionEnergyState;
+
   /// Running minimum reserve across all muscle groups — saved as energy_end on complete.
   double _sessionEnergyEnd = 100.0;
   // exerciseId → {category, sets[]} accumulated this session
@@ -112,6 +127,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   List<TextEditingController> _weightControllers = [];
   // Comparison result per set index: 1 = better, 0 = same, -1 = worse, null = no data
   final Map<int, int?> _setComparisons = {};
+  final Map<String, Map<int, double>> _sessionWeeklyWeights = {};
+  final Map<String, Map<int, double>> _sessionDropSetWeeklyWeights = {};
   // exerciseIds where last 3 sessions all hit max reps → suggest weight increase
   Set<String> _autoProgressSuggestions = {};
 
@@ -159,135 +176,154 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   Future<void> _loadSession() async {
     if (mounted) setState(() => _loadError = false);
     try {
-    final prefs = await SharedPreferences.getInstance();
-    final deload = prefs.getBool('deload_active') ?? false;
-    if (mounted) setState(() => _deloadActive = deload);
+      final prefs = await SharedPreferences.getInstance();
+      final deload = prefs.getBool('deload_active') ?? false;
+      if (mounted) setState(() => _deloadActive = deload);
 
-    final sessionRes = await Supabase.instance.client
-        .from('training_sessions')
-        .select('workout_id')
-        .eq('id', widget.sessionId)
-        .single()
-        .timeout(const Duration(seconds: 15));
+      final sessionRes = await Supabase.instance.client
+          .from('training_sessions')
+          .select('workout_id')
+          .eq('id', widget.sessionId)
+          .single()
+          .timeout(const Duration(seconds: 15));
 
-    final workoutId = sessionRes['workout_id'] as String;
+      final workoutId = sessionRes['workout_id'] as String;
 
-    // Load exercises, workout settings, personal bests, and last sets concurrently
-    final workoutFuture = Supabase.instance.client
-        .from('workouts')
-        .select('warmup_minutes, cooldown_minutes')
-        .eq('id', workoutId)
-        .single();
-    final ex = await TrainingService.getWorkoutExercisesForToday(workoutId);
-    final workoutRes2 = await workoutFuture;
-    final exerciseIds = ex.map((e) => e.exerciseId).toList();
+      // Load exercises, workout settings, personal bests, and last sets concurrently
+      final workoutFuture = Supabase.instance.client
+          .from('workouts')
+          .select('warmup_minutes, cooldown_minutes, cycle_weeks, created_at')
+          .eq('id', workoutId)
+          .single();
+      final ex = await TrainingService.getWorkoutExercisesForToday(workoutId);
+      final workoutRes2 = await workoutFuture;
+      final exerciseIds = ex.map((e) => e.exerciseId).toList();
 
-    final pbFutures = ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
-    final lastSetsFuture = AnalyticsService.getLastSetsForExercises(exerciseIds);
-    final userMetricsFuture = BodyMetricsService.getLatest();
-    final userStateFuture = UserStateService.computeUserState();
-    final best1RMFuture = AnalyticsService.getPersonalBest1RMForExercises(exerciseIds);
-    final pbValues = await Future.wait(pbFutures);
-    final lastSets = await lastSetsFuture;
-    final userMetrics = await userMetricsFuture;
-    final userState = await userStateFuture;
-    final todayWellness = userState.todayWellness;
-    final energyState = userState.energyState;
-    final personalBests1RM = await best1RMFuture;
+      final pbFutures =
+          ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
+      final lastSetsFuture =
+          AnalyticsService.getLastSetsForExercises(exerciseIds);
+      final userMetricsFuture = BodyMetricsService.getLatest();
+      final userStateFuture = UserStateService.computeUserState();
+      final best1RMFuture =
+          AnalyticsService.getPersonalBest1RMForExercises(exerciseIds);
+      final pbValues = await Future.wait(pbFutures);
+      final lastSets = await lastSetsFuture;
+      final userMetrics = await userMetricsFuture;
+      final userState = await userStateFuture;
+      final todayWellness = userState.todayWellness;
+      final energyState = userState.energyState;
+      final personalBests1RM = await best1RMFuture;
 
-    // Build topReps map for auto-progress check
-    final topRepsMap = <String, int>{};
-    for (final e in ex) {
-      final top = _parseTopReps(e.repsRange);
-      if (top != null) topRepsMap[e.exerciseId] = top;
-    }
-    final autoProgress = await AnalyticsService.getConsecutiveFullRepsExercises(
-      exerciseIds, topRepsMap);
+      // Build topReps map for auto-progress check
+      final topRepsMap = <String, int>{};
+      for (final e in ex) {
+        final top = _parseTopReps(e.repsRange);
+        if (top != null) topRepsMap[e.exerciseId] = top;
+      }
+      final autoProgress =
+          await AnalyticsService.getConsecutiveFullRepsExercises(
+              exerciseIds, topRepsMap);
 
-    // Fatigue check: categories of today's workout vs recently trained (<48h)
-    final recentCats = await AnalyticsService.getRecentlyTrainedCategories();
-    final workoutCats = ex
-        .map((e) => e.exercise?.category)
-        .whereType<String>()
-        .toSet();
-    final fatigued = recentCats.intersection(workoutCats)
-      ..remove('cardio'); // cardio doesn't count as fatigue
+      // Fatigue check: categories of today's workout vs recently trained (<48h)
+      final recentCats = await AnalyticsService.getRecentlyTrainedCategories();
+      final workoutCats =
+          ex.map((e) => e.exercise?.category).whereType<String>().toSet();
+      final fatigued = recentCats.intersection(workoutCats)
+        ..remove('cardio'); // cardio doesn't count as fatigue
 
-    final pbs = <String, double>{};
-    for (var i = 0; i < ex.length; i++) {
-      if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
-    }
+      final pbs = <String, double>{};
+      for (var i = 0; i < ex.length; i++) {
+        if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
+      }
 
-    final warmupMins = workoutRes2['warmup_minutes'] as int? ?? 0;
-    final cooldownMins = workoutRes2['cooldown_minutes'] as int? ?? 0;
+      final warmupMins = workoutRes2['warmup_minutes'] as int? ?? 0;
+      final cooldownMins = workoutRes2['cooldown_minutes'] as int? ?? 0;
+      final cycleWeek = _cycleWeekFromWorkoutRow(workoutRes2);
 
-    final savedIdx = ex.isNotEmpty
-        ? ((await SharedPreferences.getInstance()).getInt('session_ex_idx_${widget.sessionId}') ?? 0)
-            .clamp(0, ex.length - 1)
-        : 0;
+      final savedIdx = ex.isNotEmpty
+          ? ((await SharedPreferences.getInstance())
+                      .getInt('session_ex_idx_${widget.sessionId}') ??
+                  0)
+              .clamp(0, ex.length - 1)
+          : 0;
 
-    if (mounted) {
-      setState(() {
-        _exercises = ex;
-        _personalBests = pbs;
-        _personalBests1RM = personalBests1RM;
-        _lastSets = lastSets;
-        _autoProgressSuggestions = autoProgress;
-        _fatiguedCategories = fatigued;
-        _todayWellness = todayWellness;
-        _sessionEnergyState = energyState;
-        _sessionEnergyEnd = energyState.reserve;
-        _userGoal = userState.userGoal;
-        _rpeCalibrationOffset = userState.rpeCalibrationOffset;
-        _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
-        _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
-        _warmupMinutes = warmupMins;
-        _cooldownMinutes = cooldownMins;
-        _loading = false;
-        if (ex.isNotEmpty) {
-          _currentExerciseIndex = savedIdx;
-          _completedSetsBefore = ex.take(savedIdx).fold(0, (s, e) => s + e.sets);
-          _initExercise(ex[savedIdx]);
-        }
+      if (mounted) {
+        setState(() {
+          _exercises = ex;
+          _personalBests = pbs;
+          _personalBests1RM = personalBests1RM;
+          _lastSets = lastSets;
+          _autoProgressSuggestions = autoProgress;
+          _fatiguedCategories = fatigued;
+          _todayWellness = todayWellness;
+          _sessionEnergyState = energyState;
+          _sessionEnergyEnd = energyState.reserve;
+          _userGoal = userState.userGoal;
+          _rpeCalibrationOffset = userState.rpeCalibrationOffset;
+          _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
+          _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
+          _warmupMinutes = warmupMins;
+          _cooldownMinutes = cooldownMins;
+          _sessionCycleWeek = cycleWeek;
+          _loading = false;
+          if (ex.isNotEmpty) {
+            _currentExerciseIndex = savedIdx;
+            _completedSetsBefore =
+                ex.take(savedIdx).fold(0, (s, e) => s + e.sets);
+            _initExercise(ex[savedIdx]);
+          }
+          if (_warmupMinutes > 0) {
+            _phase = _SessionPhase.warmup;
+            _phaseSecondsLeft = _warmupMinutes * 60;
+          }
+        });
         if (_warmupMinutes > 0) {
-          _phase = _SessionPhase.warmup;
-          _phaseSecondsLeft = _warmupMinutes * 60;
+          _startPhaseTimer();
         }
-      });
-      if (_warmupMinutes > 0) _startPhaseTimer();
-      if (_exercises.isNotEmpty) await _maybeRestoreDraft(_exercises[_currentExerciseIndex]);
+        if (_exercises.isNotEmpty) {
+          await _maybeRestoreDraft(_exercises[_currentExerciseIndex]);
+        }
 
-      // Load avg rest seconds per exercise (non-blocking — used only as a UI hint)
-      Future.wait(ex.map((e) => AnalyticsService.getAvgRestSeconds(e.exerciseId)
-          .then((v) { if (v != null && mounted) setState(() => _avgRestByExercise[e.exerciseId] = v); })
-          .catchError((_) {}))).ignore();
+        // Load avg rest seconds per exercise (non-blocking — used only as a UI hint)
+        Future.wait(ex.map(
+            (e) => AnalyticsService.getAvgRestSeconds(e.exerciseId).then((v) {
+                  if (v != null && mounted) {
+                    setState(() => _avgRestByExercise[e.exerciseId] = v);
+                  }
+                }).catchError((_) {}))).ignore();
 
-      // Log RecSys increase suggestions shown to user
-      for (final we in ex) {
-        final isDb = we.exercise?.equipmentType == 'dumbbell';
-        final dbIncrement = isDb ? ref.read(dumbbellIncrementProvider) : 2.5;
-        final rec = evaluateProgression(
-          lastSets[we.exerciseId],
-          consecutiveFullReps: autoProgress.contains(we.exerciseId) ? 3 : 0,
-          topRepsInRange: _parseTopReps(we.repsRange),
-          weightIncrement: dbIncrement,
-          energyState: energyState,
-          personalBest1RMKg: personalBests1RM[we.exerciseId],
-          userGoal: _userGoal,
-          rpeCalibrationOffset: _rpeCalibrationOffset,
-          isBodyweight: we.exercise?.equipmentType == 'bodyweight',
-        );
-        if (rec != null && rec.direction == ProgressionDirection.increase) {
-          EventLogger.autoProgressSuggestionShown(
-            exerciseId: we.exerciseId,
-            isStrong: autoProgress.contains(we.exerciseId),
+        // Log RecSys increase suggestions shown to user
+        for (final we in ex) {
+          final isDb = we.exercise?.equipmentType == 'dumbbell';
+          final dbIncrement = isDb ? ref.read(dumbbellIncrementProvider) : 2.5;
+          final rec = evaluateProgression(
+            lastSets[we.exerciseId],
+            consecutiveFullReps: autoProgress.contains(we.exerciseId) ? 3 : 0,
+            topRepsInRange: _parseTopReps(we.repsRange),
+            weightIncrement: dbIncrement,
+            energyState: energyState,
+            personalBest1RMKg: personalBests1RM[we.exerciseId],
+            userGoal: _userGoal,
+            rpeCalibrationOffset: _rpeCalibrationOffset,
+            isBodyweight: we.exercise?.equipmentType == 'bodyweight',
           );
+          if (rec != null && rec.direction == ProgressionDirection.increase) {
+            EventLogger.autoProgressSuggestionShown(
+              exerciseId: we.exerciseId,
+              isStrong: autoProgress.contains(we.exerciseId),
+            );
+          }
         }
       }
-    }
     } catch (e, st) {
       if (kDebugMode) debugPrint('_loadSession error: $e\n$st');
-      if (mounted) setState(() { _loading = false; _loadError = true; });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadError = true;
+        });
+      }
     }
   }
 
@@ -305,8 +341,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     _lastCompletedSetIndex = null;
     _currentSetStartedAt = DateTime.now().toUtc();
     _weightControllers = List.generate(
-        we.sets, (i) => TextEditingController(text: i == 0 ? lastWeightText : '')..addListener(_saveDraft));
-    _sets = List.generate(we.sets, (_) => _SetData(reps: defaultReps, repsTarget: defaultReps));
+        we.sets,
+        (i) => TextEditingController(text: i == 0 ? lastWeightText : '')
+          ..addListener(_saveDraft));
+    _sets = List.generate(
+        we.sets, (_) => _SetData(reps: defaultReps, repsTarget: defaultReps));
     _setComparisons.clear();
   }
 
@@ -355,6 +394,68 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     return int.tryParse(first) ?? 8;
   }
 
+  int _cycleWeekFromWorkoutRow(Map<String, dynamic> row) {
+    final cycleWeeks = row['cycle_weeks'] as int? ?? 1;
+    final totalWeeks = cycleWeeks <= 0 ? 1 : cycleWeeks;
+    final createdRaw = row['created_at'] as String?;
+    if (createdRaw == null) {
+      return 1;
+    }
+    final createdAt = DateTime.tryParse(createdRaw);
+    if (createdAt == null) {
+      return 1;
+    }
+    final startDate = DateTime(createdAt.year, createdAt.month, createdAt.day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final elapsedDays = today.difference(startDate).inDays;
+    final week = elapsedDays < 0 ? 1 : (elapsedDays ~/ 7) + 1;
+    if (week < 1) {
+      return 1;
+    }
+    if (week > totalWeeks) {
+      return totalWeeks;
+    }
+    return week;
+  }
+
+  Future<void> _recordWeeklyWeightFromSession(
+    WorkoutExercise we,
+    double weightKg, {
+    required bool isDropSetWeight,
+  }) async {
+    final storedWeights = isDropSetWeight
+        ? _sessionDropSetWeeklyWeights[we.id] ?? we.dropSetWeeklyTargetWeights
+        : _sessionWeeklyWeights[we.id] ?? we.weeklyTargetWeights;
+    final currentWeight = storedWeights[_sessionCycleWeek];
+    if (currentWeight != null && weightKg <= currentWeight) {
+      return;
+    }
+
+    final nextWeights = Map<int, double>.from(storedWeights)
+      ..[_sessionCycleWeek] = weightKg;
+    if (isDropSetWeight) {
+      _sessionDropSetWeeklyWeights[we.id] = nextWeights;
+    } else {
+      _sessionWeeklyWeights[we.id] = nextWeights;
+    }
+    try {
+      if (isDropSetWeight) {
+        await WorkoutService.updateWorkoutExercise(
+          we.id,
+          dropSetWeeklyTargetWeights: nextWeights,
+        );
+      } else {
+        await WorkoutService.updateWorkoutExercise(
+          we.id,
+          weeklyTargetWeights: nextWeights,
+        );
+      }
+    } catch (_) {
+      // Set history is already saved; weekly summary can be retried next set.
+    }
+  }
+
   /// Returns the top (max) reps from a range like "8-12" → 12, "5" → 5.
   /// Returns null for cardio/time-based ranges (e.g. "15 мин").
   int? _parseTopReps(String range) {
@@ -372,7 +473,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   }) {
     final (color, icon) = switch (progRec.direction) {
       ProgressionDirection.increase => (AppColors.success, Icons.trending_up),
-      ProgressionDirection.maintain => (const Color(0xFFFF9F0A), Icons.trending_flat),
+      ProgressionDirection.maintain => (
+          const Color(0xFFFF9F0A),
+          Icons.trending_flat
+        ),
       ProgressionDirection.decrease => (AppColors.error, Icons.trending_down),
     };
 
@@ -386,8 +490,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       for (final c in _weightControllers) {
         final cur = double.tryParse(c.text.replaceAll(',', '.'));
         if (c.text.isEmpty || cur == currentWeightKg) {
-          c.text = displaySuggested.toStringAsFixed(
-              displaySuggested % 1 == 0 ? 0 : 1);
+          c.text = displaySuggested
+              .toStringAsFixed(displaySuggested % 1 == 0 ? 0 : 1);
         }
       }
       EventLogger.autoProgressAccepted(
@@ -415,9 +519,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
               style: TextStyle(
                 fontSize: 12,
                 color: color,
-                fontWeight: suggestedKg != null
-                    ? FontWeight.w600
-                    : FontWeight.normal,
+                fontWeight:
+                    suggestedKg != null ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
           ),
@@ -497,8 +600,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
         if (mounted) _finishExercises();
       } else {
         final next = _exercises[_currentExerciseIndex + 1];
-        final inSameSuperset = we.supersetGroup != null &&
-            we.supersetGroup == next.supersetGroup;
+        final inSameSuperset =
+            we.supersetGroup != null && we.supersetGroup == next.supersetGroup;
         if (inSameSuperset) {
           // No rest inside a superset — advance immediately
           if (mounted) _advanceExercise();
@@ -565,13 +668,26 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           action: SnackBarAction(
             label: 'Повторить',
             onPressed: () => TrainingService.saveSet(
-              sessionId, weId, setNum,
-              weight: w, reps: r, rpe: rpe, restSeconds: rest,
-              isWarmup: warmup, durationSeconds: dur,
+              sessionId,
+              weId,
+              setNum,
+              weight: w,
+              reps: r,
+              rpe: rpe,
+              restSeconds: rest,
+              isWarmup: warmup,
+              durationSeconds: dur,
             ),
           ),
         ),
       );
+    }
+    if (saved && weightToSave != null) {
+      unawaited(_recordWeeklyWeightFromSession(
+        we,
+        weightToSave,
+        isDropSetWeight: we.isDropSet && index > 0,
+      ));
     }
 
     EventLogger.setCompleted(
@@ -615,63 +731,64 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       builder: (_) => SafeArea(
         top: false,
         child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Шкала RPE (Rate of Perceived Exertion)',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Шкала RPE (Rate of Perceived Exertion)',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Субъективная оценка нагрузки от 1 до 10',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 16),
-            ...levels.map((l) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 34,
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
+              const SizedBox(height: 4),
+              const Text(
+                'Субъективная оценка нагрузки от 1 до 10',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              ...levels.map((l) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(l.$1,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.accent)),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(l.$2,
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary)),
+                            Text(l.$3,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ],
                     ),
-                    alignment: Alignment.center,
-                    child: Text(l.$1,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.accent)),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(l.$2,
-                          style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary)),
-                      Text(l.$3,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textSecondary)),
-                    ],
-                  ),
-                ],
-              ),
-            )),
-          ],
+                  )),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -723,8 +840,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   void _onRestEnd() {
     HapticFeedback.mediumImpact();
     if (_restStartedAt != null) {
-      _lastRestSeconds =
-          DateTime.now().difference(_restStartedAt!).inSeconds;
+      _lastRestSeconds = DateTime.now().difference(_restStartedAt!).inSeconds;
       _restStartedAt = null;
     }
     // Pre-fill next set's weight from the just-completed set (weight only, not reps)
@@ -754,13 +870,13 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     if (nextIndex < _exercises.length) {
       HapticFeedback.mediumImpact();
       final current = _exercises[_currentExerciseIndex];
-      final next    = _exercises[nextIndex];
+      final next = _exercises[nextIndex];
       _saveExerciseToHistory(current);
       final fatigue = _computeIntraFatigue(next);
       setState(() {
         _completedSetsBefore += _sets.length;
         _currentExerciseIndex = nextIndex;
-        _intraFatigueRec      = fatigue;
+        _intraFatigueRec = fatigue;
         _intraFatigueDismissed = false;
         _initExercise(next);
       });
@@ -774,13 +890,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     if (prevIndex >= 0) {
       HapticFeedback.mediumImpact();
       final current = _exercises[_currentExerciseIndex];
-      final prev    = _exercises[prevIndex];
+      final prev = _exercises[prevIndex];
       _saveExerciseToHistory(current);
       final fatigue = _computeIntraFatigue(prev);
       setState(() {
-        _completedSetsBefore = (_completedSetsBefore - prev.sets).clamp(0, _totalExpectedSets);
-        _currentExerciseIndex  = prevIndex;
-        _intraFatigueRec       = fatigue;
+        _completedSetsBefore =
+            (_completedSetsBefore - prev.sets).clamp(0, _totalExpectedSets);
+        _currentExerciseIndex = prevIndex;
+        _intraFatigueRec = fatigue;
         _intraFatigueDismissed = false;
         _initExercise(prev);
       });
@@ -794,15 +911,17 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final category = we.exercise?.category;
     if (category == null) return;
     _sessionHistory[we.exerciseId] = {
-      'category':      category,
+      'category': category,
       'equipmentType': we.exercise?.equipmentType ?? 'other',
-      'movementType':  we.exercise?.effectiveMovementType ?? 'other',
-      'inSuperset':    we.supersetGroup != null,
-      'sets': _sets.map((s) => {
-        'isWarmup':  s.isWarmup,
-        'completed': s.completed,
-        'rpe':       s.rpe?.toDouble(),
-      }).toList(),
+      'movementType': we.exercise?.effectiveMovementType ?? 'other',
+      'inSuperset': we.supersetGroup != null,
+      'sets': _sets
+          .map((s) => {
+                'isWarmup': s.isWarmup,
+                'completed': s.completed,
+                'rpe': s.rpe?.toDouble(),
+              })
+          .toList(),
     };
   }
 
@@ -838,10 +957,14 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
   Future<void> _saveDraft() async {
     final we = _currentExercise;
     if (we == null) return;
-    final data = List.generate(_sets.length, (i) => {
-      'w': i < _weightControllers.length ? _weightControllers[i].text : '',
-      'r': _sets[i].reps,
-    });
+    final data = List.generate(
+        _sets.length,
+        (i) => {
+              'w': i < _weightControllers.length
+                  ? _weightControllers[i].text
+                  : '',
+              'r': _sets[i].reps,
+            });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_draftKey(we.id), jsonEncode(data));
   }
@@ -938,16 +1061,21 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                         const SizedBox(height: 12),
                         TextField(
                           autofocus: false,
-                          onChanged: (v) => setInner(() => replaceQuery = v.trim()),
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                          onChanged: (v) =>
+                              setInner(() => replaceQuery = v.trim()),
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 14),
                           decoration: InputDecoration(
                             hintText: 'Поиск упражнения...',
-                            hintStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-                            prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+                            hintStyle: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 14),
+                            prefixIcon: const Icon(Icons.search,
+                                color: AppColors.textSecondary, size: 20),
                             isDense: true,
                             filled: true,
                             fillColor: AppColors.surface,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
                               borderSide: BorderSide.none,
@@ -966,10 +1094,12 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                         final ex = filtered[i];
                         return ListTile(
                           title: Text(ex.displayName,
-                              style: const TextStyle(color: AppColors.textPrimary)),
+                              style: const TextStyle(
+                                  color: AppColors.textPrimary)),
                           subtitle: Text(
                             Exercise.categoryDisplayName(ex.category),
-                            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                            style: const TextStyle(
+                                color: AppColors.textSecondary, fontSize: 12),
                           ),
                           onTap: () => Navigator.pop(ctx, ex),
                         );
@@ -999,8 +1129,11 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       _initExercise(updated);
     });
     // Load last sets for new exercise
-    final lastSets = await AnalyticsService.getLastSetsForExercises([picked.id]);
-    if (mounted) setState(() => _lastSets[picked.id] = lastSets[picked.id] ?? {});
+    final lastSets =
+        await AnalyticsService.getLastSetsForExercises([picked.id]);
+    if (mounted) {
+      setState(() => _lastSets[picked.id] = lastSets[picked.id] ?? {});
+    }
   }
 
   void _confirmExit() {
@@ -1055,9 +1188,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     HapticFeedback.heavyImpact();
     await _clearAllDrafts();
     final sessionState = ref.read(activeSessionProvider);
-    final durationSeconds = sessionState.isActive
-        ? sessionState.elapsed.inSeconds
-        : 0;
+    final durationSeconds =
+        sessionState.isActive ? sessionState.elapsed.inSeconds : 0;
     EventLogger.workoutCompleted(
       sessionId: widget.sessionId,
       durationSeconds: durationSeconds,
@@ -1072,7 +1204,9 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     // Check streak milestone (fire-and-forget)
     AnalyticsService.getCurrentStreak().then((streak) {
       const milestones = [7, 14, 30, 60, 100, 200, 365];
-      if (milestones.contains(streak)) EventLogger.streakMilestone(days: streak);
+      if (milestones.contains(streak)) {
+        EventLogger.streakMilestone(days: streak);
+      }
     }).catchError((_) {});
     if (!mounted) return;
     context.pushReplacement(
@@ -1097,7 +1231,8 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Не удалось загрузить тренировку', textAlign: TextAlign.center),
+              const Text('Не удалось загрузить тренировку',
+                  textAlign: TextAlign.center),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _loadSession,
@@ -1117,16 +1252,22 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.fitness_center_rounded, size: 64, color: AppColors.textSecondary.withValues(alpha: 0.4)),
+                Icon(Icons.fitness_center_rounded,
+                    size: 64,
+                    color: AppColors.textSecondary.withValues(alpha: 0.4)),
                 const SizedBox(height: 16),
                 const Text(
                   'Нет упражнений',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary),
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   'Добавьте упражнения в эту тренировку',
-                  style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                  style:
+                      TextStyle(fontSize: 14, color: AppColors.textSecondary),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -1144,9 +1285,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       );
     }
     if (_resting) {
-      final nextEx = _goToNextAfterRest && _currentExerciseIndex + 1 < _exercises.length
-          ? _exercises[_currentExerciseIndex + 1].exercise
-          : null;
+      final nextEx =
+          _goToNextAfterRest && _currentExerciseIndex + 1 < _exercises.length
+              ? _exercises[_currentExerciseIndex + 1].exercise
+              : null;
       return _RestScreen(
         seconds: _restSeconds,
         targetSeconds: _targetRestSeconds,
@@ -1182,13 +1324,19 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
             children: [
               Text(
                 we.exercise?.displayName ?? '',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
                 '${_currentExerciseIndex + 1} / ${_exercises.length}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w400),
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w400),
               ),
             ],
           ),
@@ -1215,417 +1363,464 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           ),
         ),
         body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-                child: SingleChildScrollView(
-                  key: ValueKey(_currentExerciseIndex),
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                  child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Fatigue warning banner
-                    if (_fatiguedCategories.isNotEmpty && !_fatigueBannerDismissed) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.error.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Эти мышцы тренировались < 48 ч назад: '
-                                '${_fatiguedCategories.map((c) => Exercise.categoryDisplayName(c)).join(', ')}. '
-                                'Риск перетренированности.',
-                                style: const TextStyle(color: AppColors.error, fontSize: 12),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() => _fatigueBannerDismissed = true),
-                              child: const Icon(Icons.close, size: 16, color: AppColors.error),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    // Intra-session fatigue RecSys banner
-                    if (_intraFatigueRec != null && !_intraFatigueDismissed) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.warning.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              _intraFatigueRec!.level == FatigueLevel.high
-                                  ? Icons.local_fire_department_rounded
-                                  : Icons.battery_4_bar_rounded,
-                              color: AppColors.warning,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _intraFatigueRec!.message,
-                                style: const TextStyle(color: AppColors.warning, fontSize: 12),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() => _intraFatigueDismissed = true),
-                              child: const Icon(Icons.close, size: 16, color: AppColors.warning),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    // Deload banner
-                    if (_deloadActive) ...[
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.warning.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: AppColors.warning.withValues(alpha: 0.5)),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.battery_saver_rounded,
-                                color: AppColors.warning, size: 16),
-                            SizedBox(width: 8),
-                            Text(
-                              'Деload-неделя: вес снижен на 40%',
-                              style: TextStyle(
-                                color: AppColors.warning,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    // Drop-set badge
-                    if (we.isDropSet) ...[
-                      const _DropSetBadge(),
-                      const SizedBox(height: 8),
-                    ],
-                    // Superset badge
-                    if (we.supersetGroup != null) ...[
-                      _SupersetBadge(
-                        exercises: _exercises,
-                        currentIndex: _currentExerciseIndex,
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    GestureDetector(
-                      onLongPress: we.exercise != null
-                          ? () => context.push(
-                                '/exercise/${we.exerciseId}/history',
-                                extra: we.exercise,
-                              )
-                          : null,
-                      child: Text(
-                        we.exercise?.displayName ?? '?',
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$doneCount из ${_sets.length} подходов выполнено',
-                      style: const TextStyle(
-                          fontSize: 13, color: AppColors.textSecondary),
-                    ),
-                    // Exercise GIF
-                    if (we.exercise?.gifUrl != null) ...[
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          cacheManager: AppImageCacheManager.instance,
-                          imageUrl: we.exercise!.gifUrl!,
-                          height: 180,
-                          width: double.infinity,
-                          fit: BoxFit.contain,
-                          placeholder: (_, __) => Container(
-                            height: 180,
-                            color: AppColors.surface,
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    ],
-                    if (_lastSets[we.exerciseId] != null) ...[
-                      const SizedBox(height: 2),
-                      Builder(builder: (_) {
-                        final last = _lastSets[we.exerciseId]!;
-                        final w = last['weight'] as double;
-                        final r = last['reps'] as int;
-                        final d = last['date'] as String;
-                        final useKg = ref.read(useKgProvider);
-                        final displayW = useKg ? w : w * 2.20462;
-                        final unit = useKg ? 'кг' : 'лб';
-                        final dateShort = d.length >= 10
-                            ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
-                            : d;
-                        // ── Unified RecSys progression chip ──────────────
-                        final isDumbbell = we.exercise?.equipmentType == 'dumbbell';
-                        final increment = isDumbbell
-                            ? ref.read(dumbbellIncrementProvider)
-                            : 2.5;
-                        // Use muscle-specific reserve if available, else session-start state.
-                        final energyForProg = _intraFatigueRec != null
-                            ? EnergyState(reserve: _intraFatigueRec!.reserve)
-                            : _sessionEnergyState;
-                        final progRec = evaluateProgression(
-                          _lastSets[we.exerciseId],
-                          consecutiveFullReps: _autoProgressSuggestions.contains(we.exerciseId) ? 3 : 0,
-                          topRepsInRange: _parseTopReps(we.repsRange),
-                          weightIncrement: increment,
-                          energyState: energyForProg,
-                          personalBest1RMKg: _personalBests1RM[we.exerciseId],
-                          userGoal: _userGoal,
-                          rpeCalibrationOffset: _rpeCalibrationOffset,
-                          isBodyweight: we.exercise?.equipmentType == 'bodyweight',
-                        );
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Прошлый: ${displayW.toStringAsFixed(1)} $unit × $r ($dateShort)',
-                              style: const TextStyle(
-                                  fontSize: 12, color: AppColors.accent),
-                            ),
-                            if (progRec != null) ...[
-                              _buildProgressionChip(
-                                progRec: progRec,
-                                currentWeightKg: w,
-                                exerciseId: we.exerciseId,
-                                useKg: useKg,
-                                unit: unit,
-                              ),
-                            ],
-                          ],
-                        );
-                      }),
-                    ],
-                    const SizedBox(height: 20),
-
-                    // Шапка столбцов
-                    Padding(
-                      padding: const EdgeInsets.only(left: 32, right: 44),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 48,
-                            child: Text(
-                              'Вес, ${weightLabel(useKg)}',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textSecondary,
-                                  letterSpacing: 0.5),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text('Повт.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                    letterSpacing: 0.5)),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => _showRpeInfo(context),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text('RPE',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.textSecondary,
-                                          letterSpacing: 0.5)),
-                                  SizedBox(width: 2),
-                                  Icon(Icons.info_outline,
-                                      size: 11, color: AppColors.textSecondary),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Plate calculator chip
-                    Builder(builder: (_) {
-                      final activeCtrl = activeIndex >= 0 && activeIndex < _weightControllers.length
-                          ? _weightControllers[activeIndex]
-                          : null;
-                      final weightVal = double.tryParse(
-                          activeCtrl?.text.replaceAll(',', '.') ?? '');
-                      final useKg = ref.read(useKgProvider);
-                      if (weightVal == null || weightVal <= 0 || we.exercise?.category == 'cardio') {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: GestureDetector(
-                          onTap: () => _showPlateCalc(weightVal, useKg: useKg),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, animation) =>
+                      FadeTransition(opacity: animation, child: child),
+                  child: SingleChildScrollView(
+                    key: ValueKey(_currentExerciseIndex),
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Fatigue warning banner
+                        if (_fatiguedCategories.isNotEmpty &&
+                            !_fatigueBannerDismissed) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
                             decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+                              color: AppColors.error.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color:
+                                      AppColors.error.withValues(alpha: 0.4)),
                             ),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(Icons.fitness_center, size: 14, color: AppColors.accent),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Блины для ${useKg ? weightVal.toStringAsFixed(1) : (weightVal * 2.20462).toStringAsFixed(1)} ${useKg ? "кг" : "лб"}',
-                                  style: const TextStyle(color: AppColors.accent, fontSize: 12, fontWeight: FontWeight.w500),
+                                const Icon(Icons.warning_amber_rounded,
+                                    color: AppColors.error, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Эти мышцы тренировались < 48 ч назад: '
+                                    '${_fatiguedCategories.map((c) => Exercise.categoryDisplayName(c)).join(', ')}. '
+                                    'Риск перетренированности.',
+                                    style: const TextStyle(
+                                        color: AppColors.error, fontSize: 12),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => setState(
+                                      () => _fatigueBannerDismissed = true),
+                                  child: const Icon(Icons.close,
+                                      size: 16, color: AppColors.error),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      );
-                    }),
-
-                    // Блоки подходов
-                    ...List.generate(_sets.length, (i) {
-                      final canComplete = !_sets[i].completed && i == activeIndex;
-                      return Column(
-                        children: [
-                          if (we.isDropSet && i > 0)
-                            const _DropSetDivider(),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Dismissible(
-                              key: ValueKey('set_$i'),
-                              direction: canComplete
-                                  ? DismissDirection.startToEnd
-                                  : DismissDirection.none,
-                              confirmDismiss: (_) async {
-                                _completeSet(i);
-                                return false; // не удалять из списка
-                              },
-                              background: Container(
-                                decoration: BoxDecoration(
-                                  color: AppColors.success.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(14),
+                          const SizedBox(height: 8),
+                        ],
+                        // Intra-session fatigue RecSys banner
+                        if (_intraFatigueRec != null &&
+                            !_intraFatigueDismissed) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.warning.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color:
+                                      AppColors.warning.withValues(alpha: 0.4)),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  _intraFatigueRec!.level == FatigueLevel.high
+                                      ? Icons.local_fire_department_rounded
+                                      : Icons.battery_4_bar_rounded,
+                                  color: AppColors.warning,
+                                  size: 16,
                                 ),
-                                alignment: Alignment.centerLeft,
-                                padding: const EdgeInsets.only(left: 20),
-                                child: const Icon(Icons.check_circle_outline,
-                                    color: AppColors.success, size: 28),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _intraFatigueRec!.message,
+                                    style: const TextStyle(
+                                        color: AppColors.warning, fontSize: 12),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => setState(
+                                      () => _intraFatigueDismissed = true),
+                                  child: const Icon(Icons.close,
+                                      size: 16, color: AppColors.warning),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        // Deload banner
+                        if (_deloadActive) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.warning.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color:
+                                      AppColors.warning.withValues(alpha: 0.5)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.battery_saver_rounded,
+                                    color: AppColors.warning, size: 16),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Деload-неделя: вес снижен на 40%',
+                                  style: TextStyle(
+                                    color: AppColors.warning,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        // Drop-set badge
+                        if (we.isDropSet) ...[
+                          const _DropSetBadge(),
+                          const SizedBox(height: 8),
+                        ],
+                        // Superset badge
+                        if (we.supersetGroup != null) ...[
+                          _SupersetBadge(
+                            exercises: _exercises,
+                            currentIndex: _currentExerciseIndex,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        GestureDetector(
+                          onLongPress: we.exercise != null
+                              ? () => context.push(
+                                    '/exercise/${we.exerciseId}/history',
+                                    extra: we.exercise,
+                                  )
+                              : null,
+                          child: Text(
+                            we.exercise?.displayName ?? '?',
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$doneCount из ${_sets.length} подходов выполнено',
+                          style: const TextStyle(
+                              fontSize: 13, color: AppColors.textSecondary),
+                        ),
+                        // Exercise GIF
+                        if (we.exercise?.gifUrl != null) ...[
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: CachedNetworkImage(
+                              cacheManager: AppImageCacheManager.instance,
+                              imageUrl: we.exercise!.gifUrl!,
+                              height: 180,
+                              width: double.infinity,
+                              fit: BoxFit.contain,
+                              placeholder: (_, __) => Container(
+                                height: 180,
+                                color: AppColors.surface,
+                                child: const Center(
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
                               ),
-                              child: _SetBlock(
-                                index: i,
-                                data: _sets[i],
-                                isActive: i == activeIndex && !_sets[i].completed,
-                                weightController: _weightControllers[i],
-                                comparison: _setComparisons[i],
-                                inputMode: we.exercise?.effectiveInputMode ??
-                                    ExerciseInputMode.weighted,
-                                onRepsChanged: (v) {
-                                  setState(() => _sets[i] = _sets[i].copyWith(reps: v));
-                                  _saveDraft();
-                                },
-                                onRpeChanged: (v) =>
-                                    setState(() => _sets[i].rpe = v),
-                                onComplete: canComplete ? () => _completeSet(i) : null,
-                                onWarmupToggle: !_sets[i].completed
-                                    ? () => setState(() => _sets[i] =
-                                        _sets[i].copyWith(isWarmup: !_sets[i].isWarmup))
-                                    : null,
-                              ),
+                              errorWidget: (_, __, ___) =>
+                                  const SizedBox.shrink(),
                             ),
                           ),
                         ],
-                      );
-                    }),
-                    const SizedBox(height: 4),
+                        if (_lastSets[we.exerciseId] != null) ...[
+                          const SizedBox(height: 2),
+                          Builder(builder: (_) {
+                            final last = _lastSets[we.exerciseId]!;
+                            final w = last['weight'] as double;
+                            final r = last['reps'] as int;
+                            final d = last['date'] as String;
+                            final useKg = ref.read(useKgProvider);
+                            final displayW = useKg ? w : w * 2.20462;
+                            final unit = useKg ? 'кг' : 'лб';
+                            final dateShort = d.length >= 10
+                                ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
+                                : d;
+                            // ── Unified RecSys progression chip ──────────────
+                            final isDumbbell =
+                                we.exercise?.equipmentType == 'dumbbell';
+                            final increment = isDumbbell
+                                ? ref.read(dumbbellIncrementProvider)
+                                : 2.5;
+                            // Use muscle-specific reserve if available, else session-start state.
+                            final energyForProg = _intraFatigueRec != null
+                                ? EnergyState(
+                                    reserve: _intraFatigueRec!.reserve)
+                                : _sessionEnergyState;
+                            final progRec = evaluateProgression(
+                              _lastSets[we.exerciseId],
+                              consecutiveFullReps: _autoProgressSuggestions
+                                      .contains(we.exerciseId)
+                                  ? 3
+                                  : 0,
+                              topRepsInRange: _parseTopReps(we.repsRange),
+                              weightIncrement: increment,
+                              energyState: energyForProg,
+                              personalBest1RMKg:
+                                  _personalBests1RM[we.exerciseId],
+                              userGoal: _userGoal,
+                              rpeCalibrationOffset: _rpeCalibrationOffset,
+                              isBodyweight:
+                                  we.exercise?.equipmentType == 'bodyweight',
+                            );
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Прошлый: ${displayW.toStringAsFixed(1)} $unit × $r ($dateShort)',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: AppColors.accent),
+                                ),
+                                if (progRec != null) ...[
+                                  _buildProgressionChip(
+                                    progRec: progRec,
+                                    currentWeightKg: w,
+                                    exerciseId: we.exerciseId,
+                                    useKg: useKg,
+                                    unit: unit,
+                                  ),
+                                ],
+                              ],
+                            );
+                          }),
+                        ],
+                        const SizedBox(height: 20),
 
-                    _AddSetButton(onTap: _addSet),
-                    const SizedBox(height: 16),
-                  ],
-                ),
+                        // Шапка столбцов
+                        Padding(
+                          padding: const EdgeInsets.only(left: 32, right: 44),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 48,
+                                child: Text(
+                                  'Вес, ${weightLabel(useKg)}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondary,
+                                      letterSpacing: 0.5),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text('Повт.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
+                                        letterSpacing: 0.5)),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () => _showRpeInfo(context),
+                                  child: const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text('RPE',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textSecondary,
+                                              letterSpacing: 0.5)),
+                                      SizedBox(width: 2),
+                                      Icon(Icons.info_outline,
+                                          size: 11,
+                                          color: AppColors.textSecondary),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Plate calculator chip
+                        Builder(builder: (_) {
+                          final activeCtrl = activeIndex >= 0 &&
+                                  activeIndex < _weightControllers.length
+                              ? _weightControllers[activeIndex]
+                              : null;
+                          final weightVal = double.tryParse(
+                              activeCtrl?.text.replaceAll(',', '.') ?? '');
+                          final useKg = ref.read(useKgProvider);
+                          if (weightVal == null ||
+                              weightVal <= 0 ||
+                              we.exercise?.category == 'cardio') {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: GestureDetector(
+                              onTap: () =>
+                                  _showPlateCalc(weightVal, useKg: useKg),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.surface,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                      color: AppColors.accent
+                                          .withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.fitness_center,
+                                        size: 14, color: AppColors.accent),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Блины для ${useKg ? weightVal.toStringAsFixed(1) : (weightVal * 2.20462).toStringAsFixed(1)} ${useKg ? "кг" : "лб"}',
+                                      style: const TextStyle(
+                                          color: AppColors.accent,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+
+                        // Блоки подходов
+                        ...List.generate(_sets.length, (i) {
+                          final canComplete =
+                              !_sets[i].completed && i == activeIndex;
+                          return Column(
+                            children: [
+                              if (we.isDropSet && i > 0)
+                                const _DropSetDivider(),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Dismissible(
+                                  key: ValueKey('set_$i'),
+                                  direction: canComplete
+                                      ? DismissDirection.startToEnd
+                                      : DismissDirection.none,
+                                  confirmDismiss: (_) async {
+                                    _completeSet(i);
+                                    return false; // не удалять из списка
+                                  },
+                                  background: Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success
+                                          .withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    alignment: Alignment.centerLeft,
+                                    padding: const EdgeInsets.only(left: 20),
+                                    child: const Icon(
+                                        Icons.check_circle_outline,
+                                        color: AppColors.success,
+                                        size: 28),
+                                  ),
+                                  child: _SetBlock(
+                                    index: i,
+                                    data: _sets[i],
+                                    isActive:
+                                        i == activeIndex && !_sets[i].completed,
+                                    weightController: _weightControllers[i],
+                                    comparison: _setComparisons[i],
+                                    inputMode:
+                                        we.exercise?.effectiveInputMode ??
+                                            ExerciseInputMode.weighted,
+                                    onRepsChanged: (v) {
+                                      setState(() => _sets[i] =
+                                          _sets[i].copyWith(reps: v));
+                                      _saveDraft();
+                                    },
+                                    onRpeChanged: (v) =>
+                                        setState(() => _sets[i].rpe = v),
+                                    onComplete: canComplete
+                                        ? () => _completeSet(i)
+                                        : null,
+                                    onWarmupToggle: !_sets[i].completed
+                                        ? () => setState(() => _sets[i] =
+                                            _sets[i].copyWith(
+                                                isWarmup: !_sets[i].isWarmup))
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }),
+                        const SizedBox(height: 4),
+
+                        _AddSetButton(onTap: _addSet),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
 
-            // Навигация между упражнениями
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: Row(
-                children: [
-                  if (_currentExerciseIndex > 0)
-                    Expanded(
-                      flex: 1,
-                      child: OutlinedButton.icon(
-                        onPressed: _previousExercise,
-                        icon: const Icon(Icons.chevron_left, size: 18),
-                        label: const Text('Назад'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.textSecondary,
-                          side: const BorderSide(color: AppColors.textSecondary),
+              // Навигация между упражнениями
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Row(
+                  children: [
+                    if (_currentExerciseIndex > 0)
+                      Expanded(
+                        flex: 1,
+                        child: OutlinedButton.icon(
+                          onPressed: _previousExercise,
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          label: const Text('Назад'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textSecondary,
+                            side: const BorderSide(
+                                color: AppColors.textSecondary),
+                          ),
                         ),
                       ),
-                    ),
-                  if (_currentExerciseIndex > 0 &&
-                      _allSetsCompleted &&
-                      _currentExerciseIndex < _exercises.length - 1)
-                    const SizedBox(width: 12),
-                  if (_allSetsCompleted &&
-                      _currentExerciseIndex < _exercises.length - 1)
-                    Expanded(
-                      flex: 2,
-                      child: ElevatedButton(
-                        onPressed: _advanceExercise,
-                        child: const Text('Следующее упражнение'),
+                    if (_currentExerciseIndex > 0 &&
+                        _allSetsCompleted &&
+                        _currentExerciseIndex < _exercises.length - 1)
+                      const SizedBox(width: 12),
+                    if (_allSetsCompleted &&
+                        _currentExerciseIndex < _exercises.length - 1)
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _advanceExercise,
+                          child: const Text('Следующее упражнение'),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         ),
       ),
     );
@@ -1645,6 +1840,7 @@ class _SetBlock extends StatelessWidget {
   final ValueChanged<int?> onRpeChanged;
   final VoidCallback? onComplete;
   final VoidCallback? onWarmupToggle;
+
   /// Input mode — defaults to `weighted` so existing call sites keep original UI.
   final ExerciseInputMode inputMode;
 
@@ -1676,7 +1872,9 @@ class _SetBlock extends StatelessWidget {
                 : AppColors.card,
         borderRadius: BorderRadius.circular(14),
         border: warmup
-            ? Border.all(color: const Color(0xFFB8690A).withValues(alpha: 0.35), width: 1)
+            ? Border.all(
+                color: const Color(0xFFB8690A).withValues(alpha: 0.35),
+                width: 1)
             : isActive
                 ? Border.all(color: AppColors.success, width: 1.5)
                 : done
@@ -1690,7 +1888,11 @@ class _SetBlock extends StatelessWidget {
         opacity: done ? 0.55 : 1.0,
         child: Row(
           children: [
-            _SetBadge(number: index + 1, done: done, active: isActive && !warmup, isWarmup: warmup),
+            _SetBadge(
+                number: index + 1,
+                done: done,
+                active: isActive && !warmup,
+                isWarmup: warmup),
             const SizedBox(width: 4),
             // Поле ввода веса — только для weighted. Для bodyweight/cardio скрыто.
             if (inputMode == ExerciseInputMode.weighted) ...[
@@ -1706,17 +1908,15 @@ class _SetBlock extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: done
-                        ? AppColors.textSecondary
-                        : AppColors.textPrimary,
+                    color:
+                        done ? AppColors.textSecondary : AppColors.textPrimary,
                   ),
                   decoration: InputDecoration(
                     hintText: '—',
-                    hintStyle:
-                        const TextStyle(color: AppColors.textSecondary),
+                    hintStyle: const TextStyle(color: AppColors.textSecondary),
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 8),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                     filled: true,
                     fillColor: AppColors.surface,
                     border: OutlineInputBorder(
@@ -1729,8 +1929,8 @@ class _SetBlock extends StatelessWidget {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                          color: AppColors.accent, width: 1.2),
+                      borderSide:
+                          const BorderSide(color: AppColors.accent, width: 1.2),
                     ),
                     disabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1747,8 +1947,7 @@ class _SetBlock extends StatelessWidget {
                 min: 1,
                 max: inputMode == ExerciseInputMode.cardio ? 300 : 999,
                 enabled: !done,
-                suffix:
-                    inputMode == ExerciseInputMode.cardio ? 'мин' : null,
+                suffix: inputMode == ExerciseInputMode.cardio ? 'мин' : null,
                 onChanged: onRepsChanged,
               ),
             ),
@@ -1798,9 +1997,7 @@ class _SetBlock extends StatelessWidget {
                   ),
                   child: Icon(Icons.check,
                       size: 18,
-                      color: isActive
-                          ? Colors.white
-                          : AppColors.textSecondary),
+                      color: isActive ? Colors.white : AppColors.textSecondary),
                 ),
               )
             else
@@ -1871,7 +2068,8 @@ class _SetBadge extends StatelessWidget {
       child: done
           ? const Icon(Icons.check, size: 14, color: Colors.white)
           : isWarmup
-              ? const Icon(Icons.local_fire_department, size: 14, color: warmupColor)
+              ? const Icon(Icons.local_fire_department,
+                  size: 14, color: warmupColor)
               : Text(
                   '$number',
                   style: TextStyle(
@@ -1907,8 +2105,7 @@ class _Stepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final display =
-        (value == 0 && zeroLabel != null) ? zeroLabel! : '$value';
+    final display = (value == 0 && zeroLabel != null) ? zeroLabel! : '$value';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1926,9 +2123,8 @@ class _Stepper extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: enabled
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
+                color:
+                    enabled ? AppColors.textPrimary : AppColors.textSecondary,
               ),
               children: suffix == null
                   ? null
@@ -2087,7 +2283,8 @@ class _PrBannerState extends State<_PrBanner>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
 
-    _confetti = ConfettiController(duration: const Duration(milliseconds: 1800));
+    _confetti =
+        ConfettiController(duration: const Duration(milliseconds: 1800));
     _ctrl.forward();
     _confetti.play();
     Future.delayed(const Duration(milliseconds: 2800), _dismiss);
@@ -2145,7 +2342,8 @@ class _PrBannerState extends State<_PrBanner>
                 child: Material(
                   color: Colors.transparent,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
                     decoration: BoxDecoration(
                       color: AppColors.success,
                       borderRadius: BorderRadius.circular(18),
@@ -2222,7 +2420,8 @@ class _DropSetBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFF6B00).withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFF6B00).withValues(alpha: 0.4)),
+        border:
+            Border.all(color: const Color(0xFFFF6B00).withValues(alpha: 0.4)),
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
@@ -2300,8 +2499,7 @@ class _SupersetBadge extends StatelessWidget {
     for (int i = 0; i <= currentIndex; i++) {
       if (exercises[i].supersetGroup == group) pos++;
     }
-    final total =
-        exercises.where((e) => e.supersetGroup == group).length;
+    final total = exercises.where((e) => e.supersetGroup == group).length;
 
     const colors = [
       AppColors.success,
@@ -2423,6 +2621,7 @@ class _RestScreen extends StatelessWidget {
   final ValueChanged<int> onAdjust;
   final String? nextExerciseName;
   final String? nextExerciseGifUrl;
+
   /// Empirical average rest duration from `performed_at` history (seconds).
   final int? avgRestSeconds;
 
@@ -2444,9 +2643,8 @@ class _RestScreen extends StatelessWidget {
     final timeStr =
         '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     final done = targetSeconds > 0 && seconds >= targetSeconds;
-    final progress = targetSeconds > 0
-        ? (seconds / targetSeconds).clamp(0.0, 1.0)
-        : 0.0;
+    final progress =
+        targetSeconds > 0 ? (seconds / targetSeconds).clamp(0.0, 1.0) : 0.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -2467,7 +2665,8 @@ class _RestScreen extends StatelessWidget {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.accent.withValues(alpha: done ? 0.45 : 0.18),
+                    color:
+                        AppColors.accent.withValues(alpha: done ? 0.45 : 0.18),
                     blurRadius: done ? 52 : 32,
                     spreadRadius: done ? 8 : 2,
                   ),
@@ -2482,7 +2681,9 @@ class _RestScreen extends StatelessWidget {
                       strokeWidth: 8,
                       backgroundColor: AppColors.surface,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        done ? AppColors.accent : AppColors.accent.withValues(alpha: 0.6),
+                        done
+                            ? AppColors.accent
+                            : AppColors.accent.withValues(alpha: 0.6),
                       ),
                     ),
                   ),
@@ -2500,7 +2701,9 @@ class _RestScreen extends StatelessWidget {
             const SizedBox(height: 16),
             if (targetSeconds > 0)
               Text(
-                done ? 'Можно продолжать!' : 'Цель: ${targetSeconds ~/ 60}:${(targetSeconds % 60).toString().padLeft(2, '0')}',
+                done
+                    ? 'Можно продолжать!'
+                    : 'Цель: ${targetSeconds ~/ 60}:${(targetSeconds % 60).toString().padLeft(2, '0')}',
                 style: TextStyle(
                   fontSize: 14,
                   color: done ? AppColors.accent : AppColors.textSecondary,
@@ -2516,7 +2719,8 @@ class _RestScreen extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'Обычно вы отдыхаете ${avgRestSeconds! ~/ 60}:${(avgRestSeconds! % 60).toString().padLeft(2, '0')}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary),
               ),
             ],
             const SizedBox(height: 24),
@@ -2532,7 +2736,8 @@ class _RestScreen extends StatelessWidget {
                     onPressed: onSkip,
                     child: const Text(
                       'Готов',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -2549,7 +2754,10 @@ class _RestScreen extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 nextExerciseName!,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary),
                 textAlign: TextAlign.center,
               ),
               if (nextExerciseGifUrl != null) ...[
@@ -2563,8 +2771,10 @@ class _RestScreen extends StatelessWidget {
                     width: 220,
                     fit: BoxFit.contain,
                     placeholder: (_, __) => const SizedBox(
-                      height: 140, width: 220,
-                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      height: 140,
+                      width: 220,
+                      child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                     ),
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
@@ -2625,7 +2835,8 @@ class _PlateCalcSheet extends StatelessWidget {
   static const _barKg = 20.0;
   static const _barLb = 45.0;
 
-  List<double> _calcPlates(double totalWeight, double bar, List<double> plates) {
+  List<double> _calcPlates(
+      double totalWeight, double bar, List<double> plates) {
     final perSide = (totalWeight - bar) / 2;
     if (perSide <= 0) return [];
     double rem = perSide;
@@ -2646,70 +2857,77 @@ class _PlateCalcSheet extends StatelessWidget {
     final unit = useKg ? 'кг' : 'лб';
     final display = useKg ? weightKg : weightKg * 2.20462;
     final perSide = _calcPlates(display, bar, plates);
-    final displayStr = display % 1 == 0 ? display.toInt().toString() : display.toStringAsFixed(1);
+    final displayStr = display % 1 == 0
+        ? display.toInt().toString()
+        : display.toStringAsFixed(1);
 
     return SafeArea(
       top: false,
       child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.fitness_center, color: AppColors.accent, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Блины для $displayStr $unit',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.fitness_center,
+                    color: AppColors.accent, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Блины для $displayStr $unit',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Гриф: $bar $unit · по одной стороне',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
-          ),
-          const SizedBox(height: 16),
-          if (perSide.isEmpty)
-            Text(
-              display <= bar
-                  ? 'Только гриф ($bar $unit)'
-                  : 'Не удалось подобрать блины',
-              style: const TextStyle(color: AppColors.textSecondary),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: perSide.map((p) {
-                final label = p % 1 == 0 ? p.toInt().toString() : p.toStringAsFixed(2);
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    '$label $unit',
-                    style: const TextStyle(
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                );
-              }).toList(),
+              ],
             ),
-        ],
+            const SizedBox(height: 4),
+            Text(
+              'Гриф: $bar $unit · по одной стороне',
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            if (perSide.isEmpty)
+              Text(
+                display <= bar
+                    ? 'Только гриф ($bar $unit)'
+                    : 'Не удалось подобрать блины',
+                style: const TextStyle(color: AppColors.textSecondary),
+              )
+            else
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: perSide.map((p) {
+                  final label =
+                      p % 1 == 0 ? p.toInt().toString() : p.toStringAsFixed(2);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.4)),
+                    ),
+                    child: Text(
+                      '$label $unit',
+                      style: const TextStyle(
+                        color: AppColors.accent,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
       ),
-    ),
     );
   }
 }
@@ -2734,8 +2952,8 @@ class _NeonProgressPainter extends CustomPainter {
       Paint()..color = background,
     );
     if (progress <= 0) return;
-    final filled = Rect.fromLTWH(
-        0, 0, size.width * progress.clamp(0.0, 1.0), size.height);
+    final filled =
+        Rect.fromLTWH(0, 0, size.width * progress.clamp(0.0, 1.0), size.height);
     canvas.drawRect(
       filled,
       Paint()

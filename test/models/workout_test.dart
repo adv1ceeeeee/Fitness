@@ -118,6 +118,50 @@ void main() {
     });
   });
 
+  group('Workout.currentCycleWeek', () {
+    test('returns first week before seven days have passed', () {
+      final w = Workout(
+        id: 'w-cycle-1',
+        userId: 'u-cycle',
+        name: 'Cycle',
+        days: [0],
+        cycleWeeks: 5,
+        createdAt: DateTime(2026, 5, 1, 18),
+        updatedAt: DateTime(2026, 5, 1, 18),
+      );
+
+      expect(w.currentCycleWeek(DateTime(2026, 5, 7)), 1);
+    });
+
+    test('returns one-based week number from creation date', () {
+      final w = Workout(
+        id: 'w-cycle-2',
+        userId: 'u-cycle',
+        name: 'Cycle',
+        days: [0],
+        cycleWeeks: 5,
+        createdAt: DateTime(2026, 5, 1, 18),
+        updatedAt: DateTime(2026, 5, 1, 18),
+      );
+
+      expect(w.currentCycleWeek(DateTime(2026, 5, 15)), 3);
+    });
+
+    test('clamps to cycle length after the program cycle ends', () {
+      final w = Workout(
+        id: 'w-cycle-3',
+        userId: 'u-cycle',
+        name: 'Cycle',
+        days: [0],
+        cycleWeeks: 5,
+        createdAt: DateTime(2026, 5, 1, 18),
+        updatedAt: DateTime(2026, 5, 1, 18),
+      );
+
+      expect(w.currentCycleWeek(DateTime(2026, 7, 1)), 5);
+    });
+  });
+
   group('Workout.toJson', () {
     test('round-trip preserves all data', () {
       final original = Workout(

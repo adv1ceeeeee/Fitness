@@ -16,7 +16,8 @@ import 'package:sportwai/services/local_storage.dart';
 import 'package:sportwai/services/notification_service.dart';
 import 'package:sportwai/services/profile_service.dart';
 import 'package:sportwai/services/workout_service.dart';
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:sportwai/widgets/avatar_widget.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_selector/file_selector.dart';
@@ -127,8 +128,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String _deloadWeekLabel() {
     final mon = _deloadWeekStart ?? _weekMonday();
     final sun = mon.add(const Duration(days: 6));
-    const months = ['янв','фев','мар','апр','май','июн',
-                    'июл','авг','сен','окт','ноя','дек'];
+    const months = [
+      'янв',
+      'фев',
+      'мар',
+      'апр',
+      'май',
+      'июн',
+      'июл',
+      'авг',
+      'сен',
+      'окт',
+      'ноя',
+      'дек'
+    ];
     if (mon.month == sun.month) {
       return '${mon.day}–${sun.day} ${months[mon.month - 1]}';
     }
@@ -166,11 +179,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (value && _deloadWeekStart == null) {
       final mon = _weekMonday();
       await prefs.setInt('deload_week_start', mon.millisecondsSinceEpoch);
-      if (mounted) setState(() { _deloadActive = value; _deloadWeekStart = mon; });
+      if (mounted) {
+        setState(() {
+          _deloadActive = value;
+          _deloadWeekStart = mon;
+        });
+      }
     } else {
       if (!value) {
         await prefs.remove('deload_week_start');
-        if (mounted) setState(() { _deloadActive = value; _deloadWeekStart = null; });
+        if (mounted) {
+          setState(() {
+            _deloadActive = value;
+            _deloadWeekStart = null;
+          });
+        }
       } else {
         if (mounted) setState(() => _deloadActive = value);
       }
@@ -194,7 +217,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) setState(() => _weighInEnabled = value);
     if (value) {
       await NotificationService.scheduleWeighInReminders(
-        _weighInWeekdays.toList(), hour: _weighInHour, minute: _weighInMinute,
+        _weighInWeekdays.toList(),
+        hour: _weighInHour,
+        minute: _weighInMinute,
       );
     } else {
       await NotificationService.cancelWeighInReminder();
@@ -210,10 +235,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('weigh_in_hour', picked.hour);
     await prefs.setInt('weigh_in_minute', picked.minute);
-    setState(() { _weighInHour = picked.hour; _weighInMinute = picked.minute; });
+    setState(() {
+      _weighInHour = picked.hour;
+      _weighInMinute = picked.minute;
+    });
     if (_weighInEnabled) {
       await NotificationService.scheduleWeighInReminders(
-        _weighInWeekdays.toList(), hour: picked.hour, minute: picked.minute,
+        _weighInWeekdays.toList(),
+        hour: picked.hour,
+        minute: picked.minute,
       );
     }
   }
@@ -221,7 +251,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _pickRestDayNotifTime() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(hour: _restDayNotifHour, minute: _restDayNotifMinute),
+      initialTime:
+          TimeOfDay(hour: _restDayNotifHour, minute: _restDayNotifMinute),
     );
     if (picked == null || !mounted) return;
     final prefs = await SharedPreferences.getInstance();
@@ -235,8 +266,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final workouts = await WorkoutService.getMyWorkouts();
     final restDays = workouts.expand((w) => w.restDays).toSet().toList();
     if (restDays.isNotEmpty) {
-      await NotificationService.scheduleRestDayReminders(
-          restDays, hour: picked.hour, minute: picked.minute);
+      await NotificationService.scheduleRestDayReminders(restDays,
+          hour: picked.hour, minute: picked.minute);
     }
   }
 
@@ -259,7 +290,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) setState(() => _weighInWeekdays = next);
     if (_weighInEnabled) {
       await NotificationService.scheduleWeighInReminders(
-        next.toList(), hour: _weighInHour, minute: _weighInMinute,
+        next.toList(),
+        hour: _weighInHour,
+        minute: _weighInMinute,
       );
     }
   }
@@ -273,7 +306,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (mounted) setState(() => _weighInWeekdays = next);
     if (_weighInEnabled) {
       await NotificationService.scheduleWeighInReminders(
-        next.toList(), hour: _weighInHour, minute: _weighInMinute,
+        next.toList(),
+        hour: _weighInHour,
+        minute: _weighInMinute,
       );
     }
   }
@@ -298,7 +333,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('notif_hour', picked.hour);
     await prefs.setInt('notif_minute', picked.minute);
-    if (mounted) setState(() { _notifHour = picked.hour; _notifMinute = picked.minute; });
+    if (mounted) {
+      setState(() {
+        _notifHour = picked.hour;
+        _notifMinute = picked.minute;
+      });
+    }
     final enabled = ref.read(notificationsEnabledProvider);
     if (enabled) {
       final workouts = await WorkoutService.getMyWorkouts();
@@ -342,7 +382,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Future<void> _loadBiometric() async {
     final available = await BiometricService.isAvailable();
     final enabled = await BiometricService.isEnabled();
-    if (mounted) setState(() { _biometricAvailable = available; _biometricEnabled = enabled; });
+    if (mounted) {
+      setState(() {
+        _biometricAvailable = available;
+        _biometricEnabled = enabled;
+      });
+    }
   }
 
   Future<void> _toggleBiometric(bool value) async {
@@ -487,7 +532,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   String get _displayName {
     final p = _profile;
     if (p == null) return AuthService.currentUser?.email ?? 'Пользователь';
-    final parts = [p.firstName, p.lastName].where((s) => s != null && s.isNotEmpty);
+    final parts =
+        [p.firstName, p.lastName].where((s) => s != null && s.isNotEmpty);
     if (parts.isNotEmpty) return parts.join(' ');
     return p.nickname ?? AuthService.currentUser?.email ?? 'Пользователь';
   }
@@ -567,7 +613,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (mounted) router.go('/');
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Не удалось удалить аккаунт. Попробуйте позже.')),
+        const SnackBar(
+            content: Text('Не удалось удалить аккаунт. Попробуйте позже.')),
       );
     }
   }
@@ -638,7 +685,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
+          padding: EdgeInsets.fromLTRB(
+              24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -754,7 +802,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   _InfoRow(label: 'Город', value: _profile?.city),
                   _InfoRow(label: 'Email', value: _profile?.email),
-                  _InfoRow(label: 'Телефон', value: _profile?.phone, last: true),
+                  _InfoRow(
+                      label: 'Телефон', value: _profile?.phone, last: true),
                 ],
               ),
               if (_profile == null)
@@ -769,12 +818,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(height: 24),
 
               // Статистика
-              const _SectionTitle('Статистика'),
-              _StatCard(label: 'Тренировок всего', value: '$_totalWorkouts'),
-              _StatCard(label: 'За последний год', value: '$_yearWorkouts'),
-              _StatCard(label: 'За последний месяц', value: '$_monthWorkouts'),
-              _StatCard(label: 'За последнюю неделю', value: '$_weekWorkouts'),
-              _StatCard(label: 'Лучший стрик', value: '$_bestStreak дней'),
+              _ExpandableProfileSection(
+                title: 'Статистика',
+                children: [
+                  _StatCard(
+                      label: 'Тренировок всего', value: '$_totalWorkouts'),
+                  _StatCard(label: 'За последний год', value: '$_yearWorkouts'),
+                  _StatCard(
+                      label: 'За последний месяц', value: '$_monthWorkouts'),
+                  _StatCard(
+                      label: 'За последнюю неделю', value: '$_weekWorkouts'),
+                  _StatCard(label: 'Лучший стрик', value: '$_bestStreak дней'),
+                ],
+              ),
               const SizedBox(height: 24),
 
               // Настройки
@@ -820,8 +876,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ChoiceChip(
                             label: const Text('фунты'),
                             selected: !useKg,
-                            onSelected: (_) =>
-                                ref.read(useKgProvider.notifier).setUseKg(false),
+                            onSelected: (_) => ref
+                                .read(useKgProvider.notifier)
+                                .setUseKg(false),
                           ),
                         ],
                       );
@@ -844,8 +901,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ChoiceChip(
                             label: const Text('дюймы'),
                             selected: !useCm,
-                            onSelected: (_) =>
-                                ref.read(useCmProvider.notifier).setUseCm(false),
+                            onSelected: (_) => ref
+                                .read(useCmProvider.notifier)
+                                .setUseCm(false),
                           ),
                         ],
                       );
@@ -856,10 +914,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     subtitle: 'Минимальный шаг при добавлении веса',
                     last: true,
                     trailing: Builder(builder: (context) {
-                      final inc   = ref.watch(dumbbellIncrementProvider);
+                      final inc = ref.watch(dumbbellIncrementProvider);
                       final useKg = ref.watch(useKgProvider);
-                      final opts  = _dumbbellOptions(useKg);
-                      final cur   = opts.firstWhere(
+                      final opts = _dumbbellOptions(useKg);
+                      final cur = opts.firstWhere(
                         (o) => (o.kg - inc).abs() < 0.01,
                         orElse: () => opts.first,
                       );
@@ -919,13 +977,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           borderRadius: BorderRadius.circular(12)),
                       itemBuilder: (_) => [
                         const PopupMenuItem(value: 0, child: Text('Не задана')),
-                        ...List.generate(7, (i) => PopupMenuItem(
-                          value: i + 1,
-                          child: Text('${i + 1}'),
-                        )),
+                        ...List.generate(
+                            7,
+                            (i) => PopupMenuItem(
+                                  value: i + 1,
+                                  child: Text('${i + 1}'),
+                                )),
                       ],
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: AppColors.accent.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
@@ -934,7 +995,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              _weeklyWorkoutGoal == 0 ? 'Не задана' : '$_weeklyWorkoutGoal',
+                              _weeklyWorkoutGoal == 0
+                                  ? 'Не задана'
+                                  : '$_weeklyWorkoutGoal',
                               style: const TextStyle(
                                 color: AppColors.accent,
                                 fontWeight: FontWeight.w600,
@@ -964,7 +1027,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text('Деload-неделя (−40% веса)',
-                                        style: TextStyle(color: AppColors.textPrimary)),
+                                        style: TextStyle(
+                                            color: AppColors.textPrimary)),
                                     if (_deloadActive)
                                       GestureDetector(
                                         onTap: _pickDeloadWeek,
@@ -998,9 +1062,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 final notifEnabled = ref.watch(notificationsEnabledProvider);
                 final h = _notifHour.toString().padLeft(2, '0');
                 final m = _notifMinute.toString().padLeft(2, '0');
-                final modeLabel = _notifMode == 'fixed'
-                    ? 'В заданное время'
-                    : 'До начала';
+                final modeLabel =
+                    _notifMode == 'fixed' ? 'В заданное время' : 'До начала';
                 return _SettingsGroup(
                   title: 'Уведомления',
                   rows: [
@@ -1124,7 +1187,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD4A454).withValues(alpha: 0.15),
+                          color:
+                              const Color(0xFFD4A454).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
@@ -1172,8 +1236,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   onTap: _toggleWeighInEveryDay,
                                   child: Container(
                                     width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 8),
+                                    padding:
+                                        const EdgeInsets.symmetric(vertical: 8),
                                     decoration: BoxDecoration(
                                       color: _weighInWeekdays.length == 7
                                           ? AppColors.accent
@@ -1260,14 +1324,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ),
                     ],
-                      _SettingsRow(
-                        label: 'Итог недели (воскресенье)',
-                        last: true,
-                        trailing: Switch(
-                          value: _weeklySummaryEnabled,
-                          onChanged: _toggleWeeklySummary,
-                        ),
+                    _SettingsRow(
+                      label: 'Итог недели (воскресенье)',
+                      last: true,
+                      trailing: Switch(
+                        value: _weeklySummaryEnabled,
+                        onChanged: _toggleWeeklySummary,
                       ),
+                    ),
                   ],
                 );
               }),
@@ -1387,8 +1451,7 @@ class _SectionHeader extends StatelessWidget {
               label: const Text('Изменить'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.accent,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               ),
             ),
         ],
@@ -1455,8 +1518,7 @@ class _InfoRow extends StatelessWidget {
             ],
           ),
         ),
-        if (!last)
-          const Divider(height: 1, indent: 16, endIndent: 16),
+        if (!last) const Divider(height: 1, indent: 16, endIndent: 16),
       ],
     );
   }
@@ -1479,6 +1541,69 @@ class _SectionTitle extends StatelessWidget {
           color: AppColors.textPrimary,
         ),
       ),
+    );
+  }
+}
+
+class _ExpandableProfileSection extends StatefulWidget {
+  final String title;
+  final List<Widget> children;
+
+  const _ExpandableProfileSection({
+    required this.title,
+    required this.children,
+  });
+
+  @override
+  State<_ExpandableProfileSection> createState() =>
+      _ExpandableProfileSectionState();
+}
+
+class _ExpandableProfileSectionState extends State<_ExpandableProfileSection> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: Column(children: widget.children),
+          secondChild: const SizedBox.shrink(),
+          crossFadeState:
+              _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          duration: const Duration(milliseconds: 160),
+        ),
+      ],
     );
   }
 }
@@ -1534,7 +1659,8 @@ class _SettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: subtitle != null ? 10 : 0),
+      padding: EdgeInsets.symmetric(
+          horizontal: 16, vertical: subtitle != null ? 10 : 0),
       child: subtitle != null
           ? Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1575,12 +1701,8 @@ class _SettingsRow extends StatelessWidget {
 
     return Column(
       children: [
-        if (onTap != null)
-          InkWell(onTap: onTap, child: content)
-        else
-          content,
-        if (!last)
-          const Divider(height: 1, indent: 16, endIndent: 16),
+        if (onTap != null) InkWell(onTap: onTap, child: content) else content,
+        if (!last) const Divider(height: 1, indent: 16, endIndent: 16),
       ],
     );
   }
@@ -1605,7 +1727,8 @@ class _LevelBadge extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: title.color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
@@ -1674,33 +1797,65 @@ class _LevelBadge extends StatelessWidget {
   }
 }
 
-class _SettingsGroup extends StatelessWidget {
+class _SettingsGroup extends StatefulWidget {
   final String title;
   final List<Widget> rows;
 
   const _SettingsGroup({required this.title, required this.rows});
 
   @override
+  State<_SettingsGroup> createState() => _SettingsGroupState();
+}
+
+class _SettingsGroupState extends State<_SettingsGroup> {
+  bool _expanded = true;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
-              letterSpacing: 0.8,
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  child: const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: AppColors.textSecondary,
+                    size: 18,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        Material(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(12),
-          child: Column(children: rows),
+        AnimatedCrossFade(
+          firstChild: Material(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            child: Column(children: widget.rows),
+          ),
+          secondChild: const SizedBox.shrink(),
+          crossFadeState:
+              _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          duration: const Duration(milliseconds: 160),
         ),
         const SizedBox(height: 16),
       ],
@@ -1764,6 +1919,7 @@ class _ExportBtn extends StatelessWidget {
 
 class _IncrementOption {
   final String label;
+
   /// Value always stored in kg.
   final double kg;
   const _IncrementOption(this.label, this.kg);
@@ -1775,17 +1931,17 @@ List<_IncrementOption> _dumbbellOptions(bool useKg) {
   if (useKg) {
     return const [
       _IncrementOption('0.5 кг', 0.5),
-      _IncrementOption('1 кг',   1.0),
-      _IncrementOption('2 кг',   2.0),
+      _IncrementOption('1 кг', 1.0),
+      _IncrementOption('2 кг', 2.0),
       _IncrementOption('2.5 кг', 2.5),
-      _IncrementOption('5 кг',   5.0),
+      _IncrementOption('5 кг', 5.0),
     ];
   }
   // lbs options: 1.25 / 2.5 / 5 / 10 lbs, stored as kg (1 lb = 0.453592 kg)
   return const [
-    _IncrementOption('1.25 lbs', 0.567),   // 1.25 × 0.453592
-    _IncrementOption('2.5 lbs',  1.134),   // 2.5  × 0.453592
-    _IncrementOption('5 lbs',    2.268),   // 5    × 0.453592
-    _IncrementOption('10 lbs',   4.536),   // 10   × 0.453592
+    _IncrementOption('1.25 lbs', 0.567), // 1.25 × 0.453592
+    _IncrementOption('2.5 lbs', 1.134), // 2.5  × 0.453592
+    _IncrementOption('5 lbs', 2.268), // 5    × 0.453592
+    _IncrementOption('10 lbs', 4.536), // 10   × 0.453592
   ];
 }

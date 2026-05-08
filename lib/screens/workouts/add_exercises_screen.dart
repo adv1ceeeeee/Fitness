@@ -18,10 +18,13 @@ import 'package:sportwai/services/workout_service.dart';
 
 class AddExercisesScreen extends StatefulWidget {
   final String workoutId;
+
   /// IDs of sections that come after this one (empty = single-section program).
   final List<String> pendingSectionIds;
+
   /// 0-based index of the current section (for display).
   final int sectionIndex;
+
   /// Total number of sections in the program.
   final int totalSections;
 
@@ -39,7 +42,13 @@ class AddExercisesScreen extends StatefulWidget {
 
 // Desired category display order
 const _categoryOrder = [
-  'Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио', 'Пресс',
+  'Грудь',
+  'Спина',
+  'Плечи',
+  'Руки',
+  'Ноги',
+  'Кардио',
+  'Пресс',
 ];
 
 // Category key → display name (in chip order)
@@ -55,7 +64,6 @@ const _categoryChips = [
 
 enum ExerciseSortMode { alphabetical, difficulty, popularity, userResults }
 
-
 class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Workout? _workout;
   List<WorkoutExercise> _programExercises = [];
@@ -68,16 +76,23 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String? _openCategory; // currently pinned/open category (single-expand)
   int? _selectedDay; // currently active day context for adding exercises
   // ── Filter & sort ──
-  String? _selectedCategoryKey; // 'chest', 'back', etc. (derived from _openCategory)
+  String?
+      _selectedCategoryKey; // 'chest', 'back', etc. (derived from _openCategory)
   String? _selectedMovementType; // 'press', 'row', etc.
-  bool _showMovementFilter = false; // movement chips visible inside expanded category
+  bool _showMovementFilter =
+      false; // movement chips visible inside expanded category
   bool _showCategorySearch = false; // search field inside expanded category
   String _categorySearchQuery = ''; // search query inside expanded category
-  final TextEditingController _categorySearchController = TextEditingController();
+  final TextEditingController _categorySearchController =
+      TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   ExerciseSortMode _sortMode = ExerciseSortMode.alphabetical;
   Map<String, double> _userBest1RMs = {};
   Map<String, int> _popularity = {};
+  List<WorkoutExercise> _copiedProgramExercises = [];
+  WorkoutExercise? _copiedExercise;
+  bool _pastingProgram = false;
+  bool _pastingExercise = false;
 
   static const _dayLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -89,6 +104,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         .where((e) => e.day == null || e.day == _selectedDay)
         .toList();
   }
+
+  int get _currentCycleWeek => _workout?.currentCycleWeek() ?? 1;
 
   @override
   void initState() {
@@ -145,19 +162,24 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   List<Exercise> get _filteredFlat {
-    var list = _favoritesOnly ? _allExercises.where((e) => e.isFavorite).toList() : _allExercises;
+    var list = _favoritesOnly
+        ? _allExercises.where((e) => e.isFavorite).toList()
+        : _allExercises;
     if (_searchQuery.isNotEmpty) {
       final q = _searchQuery.toLowerCase();
-      list = list.where((e) =>
-        e.name.toLowerCase().contains(q) ||
-        (e.nameRu?.toLowerCase().contains(q) ?? false)
-      ).toList();
+      list = list
+          .where((e) =>
+              e.name.toLowerCase().contains(q) ||
+              (e.nameRu?.toLowerCase().contains(q) ?? false))
+          .toList();
     }
     if (_selectedCategoryKey != null) {
       list = list.where((e) => e.category == _selectedCategoryKey).toList();
     }
     if (_selectedMovementType != null) {
-      list = list.where((e) => e.effectiveMovementType == _selectedMovementType).toList();
+      list = list
+          .where((e) => e.effectiveMovementType == _selectedMovementType)
+          .toList();
     }
     return _sorted(list);
   }
@@ -171,10 +193,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         copy.sort((a, b) => a.difficultyOrder.compareTo(b.difficultyOrder));
       case ExerciseSortMode.popularity:
         copy.sort((a, b) =>
-          (_popularity[b.id] ?? 0).compareTo(_popularity[a.id] ?? 0));
+            (_popularity[b.id] ?? 0).compareTo(_popularity[a.id] ?? 0));
       case ExerciseSortMode.userResults:
         copy.sort((a, b) =>
-          (_userBest1RMs[b.id] ?? 0).compareTo(_userBest1RMs[a.id] ?? 0));
+            (_userBest1RMs[b.id] ?? 0).compareTo(_userBest1RMs[a.id] ?? 0));
     }
     return copy;
   }
@@ -193,7 +215,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
   /// Grouped by category when no search active.
   List<MapEntry<String, List<Exercise>>> get _groupedExercises {
-    final source = _favoritesOnly ? _allExercises.where((e) => e.isFavorite).toList() : _allExercises;
+    final source = _favoritesOnly
+        ? _allExercises.where((e) => e.isFavorite).toList()
+        : _allExercises;
     final groups = <String, List<Exercise>>{};
     for (final ex in source) {
       final cat = Exercise.categoryDisplayName(ex.category);
@@ -253,6 +277,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String? _supersetLabel(int index) {
     final g = _programExercises[index].supersetGroup;
     if (g == null) return null;
+    if (_programExercises.where((e) => e.supersetGroup == g).length < 2) {
+      return null;
+    }
     // Collect unique groups in order of first appearance
     final seenGroups = <int>[];
     for (final we in _programExercises) {
@@ -260,8 +287,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         seenGroups.add(we.supersetGroup!);
       }
     }
-    final groupLetter = String.fromCharCode(
-        'A'.codeUnitAt(0) + seenGroups.indexOf(g));
+    final groupLetter =
+        String.fromCharCode('A'.codeUnitAt(0) + seenGroups.indexOf(g));
     // Count position within the group up to this index
     int pos = 0;
     for (int i = 0; i <= index; i++) {
@@ -274,22 +301,26 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   Future<void> _toggleSuperset(int i) async {
     final a = _programExercises[i];
     final b = _programExercises[i + 1];
-    final linked = a.supersetGroup != null && a.supersetGroup == b.supersetGroup;
+    final linked =
+        a.supersetGroup != null && a.supersetGroup == b.supersetGroup;
 
     if (linked) {
-      // Unlink: find next available group for b if more than 2 in group
-      final groupMembers = _programExercises
-          .where((e) => e.supersetGroup == a.supersetGroup)
+      final group = a.supersetGroup;
+      final remaining = _programExercises
+          .where(
+              (e) => e.supersetGroup == group && e.id != a.id && e.id != b.id)
           .toList();
-      if (groupMembers.length == 2) {
-        // Just remove group entirely for both
-        await Future.wait([
-          WorkoutService.updateWorkoutExercise(a.id, supersetGroup: null),
-          WorkoutService.updateWorkoutExercise(b.id, supersetGroup: null),
-        ]);
-      } else {
-        // Remove only b from the group
-        await WorkoutService.updateWorkoutExercise(b.id, supersetGroup: null);
+      await Future.wait([
+        WorkoutService.updateWorkoutExercise(a.id, supersetGroup: null),
+        WorkoutService.updateWorkoutExercise(b.id, supersetGroup: null),
+        if (remaining.length == 1)
+          WorkoutService.updateWorkoutExercise(
+            remaining.first.id,
+            supersetGroup: null,
+          ),
+      ]);
+      if (remaining.length == 1) {
+        _showMessage('Суперсет развязан');
       }
     } else {
       // Link: both get the same group ID.
@@ -314,7 +345,6 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     await _load();
   }
 
-
   Future<void> _toggleDropSet(int i) async {
     final we = _programExercises[i];
     await WorkoutService.updateWorkoutExercise(
@@ -322,6 +352,156 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       isDropSet: !we.isDropSet,
     );
     await _load();
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  int? _targetDayForPaste() {
+    if (_selectedDay != null) return _selectedDay;
+    final days = _workout?.days ?? [];
+    if (days.length == 1) return days.first;
+    if (days.isEmpty) return null;
+    return null;
+  }
+
+  void _copySelectedDayProgram() {
+    final day = _selectedDay;
+    if (day == null) {
+      _showMessage('Выберите день, который нужно скопировать');
+      return;
+    }
+    final source = _programExercises.where((e) => e.day == day).toList();
+    if (source.isEmpty) {
+      _showMessage('В этом дне пока нет упражнений');
+      return;
+    }
+    setState(() {
+      _copiedProgramExercises = List<WorkoutExercise>.from(source);
+    });
+    _showMessage('Программа на ${_dayLabels[day]} скопирована');
+  }
+
+  Future<void> _pasteCopiedDayProgram() async {
+    if (_copiedProgramExercises.isEmpty) {
+      _showMessage('Сначала скопируйте программу дня');
+      return;
+    }
+    final targetDay = _targetDayForPaste();
+    if ((_workout?.days.length ?? 0) > 1 && targetDay == null) {
+      _showMessage('Выберите день, куда вставить программу');
+      return;
+    }
+
+    final existingExerciseIds = _programExercises
+        .where((e) => e.day == targetDay || e.day == null)
+        .map((e) => e.exerciseId)
+        .toSet();
+    final sourceExercises = _copiedProgramExercises
+        .where((e) => existingExerciseIds.add(e.exerciseId))
+        .toList();
+    if (sourceExercises.isEmpty) {
+      _showMessage('Все упражнения уже есть в выбранном дне');
+      return;
+    }
+
+    setState(() => _pastingProgram = true);
+    final groupMap = <int, int>{};
+    var nextGroup = _programExercises
+            .map((e) => e.supersetGroup ?? 0)
+            .fold<int>(0, (a, b) => a > b ? a : b) +
+        1;
+
+    try {
+      for (final we in sourceExercises) {
+        final sourceGroup = we.supersetGroup;
+        int? pastedGroup;
+        if (sourceGroup != null) {
+          pastedGroup = groupMap.putIfAbsent(sourceGroup, () => nextGroup++);
+        }
+        await WorkoutService.addExerciseToWorkout(
+          widget.workoutId,
+          we.exerciseId,
+          sets: we.sets,
+          repsRange: we.repsRange,
+          restSeconds: we.restSeconds,
+          targetWeight: we.targetWeight,
+          weeklyTargetWeights: we.weeklyTargetWeights,
+          dropSetWeeklyTargetWeights: we.dropSetWeeklyTargetWeights,
+          targetRpe: we.targetRpe,
+          durationMinutes: we.durationMinutes,
+          supersetGroup: pastedGroup,
+          isDropSet: we.isDropSet,
+          day: targetDay,
+        );
+      }
+      await _load();
+      if (mounted && targetDay != null) {
+        final skipped = _copiedProgramExercises.length - sourceExercises.length;
+        _showMessage(skipped > 0
+            ? 'Вставлено: ${sourceExercises.length}, уже были: $skipped'
+            : 'Вставлено в ${_dayLabels[targetDay]}');
+      }
+    } catch (_) {
+      _showMessage('Не удалось вставить программу');
+    } finally {
+      if (mounted) setState(() => _pastingProgram = false);
+    }
+  }
+
+  void _copyWorkoutExercise(WorkoutExercise we) {
+    setState(() => _copiedExercise = we);
+    _showMessage('Упражнение скопировано');
+  }
+
+  Future<void> _pasteCopiedExercise() async {
+    final source = _copiedExercise;
+    if (source == null) {
+      _showMessage('Сначала скопируйте упражнение');
+      return;
+    }
+    final targetDay = _targetDayForPaste();
+    if ((_workout?.days.length ?? 0) > 1 && targetDay == null) {
+      _showMessage('Выберите день, куда вставить упражнение');
+      return;
+    }
+    final alreadyExists = _programExercises.any(
+      (e) =>
+          e.exerciseId == source.exerciseId &&
+          (e.day == targetDay || e.day == null),
+    );
+    if (alreadyExists) {
+      _showMessage('Это упражнение уже есть в выбранном дне');
+      return;
+    }
+
+    setState(() => _pastingExercise = true);
+    try {
+      await WorkoutService.addExerciseToWorkout(
+        widget.workoutId,
+        source.exerciseId,
+        sets: source.sets,
+        repsRange: source.repsRange,
+        restSeconds: source.restSeconds,
+        targetWeight: source.targetWeight,
+        weeklyTargetWeights: source.weeklyTargetWeights,
+        dropSetWeeklyTargetWeights: source.dropSetWeeklyTargetWeights,
+        targetRpe: source.targetRpe,
+        durationMinutes: source.durationMinutes,
+        isDropSet: source.isDropSet,
+        day: targetDay,
+      );
+      await _load();
+      _showMessage('Упражнение вставлено');
+    } catch (_) {
+      _showMessage('Не удалось вставить упражнение');
+    } finally {
+      if (mounted) setState(() => _pastingExercise = false);
+    }
   }
 
   void _showEditWorkoutDialog() {
@@ -384,8 +564,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       checkmarkColor: Colors.black,
                       labelStyle: TextStyle(
                         color: sel ? Colors.black : AppColors.textPrimary,
-                        fontWeight:
-                            sel ? FontWeight.w600 : FontWeight.w400,
+                        fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                       ),
                       backgroundColor: AppColors.surface,
                     );
@@ -396,7 +575,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Длительность цикла',
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        style: TextStyle(
+                            color: AppColors.textSecondary, fontSize: 12)),
                     GestureDetector(
                       onTap: () async {
                         final ctrl = TextEditingController(text: '$cycleWeeks');
@@ -410,15 +590,21 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                               controller: ctrl,
                               keyboardType: TextInputType.number,
                               autofocus: true,
-                              style: const TextStyle(color: AppColors.textPrimary),
-                              decoration: const InputDecoration(suffixText: 'нед.'),
+                              style:
+                                  const TextStyle(color: AppColors.textPrimary),
+                              decoration:
+                                  const InputDecoration(suffixText: 'нед.'),
                             ),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+                              TextButton(
+                                  onPressed: () => Navigator.pop(dctx),
+                                  child: const Text('Отмена')),
                               TextButton(
                                 onPressed: () {
                                   final v = int.tryParse(ctrl.text.trim());
-                                  if (v != null && v >= 1) Navigator.pop(dctx, v);
+                                  if (v != null && v >= 1) {
+                                    Navigator.pop(dctx, v);
+                                  }
                                 },
                                 child: const Text('OK'),
                               ),
@@ -426,10 +612,13 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                           ),
                         );
                         ctrl.dispose();
-                        if (result != null) setDialogState(() => cycleWeeks = result);
+                        if (result != null) {
+                          setDialogState(() => cycleWeeks = result);
+                        }
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: AppColors.accent.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
@@ -464,7 +653,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         max: 16,
                         divisions: 12,
                         label: '$cycleWeeks нед.',
-                        onChanged: (v) => setDialogState(() => cycleWeeks = v.round()),
+                        onChanged: (v) =>
+                            setDialogState(() => cycleWeeks = v.round()),
                       ),
                     ),
                   ),
@@ -474,8 +664,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('4 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                      Text('16 нед.', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                      Text('4 нед.',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textSecondary)),
+                      Text('16 нед.',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.textSecondary)),
                     ],
                   ),
                 ),
@@ -499,14 +693,19 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.all_inclusive, size: 16,
-                            color: noCycle ? AppColors.accent : AppColors.textSecondary),
+                        Icon(Icons.all_inclusive,
+                            size: 16,
+                            color: noCycle
+                                ? AppColors.accent
+                                : AppColors.textSecondary),
                         const SizedBox(width: 6),
                         Text('Без цикла',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: noCycle ? AppColors.accent : AppColors.textSecondary,
+                              color: noCycle
+                                  ? AppColors.accent
+                                  : AppColors.textSecondary,
                             )),
                       ],
                     ),
@@ -518,7 +717,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Разминка',
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        style: TextStyle(
+                            color: AppColors.textSecondary, fontSize: 12)),
                     _MinuteStepper(
                       value: warmupMinutes,
                       onChanged: (v) => setDialogState(() => warmupMinutes = v),
@@ -531,10 +731,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Заминка',
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                        style: TextStyle(
+                            color: AppColors.textSecondary, fontSize: 12)),
                     _MinuteStepper(
                       value: cooldownMinutes,
-                      onChanged: (v) => setDialogState(() => cooldownMinutes = v),
+                      onChanged: (v) =>
+                          setDialogState(() => cooldownMinutes = v),
                     ),
                   ],
                 ),
@@ -580,21 +782,47 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     required String initialRepsRange,
     required int initialRest,
     required double? initialTargetWeight,
+    Map<int, double> initialWeeklyTargetWeights = const {},
+    Map<int, double> initialDropSetWeeklyTargetWeights = const {},
     required int initialDurationMinutes,
     required Future<void> Function(
-            int sets, String repsRange, int rest, double? tw, int? durationMinutes)
+            int sets,
+            String repsRange,
+            int rest,
+            double? tw,
+            int? durationMinutes,
+            Map<int, double> weeklyTargetWeights,
+            Map<int, double> dropSetWeeklyTargetWeights)
         onSave,
     required String saveLabel,
     String? gifUrl,
     String? description,
+    bool showInfoTabs = false,
+    int cycleWeeks = 0,
+    int currentWeek = 1,
+    bool isDropSet = false,
   }) {
     int sets = initialSets;
     int restSeconds = initialRest;
     double? targetWeight = initialTargetWeight;
     int durationMinutes = initialDurationMinutes;
+    int activeTab = showInfoTabs ? 0 : 1;
+    final totalWeeks = cycleWeeks <= 0 ? 1 : cycleWeeks;
+    final safeCurrentWeek = currentWeek.clamp(1, totalWeeks).toInt();
+    int selectedWeek = safeCurrentWeek;
+    final weeklyTargetWeights =
+        Map<int, double>.from(initialWeeklyTargetWeights);
+    final dropSetWeeklyTargetWeights =
+        Map<int, double>.from(initialDropSetWeeklyTargetWeights);
     final repsController = TextEditingController(text: initialRepsRange);
     final weightController = TextEditingController(
         text: targetWeight != null ? targetWeight.toString() : '');
+    final weekWeightController = TextEditingController(
+      text: weeklyTargetWeights[selectedWeek]?.toString() ?? '',
+    );
+    final dropSetWeekWeightController = TextEditingController(
+      text: dropSetWeeklyTargetWeights[selectedWeek]?.toString() ?? '',
+    );
 
     showModalBottomSheet(
       context: context,
@@ -616,10 +844,13 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   controller: ctrl,
                   keyboardType: TextInputType.number,
                   autofocus: true,
-                  decoration: const InputDecoration(suffixText: 'сек.', hintText: 'Например: 150'),
+                  decoration: const InputDecoration(
+                      suffixText: 'сек.', hintText: 'Например: 150'),
                 ),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Отмена')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(dctx),
+                      child: const Text('Отмена')),
                   TextButton(
                     onPressed: () {
                       final v = int.tryParse(ctrl.text.trim());
@@ -632,6 +863,55 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             );
             ctrl.dispose();
             if (result != null) setModalState(() => restSeconds = result);
+          }
+
+          double? effectiveWeekWeight(int week) {
+            final direct = weeklyTargetWeights[week];
+            if (direct != null) return direct;
+            for (var previousWeek = week - 1;
+                previousWeek >= 1;
+                previousWeek--) {
+              final previous = weeklyTargetWeights[previousWeek];
+              if (previous != null) return previous;
+            }
+            return targetWeight;
+          }
+
+          double? effectiveDropSetWeekWeight(int week) {
+            final direct = dropSetWeeklyTargetWeights[week];
+            if (direct != null) return direct;
+            for (var previousWeek = week - 1;
+                previousWeek >= 1;
+                previousWeek--) {
+              final previous = dropSetWeeklyTargetWeights[previousWeek];
+              if (previous != null) return previous;
+            }
+            final mainWeight = effectiveWeekWeight(week);
+            if (mainWeight == null) return null;
+            return mainWeight * 0.6;
+          }
+
+          void commitSelectedWeekWeight() {
+            final raw = weekWeightController.text.trim();
+            if (raw.isEmpty) {
+              weeklyTargetWeights.remove(selectedWeek);
+              return;
+            }
+            final parsed = double.tryParse(raw.replaceAll(',', '.'));
+            if (parsed == null) return;
+            weeklyTargetWeights[selectedWeek] = parsed;
+
+            if (isDropSet) {
+              final dropRaw = dropSetWeekWeightController.text.trim();
+              if (dropRaw.isEmpty) {
+                dropSetWeeklyTargetWeights.remove(selectedWeek);
+                return;
+              }
+              final dropParsed = double.tryParse(dropRaw.replaceAll(',', '.'));
+              if (dropParsed != null) {
+                dropSetWeeklyTargetWeights[selectedWeek] = dropParsed;
+              }
+            }
           }
 
           return Padding(
@@ -670,263 +950,482 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       ),
                     ],
                   ),
-                  if (gifUrl != null || (description != null && description.isNotEmpty)) ...[
+                  if (showInfoTabs) ...[
                     const SizedBox(height: 16),
-                    if (gifUrl != null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          cacheManager: AppImageCacheManager.instance,
-                          imageUrl: gifUrl,
-                          width: double.infinity,
-                          height: 260,
-                          fit: BoxFit.contain,
-                          placeholder: (_, __) => const SizedBox(height: 260),
-                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _SheetTabButton(
+                            label: 'Описание',
+                            selected: activeTab == 0,
+                            onTap: () => setModalState(() => activeTab = 0),
+                          ),
                         ),
-                      ),
-                    if (description != null && description.isNotEmpty) ...[
-                      if (gifUrl != null) const SizedBox(height: 12),
-                      Text(
-                        description,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          height: 1.45,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _SheetTabButton(
+                            label: 'Прогресс',
+                            selected: activeTab == 1,
+                            onTap: () => setModalState(() => activeTab = 1),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (!showInfoTabs || activeTab == 0) ...[
+                    if (gifUrl != null ||
+                        (description != null && description.isNotEmpty)) ...[
+                      const SizedBox(height: 16),
+                      if (gifUrl != null)
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedNetworkImage(
+                            cacheManager: AppImageCacheManager.instance,
+                            imageUrl: gifUrl,
+                            width: double.infinity,
+                            height: 260,
+                            fit: BoxFit.contain,
+                            placeholder: (_, __) => const SizedBox(height: 260),
+                            errorWidget: (_, __, ___) =>
+                                const SizedBox.shrink(),
+                          ),
+                        ),
+                      if (description != null && description.isNotEmpty) ...[
+                        if (gifUrl != null) const SizedBox(height: 12),
+                        Text(
+                          description,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ] else ...[
+                      const SizedBox(height: 24),
+                      const Center(
+                        child: Text(
+                          'Описание пока не добавлено',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ],
                   ],
-                  const SizedBox(height: 20),
-
-                  if (isCardio) ...[
-                    // ─── Кардио: только длительность ─────────────────────
-                    const Text('Длительность',
-                        style: TextStyle(color: AppColors.textSecondary)),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: Text(
-                        '$durationMinutes мин',
-                        style: const TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
+                  if (!showInfoTabs || activeTab == 1) ...[
+                    const SizedBox(height: 20),
+                    if (showInfoTabs && !isCardio) ...[
+                      const Text(
+                        'Прогресс за цикл программы',
+                        style: TextStyle(
                           color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    SliderTheme(
-                      data: SliderTheme.of(ctx).copyWith(
-                        activeTrackColor: AppColors.accent,
-                        inactiveTrackColor: AppColors.surface,
-                        thumbColor: AppColors.accent,
-                        overlayColor: AppColors.accent.withValues(alpha: 0.12),
-                      ),
-                      child: Slider(
-                        value: durationMinutes.clamp(5, 120).toDouble(),
-                        min: 5,
-                        max: 120,
-                        divisions: 23,
-                        label: '$durationMinutes мин',
-                        onChanged: (v) => setModalState(
-                            () => durationMinutes = (v / 5).round() * 5),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('5 мин',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary)),
-                          Text('120 мин',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary)),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    // ─── С отягощением: подходы/повторения/вес/отдых ─────
-
-                    // Подходы
-                    const Text('Подходы',
-                        style: TextStyle(color: AppColors.textSecondary)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        _NumberButton(
-                          label: '-',
-                          onTap: () {
-                            if (sets > 1) setModalState(() => sets--);
-                          },
+                      const SizedBox(height: 4),
+                      Text(
+                        'Сейчас идет неделя $safeCurrentWeek из $totalWeeks',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Text(
-                            '$sets',
-                            style: const TextStyle(
-                                fontSize: 24, color: AppColors.textPrimary),
-                          ),
-                        ),
-                        _NumberButton(
-                          label: '+',
-                          onTap: () => setModalState(() => sets++),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Повторения
-                    const Text('Повторения',
-                        style: TextStyle(color: AppColors.textSecondary)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: repsController,
-                      keyboardType: TextInputType.text,
-                      decoration: const InputDecoration(hintText: '8-12 или 5'),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Целевой вес
-                    const Text('Целевой вес (кг)',
-                        style: TextStyle(color: AppColors.textSecondary)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: weightController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      onChanged: (v) {
-                        targetWeight = double.tryParse(v.replaceAll(',', '.'));
-                      },
-                      decoration: const InputDecoration(hintText: 'Не обязательно'),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Отдых — слайдер
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Отдых',
-                            style: TextStyle(color: AppColors.textSecondary)),
-                        if (restSeconds > 120)
-                          Text('$restSeconds сек.',
-                              style: const TextStyle(
-                                  fontSize: 13, color: AppColors.textSecondary)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    GestureDetector(
-                      onDoubleTap: editRestManually,
-                      child: LayoutBuilder(
-                        builder: (lctx, constraints) {
-                          const sliderPadding = 24.0;
-                          const min = 0.0;
-                          const max = 120.0;
-                          final sliderVal = restSeconds.clamp(0, 120).toDouble();
-                          final trackWidth = constraints.maxWidth - sliderPadding * 2;
-                          final thumbX = sliderPadding + (sliderVal - min) / (max - min) * trackWidth;
-                          return Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.only(top: 28),
-                                child: SliderTheme(
-                                  data: SliderTheme.of(lctx).copyWith(
-                                    activeTrackColor: AppColors.accent,
-                                    inactiveTrackColor: AppColors.surface,
-                                    thumbColor: AppColors.accent,
-                                    overlayColor: AppColors.accent.withValues(alpha: 0.12),
-                                  ),
-                                  child: Slider(
-                                    value: sliderVal,
-                                    min: min,
-                                    max: max,
-                                    divisions: 24,
-                                    onChanged: (v) => setModalState(() => restSeconds = v.round()),
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                left: thumbX - 24,
-                                top: 0,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      ),
+                      const SizedBox(height: 8),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: List.generate(totalWeeks, (i) {
+                            final week = i + 1;
+                            final selected = selectedWeek == week;
+                            final current = safeCurrentWeek == week;
+                            final hasWeight =
+                                weeklyTargetWeights.containsKey(week);
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: GestureDetector(
+                                onTap: () {
+                                  setModalState(() {
+                                    selectedWeek = week;
+                                    weekWeightController.text =
+                                        weeklyTargetWeights[week]?.toString() ??
+                                            '';
+                                    dropSetWeekWeightController.text =
+                                        dropSetWeeklyTargetWeights[week]
+                                                ?.toString() ??
+                                            '';
+                                  });
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 11, vertical: 7),
                                   decoration: BoxDecoration(
-                                    color: AppColors.accent,
-                                    borderRadius: BorderRadius.circular(8),
+                                    color: selected
+                                        ? AppColors.accent
+                                            .withValues(alpha: 0.18)
+                                        : current
+                                            ? const Color(0xFFAB7FF8)
+                                                .withValues(alpha: 0.14)
+                                            : AppColors.surface,
+                                    borderRadius: BorderRadius.circular(9),
+                                    border: Border.all(
+                                      color: selected
+                                          ? AppColors.accent
+                                          : current
+                                              ? const Color(0xFFAB7FF8)
+                                              : hasWeight
+                                                  ? const Color(0xFFAB7FF8)
+                                                      .withValues(alpha: 0.55)
+                                                  : Colors.transparent,
+                                    ),
                                   ),
                                   child: Text(
-                                    '$restSeconds с',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                                    '$week',
+                                    style: TextStyle(
+                                      color: selected
+                                          ? AppColors.accent
+                                          : current
+                                              ? const Color(0xFFAB7FF8)
+                                              : AppColors.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
-                          );
+                            );
+                          }),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: weekWeightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: InputDecoration(
+                          labelText: isDropSet
+                              ? 'Основной вес на неделю $selectedWeek'
+                              : 'Вес на неделю $selectedWeek',
+                          suffixText: 'кг',
+                          hintText: effectiveWeekWeight(selectedWeek) != null
+                              ? effectiveWeekWeight(selectedWeek).toString()
+                              : 'Например: 50',
+                        ),
+                        onChanged: (v) {
+                          final parsed =
+                              double.tryParse(v.replaceAll(',', '.'));
+                          if (parsed == null) {
+                            weeklyTargetWeights.remove(selectedWeek);
+                          } else {
+                            weeklyTargetWeights[selectedWeek] = parsed;
+                          }
                         },
                       ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('0с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                          Text('120с', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                        ],
+                      if (isDropSet) ...[
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: dropSetWeekWeightController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: InputDecoration(
+                            labelText: 'Вес дроп-сета на неделю $selectedWeek',
+                            suffixText: 'кг',
+                            hintText:
+                                effectiveDropSetWeekWeight(selectedWeek) != null
+                                    ? effectiveDropSetWeekWeight(selectedWeek)
+                                        .toString()
+                                    : 'Например: 30',
+                          ),
+                          onChanged: (v) {
+                            final parsed =
+                                double.tryParse(v.replaceAll(',', '.'));
+                            if (parsed == null) {
+                              dropSetWeeklyTargetWeights.remove(selectedWeek);
+                            } else {
+                              dropSetWeeklyTargetWeights[selectedWeek] = parsed;
+                            }
+                          },
+                        ),
+                      ],
+                      if (!weeklyTargetWeights.containsKey(selectedWeek) &&
+                          effectiveWeekWeight(selectedWeek) != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          isDropSet
+                              ? 'Показываются предыдущие веса: ${effectiveWeekWeight(selectedWeek)} кг / ${effectiveDropSetWeekWeight(selectedWeek)} кг'
+                              : 'Показывается предыдущий вес: ${effectiveWeekWeight(selectedWeek)} кг',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                    ],
+                    if (isCardio) ...[
+                      // ─── Кардио: только длительность ─────────────────────
+                      const Text('Длительность',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: Text(
+                          '$durationMinutes мин',
+                          style: const TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 8),
+                      SliderTheme(
+                        data: SliderTheme.of(ctx).copyWith(
+                          activeTrackColor: AppColors.accent,
+                          inactiveTrackColor: AppColors.surface,
+                          thumbColor: AppColors.accent,
+                          overlayColor:
+                              AppColors.accent.withValues(alpha: 0.12),
+                        ),
+                        child: Slider(
+                          value: durationMinutes.clamp(5, 120).toDouble(),
+                          min: 5,
+                          max: 120,
+                          divisions: 23,
+                          label: '$durationMinutes мин',
+                          onChanged: (v) => setModalState(
+                              () => durationMinutes = (v / 5).round() * 5),
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('5 мин',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                            Text('120 мин',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      // ─── С отягощением: подходы/повторения/вес/отдых ─────
+
+                      // Подходы
+                      const Text('Подходы',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      const SizedBox(height: 8),
+                      Row(
                         children: [
-                          Icon(Icons.touch_app_outlined,
-                              size: 13,
-                              color: AppColors.textSecondary.withValues(alpha: 0.5)),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Дважды нажмите на слайдер для ввода вручную',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary.withValues(alpha: 0.5)),
+                          _NumberButton(
+                            label: '-',
+                            onTap: () {
+                              if (sets > 1) setModalState(() => sets--);
+                            },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Text(
+                              '$sets',
+                              style: const TextStyle(
+                                  fontSize: 24, color: AppColors.textPrimary),
+                            ),
+                          ),
+                          _NumberButton(
+                            label: '+',
+                            onTap: () => setModalState(() => sets++),
                           ),
                         ],
                       ),
+                      const SizedBox(height: 20),
+
+                      // Повторения
+                      const Text('Повторения',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: repsController,
+                        keyboardType: TextInputType.text,
+                        decoration:
+                            const InputDecoration(hintText: '8-12 или 5'),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Целевой вес
+                      const Text('Целевой вес (кг)',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: weightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        onChanged: (v) {
+                          targetWeight =
+                              double.tryParse(v.replaceAll(',', '.'));
+                        },
+                        decoration:
+                            const InputDecoration(hintText: 'Не обязательно'),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Отдых — слайдер
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Отдых',
+                              style: TextStyle(color: AppColors.textSecondary)),
+                          if (restSeconds > 120)
+                            Text('$restSeconds сек.',
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.textSecondary)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onDoubleTap: editRestManually,
+                        child: LayoutBuilder(
+                          builder: (lctx, constraints) {
+                            const sliderPadding = 24.0;
+                            const min = 0.0;
+                            const max = 120.0;
+                            final sliderVal =
+                                restSeconds.clamp(0, 120).toDouble();
+                            final trackWidth =
+                                constraints.maxWidth - sliderPadding * 2;
+                            final thumbX = sliderPadding +
+                                (sliderVal - min) / (max - min) * trackWidth;
+                            return Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 28),
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(lctx).copyWith(
+                                      activeTrackColor: AppColors.accent,
+                                      inactiveTrackColor: AppColors.surface,
+                                      thumbColor: AppColors.accent,
+                                      overlayColor: AppColors.accent
+                                          .withValues(alpha: 0.12),
+                                    ),
+                                    child: Slider(
+                                      value: sliderVal,
+                                      min: min,
+                                      max: max,
+                                      divisions: 24,
+                                      onChanged: (v) => setModalState(
+                                          () => restSeconds = v.round()),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  left: thumbX - 24,
+                                  top: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accent,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '$restSeconds с',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('0с',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                            Text('120с',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.touch_app_outlined,
+                                size: 13,
+                                color: AppColors.textSecondary
+                                    .withValues(alpha: 0.5)),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Дважды нажмите на слайдер для ввода вручную',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary
+                                      .withValues(alpha: 0.5)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          if (isCardio) {
+                            await onSave(
+                              1,
+                              '1',
+                              0,
+                              null,
+                              durationMinutes,
+                              const {},
+                              const {},
+                            );
+                          } else {
+                            if (showInfoTabs && !isCardio) {
+                              commitSelectedWeekWeight();
+                            }
+                            await onSave(
+                              sets,
+                              repsController.text.trim().isNotEmpty
+                                  ? repsController.text.trim()
+                                  : '8-12',
+                              restSeconds,
+                              targetWeight,
+                              null,
+                              weeklyTargetWeights,
+                              isDropSet ? dropSetWeeklyTargetWeights : const {},
+                            );
+                          }
+                          _load();
+                        },
+                        child: Text(saveLabel),
+                      ),
                     ),
                   ],
-                  const SizedBox(height: 24),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        if (isCardio) {
-                          await onSave(1, '1', 0, null, durationMinutes);
-                        } else {
-                          await onSave(
-                            sets,
-                            repsController.text.trim().isNotEmpty
-                                ? repsController.text.trim()
-                                : '8-12',
-                            restSeconds,
-                            targetWeight,
-                            null,
-                          );
-                        }
-                        _load();
-                      },
-                      child: Text(saveLabel),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -962,15 +1461,17 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Удалить',
-                style: TextStyle(color: AppColors.error)),
+            child:
+                const Text('Удалить', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
     if (confirmed == true) {
       await ExerciseService.deleteExercise(ex.id);
-      if (mounted) setState(() => _allExercises.removeWhere((e) => e.id == ex.id));
+      if (mounted) {
+        setState(() => _allExercises.removeWhere((e) => e.id == ex.id));
+      }
     }
   }
 
@@ -982,13 +1483,17 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         .where((e) => Exercise.categoryDisplayName(e.category) == category)
         .toList();
     if (_selectedMovementType != null) {
-      source = source.where((e) => e.effectiveMovementType == _selectedMovementType).toList();
+      source = source
+          .where((e) => e.effectiveMovementType == _selectedMovementType)
+          .toList();
     }
     if (_categorySearchQuery.isNotEmpty) {
       final q = _categorySearchQuery.toLowerCase();
-      source = source.where((e) =>
-          e.displayName.toLowerCase().contains(q) ||
-          e.name.toLowerCase().contains(q)).toList();
+      source = source
+          .where((e) =>
+              e.displayName.toLowerCase().contains(q) ||
+              e.name.toLowerCase().contains(q))
+          .toList();
     }
     return _sorted(source);
   }
@@ -1081,7 +1586,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       initialTargetWeight: null,
       initialDurationMinutes: 30,
       saveLabel: 'Добавить в программу',
-      onSave: (s, r, rest, tw, dur) async {
+      onSave: (s, r, rest, tw, dur, weeklyWeights, dropSetWeeklyWeights) async {
         // ── Optimistic local insert ───────────────────────────────────────
         // Append to the bottom of the program list immediately so the user
         // sees the exercise without waiting for the DB round-trip. We give
@@ -1100,6 +1605,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           repsRange: r,
           restSeconds: rest,
           targetWeight: tw,
+          weeklyTargetWeights: weeklyWeights,
+          dropSetWeeklyTargetWeights: dropSetWeeklyWeights,
           durationMinutes: dur,
           day: _selectedDay,
           exercise: ex,
@@ -1128,6 +1635,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             repsRange: r,
             restSeconds: rest,
             targetWeight: tw,
+            weeklyTargetWeights: weeklyWeights,
+            dropSetWeeklyTargetWeights: dropSetWeeklyWeights,
             durationMinutes: dur,
             day: _selectedDay,
           );
@@ -1136,9 +1645,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           // does not see an exercise that does not actually exist server-side.
           if (mounted) {
             setState(() {
-              _programExercises = _programExercises
-                  .where((e) => e.id != tmpId)
-                  .toList();
+              _programExercises =
+                  _programExercises.where((e) => e.id != tmpId).toList();
             });
           }
         }
@@ -1147,50 +1655,61 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   List<Widget> _buildExerciseTiles(List<Exercise> exercises) {
-    return exercises.map((ex) => Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        child: ListTile(
-          onTap: () => _triggerAddExercise(ex),
-          onLongPress: () => _showExerciseHistory(ex),
-          leading: Icon(
-            ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
-            color: ex.isCustom ? AppColors.accent.withValues(alpha: 0.75) : AppColors.accent,
-          ),
-          title: Text(ex.displayName,
-              style: const TextStyle(color: AppColors.textPrimary)),
-          subtitle: Text(
-            '${Exercise.categoryDisplayName(ex.category)}${ex.isCustom ? '  •  Моё' : ''}',
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: Icon(
-                  ex.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                  size: 20,
-                  color: ex.isFavorite ? const Color(0xFFFFB800) : AppColors.textSecondary,
+    return exercises
+        .map((ex) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(12),
+                child: ListTile(
+                  onTap: () => _triggerAddExercise(ex),
+                  onLongPress: () => _showExerciseHistory(ex),
+                  leading: Icon(
+                    ex.category == 'cardio'
+                        ? Icons.directions_run
+                        : Icons.fitness_center,
+                    color: ex.isCustom
+                        ? AppColors.accent.withValues(alpha: 0.75)
+                        : AppColors.accent,
+                  ),
+                  title: Text(ex.displayName,
+                      style: const TextStyle(color: AppColors.textPrimary)),
+                  subtitle: Text(
+                    '${Exercise.categoryDisplayName(ex.category)}${ex.isCustom ? '  •  Моё' : ''}',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          ex.isFavorite
+                              ? Icons.star_rounded
+                              : Icons.star_outline_rounded,
+                          size: 20,
+                          color: ex.isFavorite
+                              ? const Color(0xFFFFB800)
+                              : AppColors.textSecondary,
+                        ),
+                        onPressed: () => _toggleFavorite(ex),
+                      ),
+                      if (ex.isCustom)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          color: AppColors.textSecondary,
+                          onPressed: () => _deleteCustomExercise(ex),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.add, color: AppColors.accent),
+                        onPressed: () => _triggerAddExercise(ex),
+                      ),
+                    ],
+                  ),
                 ),
-                onPressed: () => _toggleFavorite(ex),
               ),
-              if (ex.isCustom)
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  color: AppColors.textSecondary,
-                  onPressed: () => _deleteCustomExercise(ex),
-                ),
-              IconButton(
-                icon: const Icon(Icons.add, color: AppColors.accent),
-                onPressed: () => _triggerAddExercise(ex),
-              ),
-            ],
-          ),
-        ),
-      ),
-    )).toList();
+            ))
+        .toList();
   }
 
   @override
@@ -1264,9 +1783,12 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         titleSpacing: 0,
         toolbarHeight: 72,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Hero(
               tag: 'workout-icon-${widget.workoutId}',
@@ -1284,9 +1806,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Expanded(
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
@@ -1294,6 +1817,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                     maxLines: 2,
                     softWrap: true,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 16, height: 1.15),
                   ),
                   if (days.isNotEmpty)
@@ -1301,6 +1825,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                       days.map((d) => _dayLabels[d]).join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -1345,49 +1870,6 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       ),
       body: Column(
         children: [
-          // Дни и цикл
-          if (days.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Row(
-                children: [
-                  const Text(
-                    'Дни: ',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13),
-                  ),
-                  ...days.map((d) => Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color:
-                                AppColors.accent.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            _dayLabels[d],
-                            style: const TextStyle(
-                              color: AppColors.accent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      )),
-                  if (workout != null) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      workout.cycleWeeks == 0 ? '∞' : '${workout.cycleWeeks} нед.',
-                      style: const TextStyle(
-                          color: AppColors.textSecondary, fontSize: 12),
-                    ),
-                  ]
-                ],
-              ),
-            ),
-
           // ── Day/section tabs (multi-section programs) ─────────────────────
           if (_groupSections.length > 1)
             Padding(
@@ -1401,9 +1883,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   itemBuilder: (_, i) {
                     final s = _groupSections[i];
                     final isActive = s.id == widget.workoutId;
-                    final dayLabel = s.days
-                        .map((d) => _dayLabels[d])
-                        .join(', ');
+                    final dayLabel =
+                        s.days.map((d) => _dayLabels[d]).join(', ');
                     return GestureDetector(
                       onTap: isActive
                           ? null
@@ -1415,9 +1896,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
-                          color: isActive
-                              ? AppColors.accent
-                              : AppColors.card,
+                          color: isActive ? AppColors.accent : AppColors.card,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
                             color: isActive
@@ -1442,58 +1921,84 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
 
-          // ── Day selector chips (when section has > 1 day) ──────────────────
-          if ((days.length > 1))
+          // ── Day selector chips ────────────────────────────────────────────
+          if (days.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Column(
                 children: [
-                  const Text('День: ',
-                      style: TextStyle(
-                          fontSize: 12, color: AppColors.textSecondary)),
-                  ...days.map((d) {
-                    final isSelected = _selectedDay == d;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: GestureDetector(
-                        onTap: () => setState(() =>
-                            _selectedDay = isSelected ? null : d),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFF3A3A3A)
-                                : AppColors.card,
-                            borderRadius: BorderRadius.circular(8),
-                            border: isSelected
-                                ? Border.all(color: const Color(0xFF6B6B6B))
-                                : null,
-                          ),
-                          child: Text(
-                            _dayLabels[d],
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('День: ',
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected
-                                  ? Colors.white
-                                  : AppColors.textSecondary,
+                                fontSize: 12, color: AppColors.textSecondary)),
+                        ...days.map((d) {
+                          final isSelected = _selectedDay == d;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: GestureDetector(
+                              onTap: () => setState(
+                                  () => _selectedDay = isSelected ? null : d),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(0xFF3A3A3A)
+                                      : AppColors.card,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: isSelected
+                                      ? Border.all(
+                                          color: const Color(0xFF6B6B6B))
+                                      : null,
+                                ),
+                                child: Text(
+                                  _dayLabels[d],
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                        if (_selectedDay != null)
+                          GestureDetector(
+                            onTap: () => setState(() => _selectedDay = null),
+                            child: const Padding(
+                              padding: EdgeInsets.only(left: 2),
+                              child: Icon(Icons.close,
+                                  size: 14, color: AppColors.textSecondary),
                             ),
                           ),
-                        ),
-                      ),
-                    );
-                  }),
-                  if (_selectedDay != null)
-                    GestureDetector(
-                      onTap: () => setState(() => _selectedDay = null),
-                      child: const Padding(
-                        padding: EdgeInsets.only(left: 2),
-                        child: Icon(Icons.close,
-                            size: 14, color: AppColors.textSecondary),
-                      ),
+                      ],
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _CopyPasteChip(
+                        icon: Icons.content_copy_rounded,
+                        label: 'Копировать',
+                        onTap: _pastingProgram ? null : _copySelectedDayProgram,
+                      ),
+                      const SizedBox(width: 8),
+                      _CopyPasteChip(
+                        icon: Icons.content_paste_rounded,
+                        label: 'Вставить',
+                        onTap: _pastingProgram ? null : _pasteCopiedDayProgram,
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -1522,17 +2027,27 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               children: [
                 FilterChip(
                   label: const Text('Избранное'),
+                  labelPadding: const EdgeInsets.only(left: 2, right: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                  visualDensity:
+                      const VisualDensity(horizontal: -4, vertical: -3),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   avatar: Icon(
-                    _favoritesOnly ? Icons.star_rounded : Icons.star_outline_rounded,
+                    _favoritesOnly
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
                     size: 16,
-                    color: _favoritesOnly ? Colors.black : AppColors.textSecondary,
+                    color:
+                        _favoritesOnly ? Colors.black : AppColors.textSecondary,
                   ),
                   selected: _favoritesOnly,
                   onSelected: (v) => setState(() => _favoritesOnly = v),
                   selectedColor: const Color(0xFFFFB800),
                   checkmarkColor: Colors.black,
                   labelStyle: TextStyle(
-                    color: _favoritesOnly ? Colors.black : AppColors.textSecondary,
+                    color:
+                        _favoritesOnly ? Colors.black : AppColors.textSecondary,
                     fontSize: 13,
                   ),
                   backgroundColor: AppColors.card,
@@ -1542,7 +2057,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 GestureDetector(
                   onTap: _showSortSheet,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: _sortMode != ExerciseSortMode.alphabetical
                           ? AppColors.accent.withValues(alpha: 0.15)
@@ -1600,8 +2116,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   _categorySearchQuery = '';
                   _categorySearchController.clear();
                 }),
-                onFilterToggle: () => setState(
-                    () => _showMovementFilter = !_showMovementFilter),
+                onFilterToggle: () =>
+                    setState(() => _showMovementFilter = !_showMovementFilter),
                 onSearchToggle: () => setState(() {
                   _showCategorySearch = !_showCategorySearch;
                   if (!_showCategorySearch) {
@@ -1620,7 +2136,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 child: TextField(
                   controller: _categorySearchController,
                   autofocus: true,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                  style: const TextStyle(
+                      color: AppColors.textPrimary, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Поиск в категории...',
                     hintStyle: TextStyle(
@@ -1640,8 +2157,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         : null,
                     filled: true,
                     fillColor: AppColors.card,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
@@ -1683,181 +2200,228 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             const Divider(height: 1, color: Color(0xFF2A2A2A)),
             Expanded(
               child: ListView(
-                key: ValueKey('$_openCategory/$_selectedMovementType/$_categorySearchQuery'),
+                key: ValueKey(
+                    '$_openCategory/$_selectedMovementType/$_categorySearchQuery'),
                 padding: EdgeInsets.fromLTRB(
                     16, 8, 16, MediaQuery.of(context).padding.bottom + 80),
-                children: _buildExerciseTiles(
-                    _exercisesForCategory(_openCategory!)),
+                children:
+                    _buildExerciseTiles(_exercisesForCategory(_openCategory!)),
               ),
             ),
           ] else
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.fromLTRB(
-                  16, 0, 16, MediaQuery.of(context).padding.bottom + 80),
-              children: [
-                // Упражнения в программе
-                if (_visibleExercises.isNotEmpty) ...[
-                  Text(
-                    _selectedDay == null
-                        ? 'В программе (${_programExercises.length})'
-                        : 'В программе — ${_dayLabels[_selectedDay!]} (${_visibleExercises.length})',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
-                      fontSize: 14,
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                    16, 0, 16, MediaQuery.of(context).padding.bottom + 80),
+                children: [
+                  // Упражнения в программе
+                  if (_visibleExercises.isNotEmpty) ...[
+                    Text(
+                      _selectedDay == null
+                          ? 'В программе (${_programExercises.length})'
+                          : 'В программе — ${_dayLabels[_selectedDay!]} (${_visibleExercises.length})',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: _CopyPasteChip(
+                        icon: Icons.content_paste_rounded,
+                        label: 'Вставить скопированное упражнение',
+                        fullWidth: true,
+                        onTap: _pastingExercise || _copiedExercise == null
+                            ? null
+                            : _pasteCopiedExercise,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ReorderableListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      buildDefaultDragHandles: false,
+                      onReorder: (oldIndex, newIndex) async {
+                        // Indexes come from _visibleExercises; map them back to
+                        // _programExercises so the day filter doesn't shift the
+                        // wrong items around.
+                        if (newIndex > oldIndex) newIndex--;
+                        final movedItem = _visibleExercises[oldIndex];
+                        final movedRealIdx =
+                            _programExercises.indexOf(movedItem);
+                        final WorkoutExercise? anchorItem =
+                            newIndex < _visibleExercises.length
+                                ? _visibleExercises[newIndex]
+                                : null;
+                        setState(() {
+                          _programExercises.removeAt(movedRealIdx);
+                          final insertIdx = anchorItem == null
+                              ? _programExercises.length
+                              : _programExercises.indexOf(anchorItem);
+                          _programExercises.insert(
+                              insertIdx < 0
+                                  ? _programExercises.length
+                                  : insertIdx,
+                              movedItem);
+                        });
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          await WorkoutService.reorderExercises(
+                            widget.workoutId,
+                            _programExercises.map((e) => e.id).toList(),
+                          );
+                        } catch (e) {
+                          if (mounted) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                  content:
+                                      Text('Не удалось сохранить порядок')),
+                            );
+                          }
+                        }
+                      },
+                      children: _visibleExercises.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final we = entry.value;
+                        final isLast = i == _visibleExercises.length - 1;
+                        final nextWe = isLast ? null : _visibleExercises[i + 1];
+                        final isLinkedWithNext = !isLast &&
+                            we.supersetGroup != null &&
+                            we.supersetGroup == nextWe?.supersetGroup;
+                        final realIdx = _programExercises.indexOf(we);
+                        return _ProgramExerciseCard(
+                          key: ValueKey(we.id),
+                          dragIndex: i,
+                          workoutExercise: we,
+                          supersetLabel: _supersetLabel(realIdx),
+                          isLinkedWithNext: isLinkedWithNext,
+                          canLink: !isLast,
+                          isDropSet: we.isDropSet,
+                          onToggleLink: () => _toggleSuperset(realIdx),
+                          onToggleDropSet: () => _toggleDropSet(realIdx),
+                          onCopy: () => _copyWorkoutExercise(we),
+                          currentWeek: _currentCycleWeek,
+                          onEdit: () => _showExerciseSettingsSheet(
+                            title: we.exercise?.displayName ?? '?',
+                            gifUrl: we.exercise?.gifUrl,
+                            description: we.exercise?.descriptionRu ??
+                                we.exercise?.description,
+                            isCardio: we.exercise?.category == 'cardio',
+                            initialSets: we.sets,
+                            initialRepsRange: we.repsRange,
+                            initialRest: we.restSeconds,
+                            initialTargetWeight: we.targetWeight,
+                            initialWeeklyTargetWeights: we.weeklyTargetWeights,
+                            initialDropSetWeeklyTargetWeights:
+                                we.dropSetWeeklyTargetWeights,
+                            initialDurationMinutes: we.durationMinutes ?? 30,
+                            saveLabel: 'Сохранить',
+                            showInfoTabs: true,
+                            cycleWeeks: _workout?.cycleWeeks ?? 0,
+                            currentWeek: _currentCycleWeek,
+                            isDropSet: we.isDropSet,
+                            onSave: (s, r, rest, tw, dur, weeklyWeights,
+                                    dropSetWeeklyWeights) =>
+                                WorkoutService.updateWorkoutExercise(
+                              we.id,
+                              sets: s,
+                              repsRange: r,
+                              restSeconds: rest,
+                              targetWeight: tw,
+                              durationMinutes: dur,
+                              weeklyTargetWeights: weeklyWeights,
+                              dropSetWeeklyTargetWeights: dropSetWeeklyWeights,
+                            ),
+                          ),
+                          onDelete: () async {
+                            await WorkoutService.removeExerciseFromWorkout(
+                                we.id);
+                            _load();
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const Divider(height: 24),
+                  ],
+
+                  if (_visibleExercises.isEmpty && _copiedExercise != null) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: _CopyPasteChip(
+                        icon: Icons.content_paste_rounded,
+                        label: 'Вставить скопированное упражнение',
+                        fullWidth: true,
+                        onTap: _pastingExercise ? null : _pasteCopiedExercise,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Добавить упражнение
+                  Center(
+                    child: Text(
+                      _programExercises.isEmpty
+                          ? 'Добавьте упражнения в программу'
+                          : 'Добавить упражнение',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  ReorderableListView(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    buildDefaultDragHandles: false,
-                    onReorder: (oldIndex, newIndex) async {
-                      // Indexes come from _visibleExercises; map them back to
-                      // _programExercises so the day filter doesn't shift the
-                      // wrong items around.
-                      if (newIndex > oldIndex) newIndex--;
-                      final movedItem = _visibleExercises[oldIndex];
-                      final movedRealIdx =
-                          _programExercises.indexOf(movedItem);
-                      final WorkoutExercise? anchorItem =
-                          newIndex < _visibleExercises.length
-                              ? _visibleExercises[newIndex]
-                              : null;
-                      setState(() {
-                        _programExercises.removeAt(movedRealIdx);
-                        final insertIdx = anchorItem == null
-                            ? _programExercises.length
-                            : _programExercises.indexOf(anchorItem);
-                        _programExercises.insert(
-                            insertIdx < 0 ? _programExercises.length : insertIdx,
-                            movedItem);
-                      });
-                      final messenger = ScaffoldMessenger.of(context);
-                      try {
-                        await WorkoutService.reorderExercises(
-                          widget.workoutId,
-                          _programExercises.map((e) => e.id).toList(),
-                        );
-                      } catch (e) {
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            const SnackBar(
-                                content: Text('Не удалось сохранить порядок')),
-                          );
-                        }
-                      }
-                    },
-                    children: _visibleExercises.asMap().entries.map((entry) {
-                      final i = entry.key;
-                      final we = entry.value;
-                      final isLast = i == _visibleExercises.length - 1;
-                      final nextWe = isLast ? null : _visibleExercises[i + 1];
-                      final isLinkedWithNext = !isLast &&
-                          we.supersetGroup != null &&
-                          we.supersetGroup == nextWe?.supersetGroup;
-                      final realIdx = _programExercises.indexOf(we);
-                      return _ProgramExerciseCard(
-                        key: ValueKey(we.id),
-                        dragIndex: i,
-                        workoutExercise: we,
-                        supersetLabel: _supersetLabel(realIdx),
-                        isLinkedWithNext: isLinkedWithNext,
-                        canLink: !isLast,
-                        isDropSet: we.isDropSet,
-                        onToggleLink: () => _toggleSuperset(realIdx),
-                        onToggleDropSet: () => _toggleDropSet(realIdx),
-                        onEdit: () => _showExerciseSettingsSheet(
-                          title: we.exercise?.displayName ?? '?',
-                          gifUrl: we.exercise?.gifUrl,
-                          description: we.exercise?.descriptionRu ?? we.exercise?.description,
-                          isCardio: we.exercise?.category == 'cardio',
-                          initialSets: we.sets,
-                          initialRepsRange: we.repsRange,
-                          initialRest: we.restSeconds,
-                          initialTargetWeight: we.targetWeight,
-                          initialDurationMinutes: we.durationMinutes ?? 30,
-                          saveLabel: 'Сохранить',
-                          onSave: (s, r, rest, tw, dur) =>
-                              WorkoutService.updateWorkoutExercise(
-                            we.id,
-                            sets: s,
-                            repsRange: r,
-                            restSeconds: rest,
-                            targetWeight: tw,
-                            durationMinutes: dur,
+
+                  if (_searchQuery.isNotEmpty || _favoritesOnly) ...[
+                    if (_filteredFlat.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(
+                                _favoritesOnly
+                                    ? Icons.star_outline_rounded
+                                    : Icons.search_off_rounded,
+                                size: 40,
+                                color: AppColors.textSecondary
+                                    .withValues(alpha: 0.5),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _favoritesOnly
+                                    ? 'Нет избранных упражнений.\nНажмите ⭐ на любом упражнении, чтобы добавить.'
+                                    : 'Ничего не найдено',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13),
+                              ),
+                            ],
                           ),
                         ),
-                        onDelete: () async {
-                          await WorkoutService.removeExerciseFromWorkout(we.id);
-                          _load();
-                        },
-                      );
-                    }).toList(),
+                      )
+                    else
+                      ..._buildExerciseTiles(_filteredFlat),
+                  ] else
+                    ...catalogWidgets,
+
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openCreateExercise,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Создать своё упражнение'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                    ),
                   ),
-                  const Divider(height: 24),
+                  const SizedBox(height: 16),
                 ],
-
-                // Добавить упражнение
-                Text(
-                  _programExercises.isEmpty
-                      ? 'Добавьте упражнения в программу'
-                      : 'Добавить упражнение',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                if (_searchQuery.isNotEmpty || _favoritesOnly) ...[
-                  if (_filteredFlat.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 32),
-                      child: Center(
-                        child: Column(
-                          children: [
-                            Icon(
-                              _favoritesOnly
-                                  ? Icons.star_outline_rounded
-                                  : Icons.search_off_rounded,
-                              size: 40,
-                              color: AppColors.textSecondary
-                                  .withValues(alpha: 0.5),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              _favoritesOnly
-                                  ? 'Нет избранных упражнений.\nНажмите ⭐ на любом упражнении, чтобы добавить.'
-                                  : 'Ничего не найдено',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: AppColors.textSecondary, fontSize: 13),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    ..._buildExerciseTiles(_filteredFlat),
-                ] else
-                  ...catalogWidgets,
-
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _openCreateExercise,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Создать своё упражнение'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(44),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1894,8 +2458,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         duration: const Duration(milliseconds: 140),
         margin: const EdgeInsets.only(right: 8),
         padding: EdgeInsets.symmetric(
-            horizontal: small ? 10 : 14,
-            vertical: small ? 4 : 6),
+            horizontal: small ? 10 : 14, vertical: small ? 4 : 6),
         decoration: BoxDecoration(
           color: selected
               ? AppColors.accent.withValues(alpha: 0.15)
@@ -1919,10 +2482,14 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 
   String _sortModeLabel(ExerciseSortMode mode) {
     switch (mode) {
-      case ExerciseSortMode.alphabetical: return 'А–Я';
-      case ExerciseSortMode.difficulty:   return 'Сложность';
-      case ExerciseSortMode.popularity:   return 'Популярность';
-      case ExerciseSortMode.userResults:  return 'Мой результат';
+      case ExerciseSortMode.alphabetical:
+        return 'А–Я';
+      case ExerciseSortMode.difficulty:
+        return 'Сложность';
+      case ExerciseSortMode.popularity:
+        return 'Популярность';
+      case ExerciseSortMode.userResults:
+        return 'Мой результат';
     }
   }
 
@@ -1931,6 +2498,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       context: context,
       backgroundColor: AppColors.card,
       useRootNavigator: true,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _SortSheet(
@@ -1949,12 +2517,14 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
 class _ProgramExerciseCard extends StatelessWidget {
   final WorkoutExercise workoutExercise;
   final int dragIndex;
-  final String? supersetLabel;   // e.g. "A1", "A2"
+  final String? supersetLabel; // e.g. "A1", "A2"
   final bool isLinkedWithNext;
   final bool canLink;
   final bool isDropSet;
+  final int currentWeek;
   final VoidCallback onToggleLink;
   final VoidCallback onToggleDropSet;
+  final VoidCallback onCopy;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -1966,65 +2536,63 @@ class _ProgramExerciseCard extends StatelessWidget {
     required this.onDelete,
     required this.onToggleLink,
     required this.onToggleDropSet,
+    required this.onCopy,
+    this.currentWeek = 1,
     this.supersetLabel,
     this.isLinkedWithNext = false,
     this.canLink = false,
     this.isDropSet = false,
   });
 
+  String _compactTitle(String title) {
+    final trimmed = title.trim();
+    final paren = trimmed.indexOf(' (');
+    if (trimmed.length > 22 && paren > 0) {
+      return trimmed.substring(0, paren);
+    }
+    return trimmed;
+  }
+
+  String _formatWeight(double? weight, {bool drop = false}) {
+    if (weight == null) return '';
+    final value = drop ? weight * 0.6 : weight;
+    if (value % 1 == 0) return value.toInt().toString();
+    return value.toStringAsFixed(1);
+  }
+
+  String _dropReps(String repsRange) {
+    final values = RegExp(r'\d+')
+        .allMatches(repsRange)
+        .map((m) => int.tryParse(m.group(0)!))
+        .whereType<int>()
+        .toList();
+    final top = values.isEmpty
+        ? 12
+        : values.reduce((a, b) => a > b ? a : b).clamp(12, 99);
+    return '$top';
+  }
+
+  String _metricLine(WorkoutExercise we, {bool drop = false}) {
+    if (we.exercise?.category == 'cardio') {
+      return '${we.durationMinutes ?? 30} мин';
+    }
+    final reps = drop ? _dropReps(we.repsRange) : we.repsRange;
+    final weight = _formatWeight(
+      drop
+          ? we.dropSetWeightForWeek(currentWeek)
+          : we.weightForWeek(currentWeek),
+    );
+    return weight.isEmpty ? '${we.sets}X$reps' : '${we.sets}X${reps}X$weight';
+  }
+
   @override
   Widget build(BuildContext context) {
     final we = workoutExercise;
     final isCardio = we.exercise?.category == 'cardio';
     final inSuperset = supersetLabel != null;
-
-    // Murasaki (紫) — medium-dark Japanese purple
-    const murasakiColor = Color(0xFF8B5EA8);
-
-    // Build subtitle as InlineSpan list so weight can be colored separately
-    final List<InlineSpan> subtitleSpans;
-    const sep = TextSpan(
-      text: '  •  ',
-      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-    );
-    if (isCardio) {
-      subtitleSpans = [
-        TextSpan(
-          text: '${we.durationMinutes ?? 30} мин',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-        ),
-      ];
-    } else {
-      subtitleSpans = [
-        TextSpan(
-          text: '${we.sets} подх. × ${we.repsRange} повт.',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-        ),
-        sep,
-        TextSpan(
-          text: 'отдых ${we.restSeconds}с',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-        ),
-        if (we.targetWeight != null) ...[
-          sep,
-          TextSpan(
-            text: '${we.targetWeight} кг',
-            style: const TextStyle(
-              color: murasakiColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-        if (we.targetRpe != null) ...[
-          sep,
-          TextSpan(
-            text: 'RPE ${we.targetRpe}',
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-        ],
-      ];
-    }
+    final title = _compactTitle(we.exercise?.displayName ?? '?');
+    final mainLine = _metricLine(we);
+    final dropLine = _metricLine(we, drop: true);
 
     // Accent colour for this superset group (cycle through palette)
     const supersetColors = [
@@ -2045,6 +2613,7 @@ class _ProgramExerciseCard extends StatelessWidget {
         children: [
           // ── Exercise card ────────────────────────────────────────────
           Container(
+            height: isDropSet && !isCardio ? 148 : 124,
             decoration: BoxDecoration(
               color: AppColors.card,
               borderRadius: BorderRadius.circular(12),
@@ -2054,138 +2623,145 @@ class _ProgramExerciseCard extends StatelessWidget {
                     )
                   : null,
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  ReorderableDragStartListener(
-                    index: dragIndex,
-                    child: const Padding(
-                      padding: EdgeInsets.only(right: 8),
-                      child: Icon(Icons.drag_handle,
-                          color: AppColors.textSecondary, size: 22),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: Container(
+                    width: supersetLabel == null ? 26 : 32,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: supersetLabel == null
+                          ? AppColors.surface
+                          : supersetColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      supersetLabel ?? '${dragIndex + 1}',
+                      style: TextStyle(
+                        color: supersetLabel == null
+                            ? AppColors.textSecondary
+                            : supersetColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  // Order number badge
-                  if (supersetLabel == null)
-                    Container(
-                      width: 24,
-                      height: 24,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '${dragIndex + 1}',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                ),
+                Positioned(
+                  left: 12,
+                  top: 52,
+                  child: SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.tune,
+                          color: AppColors.textSecondary, size: 22),
+                      tooltip: 'Изменить',
+                      onPressed: onEdit,
                     ),
-                  // Superset badge
-                  if (supersetLabel != null) ...[
-                    Container(
-                      width: 28,
-                      height: 28,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: supersetColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        supersetLabel!,
-                        style: TextStyle(
-                          color: supersetColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                  Expanded(
+                  ),
+                ),
+                Positioned(
+                  left: 62,
+                  right: 82,
+                  top: 20,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onEdit,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          we.exercise?.displayName ?? '?',
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 15,
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 17,
+                            height: 1.18,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        RichText(
-                          text: TextSpan(children: subtitleSpans),
+                        const SizedBox(height: 12),
+                        Text(
+                          mainLine,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFFAB7FF8),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
+                        if (isDropSet && !isCardio) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            dropLine,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFFAB7FF8),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  // Drop-set toggle
-                  GestureDetector(
+                ),
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: IconButton(
+                    icon: const Icon(Icons.close,
+                        color: AppColors.error, size: 24),
+                    tooltip: 'Удалить',
+                    onPressed: onDelete,
+                  ),
+                ),
+                Positioned(
+                  right: 12,
+                  top: 50,
+                  child: GestureDetector(
                     onTap: onToggleDropSet,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 4),
-                      margin: const EdgeInsets.only(right: 4),
+                      width: 58,
+                      height: 28,
                       decoration: BoxDecoration(
                         color: isDropSet
                             ? const Color(0xFFFF9500).withValues(alpha: 0.15)
                             : Colors.transparent,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: isDropSet
-                              ? const Color(0xFFFF9500).withValues(alpha: 0.5)
+                              ? const Color(0xFFFF9500).withValues(alpha: 0.55)
                               : AppColors.textSecondary.withValues(alpha: 0.25),
-                          width: 1,
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.trending_down_rounded,
-                            size: 14,
-                            color: isDropSet
-                                ? const Color(0xFFFF9500)
-                                : AppColors.textSecondary
-                                    .withValues(alpha: 0.4),
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            'Дроп',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: isDropSet
-                                  ? const Color(0xFFFF9500)
-                                  : AppColors.textSecondary
-                                      .withValues(alpha: 0.4),
-                            ),
-                          ),
-                        ],
+                      child: Icon(
+                        Icons.trending_down_rounded,
+                        size: 17,
+                        color: isDropSet
+                            ? const Color(0xFFFF9500)
+                            : AppColors.textSecondary.withValues(alpha: 0.45),
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.tune,
-                        color: AppColors.textSecondary, size: 20),
-                    tooltip: 'Изменить',
-                    onPressed: onEdit,
+                ),
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: IconButton(
+                    icon: const Icon(Icons.content_copy_rounded,
+                        color: AppColors.textSecondary, size: 21),
+                    tooltip: 'Копировать упражнение',
+                    onPressed: onCopy,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close,
-                        color: AppColors.error, size: 20),
-                    tooltip: 'Удалить',
-                    onPressed: onDelete,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
 
@@ -2220,9 +2796,7 @@ class _ProgramExerciseCard extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            isLinkedWithNext
-                                ? Icons.link
-                                : Icons.link_off,
+                            isLinkedWithNext ? Icons.link : Icons.link_off,
                             size: 13,
                             color: isLinkedWithNext
                                 ? supersetColor
@@ -2231,7 +2805,9 @@ class _ProgramExerciseCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            isLinkedWithNext ? 'Суперсет' : 'Связать в супер-сет',
+                            isLinkedWithNext
+                                ? 'Суперсет'
+                                : 'Связать в супер-сет',
                             style: TextStyle(
                               fontSize: 11,
                               color: isLinkedWithNext
@@ -2259,6 +2835,128 @@ class _ProgramExerciseCard extends StatelessWidget {
           else
             const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+}
+
+class _CopyPasteChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool fullWidth;
+
+  const _CopyPasteChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.fullWidth = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final content = Row(
+      mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment:
+          fullWidth ? MainAxisAlignment.center : MainAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 15,
+          color: enabled
+              ? AppColors.textSecondary
+              : AppColors.textSecondary.withValues(alpha: 0.35),
+        ),
+        const SizedBox(width: 5),
+        if (fullWidth)
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: enabled
+                    ? AppColors.textSecondary
+                    : AppColors.textSecondary.withValues(alpha: 0.35),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          )
+        else
+          Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              color: enabled
+                  ? AppColors.textSecondary
+                  : AppColors.textSecondary.withValues(alpha: 0.35),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+      ],
+    );
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 120),
+        opacity: enabled ? 1 : 0.65,
+        child: Container(
+          height: fullWidth ? 38 : 28,
+          padding: EdgeInsets.symmetric(horizontal: fullWidth ? 12 : 9),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(fullWidth ? 10 : 8),
+            border: Border.all(
+              color: AppColors.textSecondary.withValues(alpha: 0.22),
+            ),
+          ),
+          child: Center(child: content),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetTabButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SheetTabButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.accent.withValues(alpha: 0.16)
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? AppColors.accent : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.accent : AppColors.textSecondary,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
@@ -2299,7 +2997,7 @@ class _CategoryHeader extends StatelessWidget {
   final int totalCount; // unfiltered total (shown as "12/85" when filtered)
   final bool expanded;
   final bool filterVisible; // movement chips are shown
-  final bool filterActive;  // a movement type is selected
+  final bool filterActive; // a movement type is selected
   final bool searchVisible; // search field is shown
   final VoidCallback onToggle;
   final VoidCallback? onFilterToggle; // null = no filter button
@@ -2624,15 +3322,16 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             reservedSize: 40,
             getTitlesWidget: (v, _) => Text(
               '${v.toInt()} кг',
-              style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 10),
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 10),
             ),
           ),
         ),
         bottomTitles: AxisTitles(
           sideTitles: SideTitles(
             showTitles: true,
-            interval: (points.length / 4).ceilToDouble().clamp(1, double.infinity),
+            interval:
+                (points.length / 4).ceilToDouble().clamp(1, double.infinity),
             getTitlesWidget: (v, _) {
               final i = v.toInt();
               if (i < 0 || i >= points.length) return const SizedBox();
@@ -2648,7 +3347,8 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
             },
           ),
         ),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
       ),
       lineBarsData: [
@@ -2685,61 +3385,98 @@ class _SortSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const options = [
-      (ExerciseSortMode.alphabetical,  Icons.sort_by_alpha_rounded,  'По алфавиту',      'А → Я'),
-      (ExerciseSortMode.difficulty,    Icons.fitness_center_outlined, 'По сложности',     'начинающий → продвинутый'),
-      (ExerciseSortMode.popularity,    Icons.trending_up_rounded,     'По популярности',  'чаще всего добавляемые'),
-      (ExerciseSortMode.userResults,   Icons.emoji_events_outlined,   'По результату',    'лучший 1ПМ первым'),
+      (
+        ExerciseSortMode.alphabetical,
+        Icons.sort_by_alpha_rounded,
+        'По алфавиту',
+        'А → Я'
+      ),
+      (
+        ExerciseSortMode.difficulty,
+        Icons.fitness_center_outlined,
+        'По сложности',
+        'начинающий → продвинутый'
+      ),
+      (
+        ExerciseSortMode.popularity,
+        Icons.trending_up_rounded,
+        'По популярности',
+        'чаще всего добавляемые'
+      ),
+      (
+        ExerciseSortMode.userResults,
+        Icons.emoji_events_outlined,
+        'По результату',
+        'лучший 1ПМ первым'
+      ),
     ];
     return SafeArea(
       top: false,
-      child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 12),
-        Container(
-          width: 36, height: 4,
-          decoration: BoxDecoration(
-            color: AppColors.textSecondary.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(2),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.78,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Сортировка',
+                      style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...options.map((o) {
+                final (mode, icon, title, sub) = o;
+                final sel = current == mode;
+                return ListTile(
+                  dense: true,
+                  visualDensity:
+                      const VisualDensity(horizontal: -2, vertical: -2),
+                  minLeadingWidth: 28,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 18),
+                  leading: Icon(icon,
+                      color: sel ? AppColors.accent : AppColors.textSecondary),
+                  title: Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: sel ? AppColors.accent : AppColors.textPrimary,
+                          fontWeight:
+                              sel ? FontWeight.w600 : FontWeight.normal)),
+                  subtitle: Text(sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: AppColors.textSecondary, fontSize: 12)),
+                  trailing: sel
+                      ? const Icon(Icons.check_circle_rounded,
+                          color: AppColors.accent, size: 20)
+                      : null,
+                  onTap: () => onSelect(mode),
+                );
+              }),
+              const SizedBox(height: 12),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text('Сортировка',
-                style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600)),
-          ),
-        ),
-        const SizedBox(height: 8),
-        ...options.map((o) {
-          final (mode, icon, title, sub) = o;
-          final sel = current == mode;
-          return ListTile(
-            leading: Icon(icon,
-                color: sel ? AppColors.accent : AppColors.textSecondary),
-            title: Text(title,
-                style: TextStyle(
-                    color: sel ? AppColors.accent : AppColors.textPrimary,
-                    fontWeight:
-                        sel ? FontWeight.w600 : FontWeight.normal)),
-            subtitle: Text(sub,
-                style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 12)),
-            trailing: sel
-                ? const Icon(Icons.check_circle_rounded,
-                    color: AppColors.accent, size: 20)
-                : null,
-            onTap: () => onSelect(mode),
-          );
-        }),
-        const SizedBox(height: 16),
-      ],
-    ),
+      ),
     );
   }
 }

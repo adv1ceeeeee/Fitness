@@ -146,16 +146,3 @@
 **Что нужно:**
 - `supabase db push` в CI/CD pipeline после merge в main
 - Секрет `SUPABASE_ACCESS_TOKEN` в GitHub Actions
-
----
-
-## Контент / Данные
-
-### Дозаливка `description_ru` для стандартных упражнений
-**Где:** таблица `exercises`, новая миграция `057_backfill_description_ru.sql`
-**Текущее состояние:** миграция 045 заполняла `description_ru` по join на `name_ru`. Миграция 055 затем переименовала ~873 упражнения и добавила новые, из-за чего у затронутых строк `description_ru` остался NULL — UI падает на английский fallback (`ex.descriptionRu ?? ex.description` в `exercise_catalog_screen.dart:108`).
-**Что нужно:**
-- Собрать стабильный маппинг `english_name → description_ru` на основе 045 + 055
-- Миграция 057: `UPDATE exercises SET description_ru = v.d FROM (VALUES (...)) WHERE name = v.name AND is_standard = true AND (description_ru IS NULL OR description_ru = '')`
-- Убедиться, что НЕ перезаписываем пользовательские описания (`is_standard = false`)
-- Добавить русские описания для ~50+ новых упражнений из миграции 055, у которых нет аналога в 045

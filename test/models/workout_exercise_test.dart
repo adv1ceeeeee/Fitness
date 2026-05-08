@@ -14,6 +14,8 @@ void main() {
         'reps_range': '6-10',
         'rest_seconds': 120,
         'target_weight': 80.5,
+        'weekly_target_weights': {'1': 80, '3': 87.5},
+        'drop_set_weekly_target_weights': {'1': 45, '3': 52.5},
         'target_rpe': 8,
       };
       final we = WorkoutExercise.fromJson(json);
@@ -26,6 +28,8 @@ void main() {
       expect(we.repsRange, '6-10');
       expect(we.restSeconds, 120);
       expect(we.targetWeight, 80.5);
+      expect(we.weeklyTargetWeights, {1: 80.0, 3: 87.5});
+      expect(we.dropSetWeeklyTargetWeights, {1: 45.0, 3: 52.5});
       expect(we.targetRpe, 8);
       expect(we.exercise, isNull);
     });
@@ -127,6 +131,8 @@ void main() {
         repsRange: '5',
         restSeconds: 180,
         targetWeight: 120.0,
+        weeklyTargetWeights: {1: 120.0, 2: 122.5},
+        dropSetWeeklyTargetWeights: {1: 70.0, 2: 72.5},
         targetRpe: 9,
       );
       final json = we.toJson();
@@ -139,6 +145,8 @@ void main() {
       expect(json['reps_range'], '5');
       expect(json['rest_seconds'], 180);
       expect(json['target_weight'], 120.0);
+      expect(json['weekly_target_weights'], {'1': 120.0, '2': 122.5});
+      expect(json['drop_set_weekly_target_weights'], {'1': 70.0, '2': 72.5});
       expect(json['target_rpe'], 9);
       expect(json.containsKey('exercises'), isFalse);
     });
@@ -159,6 +167,62 @@ void main() {
       expect(restored.sets, original.sets);
       expect(restored.repsRange, original.repsRange);
       expect(restored.restSeconds, original.restSeconds);
+    });
+  });
+
+  group('WorkoutExercise.weightForWeek', () {
+    test('returns weight recorded for the requested week', () {
+      final we = WorkoutExercise(
+        id: 'we-week',
+        workoutId: 'w-week',
+        exerciseId: 'ex-week',
+        order: 1,
+        sets: 3,
+        repsRange: '8-12',
+        restSeconds: 90,
+        targetWeight: 70.0,
+        weeklyTargetWeights: {1: 75.0, 3: 82.5},
+        dropSetWeeklyTargetWeights: {1: 40.0, 3: 45.0},
+      );
+
+      expect(we.weightForWeek(3), 82.5);
+      expect(we.dropSetWeightForWeek(3), 45.0);
+    });
+
+    test('falls back to previous recorded week when current week is empty', () {
+      final we = WorkoutExercise(
+        id: 'we-fallback',
+        workoutId: 'w-fallback',
+        exerciseId: 'ex-fallback',
+        order: 1,
+        sets: 3,
+        repsRange: '8-12',
+        restSeconds: 90,
+        targetWeight: 70.0,
+        weeklyTargetWeights: {1: 75.0, 3: 82.5},
+        dropSetWeeklyTargetWeights: {1: 40.0, 3: 45.0},
+      );
+
+      expect(we.weightForWeek(4), 82.5);
+      expect(we.dropSetWeightForWeek(4), 45.0);
+    });
+
+    test('falls back to targetWeight when no weekly weights exist before it',
+        () {
+      final we = WorkoutExercise(
+        id: 'we-target',
+        workoutId: 'w-target',
+        exerciseId: 'ex-target',
+        order: 1,
+        sets: 3,
+        repsRange: '8-12',
+        restSeconds: 90,
+        targetWeight: 70.0,
+        weeklyTargetWeights: {3: 82.5},
+      );
+
+      expect(we.weightForWeek(2), 70.0);
+      expect(we.dropSetWeightForWeek(2), 42.0);
     });
   });
 
@@ -191,6 +255,8 @@ void main() {
         targetRpe: 8,
         durationMinutes: null,
         supersetGroup: 1,
+        weeklyTargetWeights: {1: 80.0, 3: 87.5},
+        dropSetWeeklyTargetWeights: {1: 45.0, 3: 52.5},
         exercise: baseExercise,
       );
     });
@@ -218,6 +284,8 @@ void main() {
       expect(copy.targetRpe, base.targetRpe);
       expect(copy.durationMinutes, base.durationMinutes);
       expect(copy.supersetGroup, base.supersetGroup);
+      expect(copy.weeklyTargetWeights, base.weeklyTargetWeights);
+      expect(copy.dropSetWeeklyTargetWeights, base.dropSetWeeklyTargetWeights);
     });
 
     test('original is not mutated after copy', () {
