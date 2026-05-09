@@ -9,6 +9,10 @@ import 'package:sportwai/services/auth_service.dart';
 class WorkoutService {
   static SupabaseClient get _client => Supabase.instance.client;
 
+  static const _workoutExerciseSelect = '''
+*, exercises(id,name,name_ru,category,image_url,is_standard,user_id,gif_url)
+''';
+
   // ─── Cache helpers ───────────────────────────────────────────────────────
   static const _workoutsTtl = Duration(minutes: 5);
   static const _workoutTtl = Duration(minutes: 5);
@@ -270,7 +274,7 @@ class WorkoutService {
           'is_drop_set': isDropSet,
           if (day != null) 'day': day,
         })
-        .select('*, exercises(*)')
+        .select(_workoutExerciseSelect)
         .single();
     await _invalidateWorkoutExercises(workoutId);
     return WorkoutExercise.fromJson(res);
@@ -284,7 +288,7 @@ class WorkoutService {
       fetch: () async {
         final res = await _client
             .from('workout_exercises')
-            .select('*, exercises(*)')
+            .select(_workoutExerciseSelect)
             .eq('workout_id', workoutId)
             .order('order');
         return (res as List)

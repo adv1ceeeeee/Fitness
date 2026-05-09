@@ -10,7 +10,6 @@ import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/analytics_service.dart';
-import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/services/exercise_service.dart';
@@ -72,6 +71,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   String _searchQuery = '';
   bool _favoritesOnly = false;
   bool _loading = true;
+  bool _catalogLoading = false;
+  String? _catalogLoadError;
+  String? _loadError;
   Timer? _searchDebounce;
   String? _openCategory; // currently pinned/open category (single-expand)
   int? _selectedDay; // currently active day context for adding exercises
@@ -238,37 +240,122 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     // Show the loading skeleton only on initial load (no data yet).
     // For subsequent reloads (e.g. switching sections or post-add refresh)
     // keep showing the previous data so the screen does not blink.
-    if (mounted && _workout == null) setState(() => _loading = true);
-    // Force-refresh: this is the editing screen — stale cache here makes the
-    // user think their just-added exercise vanished after switching sections.
-    final results = await AppCache.withForceRefresh(() => Future.wait([
-          WorkoutService.getWorkout(widget.workoutId),
-          WorkoutService.getWorkoutExercises(widget.workoutId),
-          ExerciseService.getExercises(),
-        ]));
-    final w = results[0] as Workout?;
-    final ex = results[1] as List<WorkoutExercise>;
-    final all = results[2] as List<Exercise>;
-    // If this is a section of a multi-section program, load siblings too.
-    final sections = (w?.groupId != null)
-        ? await AppCache.withForceRefresh(
-            () => WorkoutService.getSectionsByGroupId(w!.groupId!))
-        : <Workout>[];
-    if (!mounted) return;
-    setState(() {
-      _workout = w;
-      _programExercises = ex;
-      _allExercises = all;
-      _groupSections = sections;
-      _loading = false;
-      // Auto-select when only one day in this section
-      if (w != null && w.days.length == 1) _selectedDay = w.days.first;
-    });
+    if (mounted && _workout == null) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
+    try {
+      final results = await Future.wait([
+        WorkoutService.getWorkout(widget.workoutId),
+        WorkoutService.getWorkoutExercises(widget.workoutId),
+      ]).timeout(const Duration(seconds: 18));
+      final w = results[0] as Workout?;
+      final ex = results[1] as List<WorkoutExercise>;
+      if (w == null) {
+        throw StateError('Программа не найдена');
+      }
+
+      var sections = <Workout>[];
+      if (w.groupId != null) {
+        try {
+          sections = await WorkoutService.getSectionsByGroupId(w.groupId!)
+              .timeout(const Duration(seconds: 18));
+        } catch (_) {
+          sections = _groupSections;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _workout = w;
+        _programExercises = ex;
+        _groupSections = sections.isNotEmpty ? sections : _groupSections;
+        _loading = false;
+        _loadError = null;
+        // Auto-select when only one day in this section
+        if (w.days.length == 1) _selectedDay = w.days.first;
+      });
+
+      _loadExerciseCatalog();
+      _loadSortData();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = e.toString();
+      });
+    }
+  }
+
+  Future<void> _loadExerciseCatalog() async {
+    final cached = await ExerciseService.getCachedExercises();
+    if (mounted && cached.isNotEmpty && _allExercises.isEmpty) {
+      setState(() {
+        _allExercises = cached;
+        _catalogLoadError = null;
+      });
+      _loadFavoriteFlags();
+    }
+
+    if (mounted && _allExercises.isEmpty) {
+      setState(() {
+        _catalogLoading = true;
+        _catalogLoadError = null;
+      });
+    }
+
+    try {
+      final all = await ExerciseService.getExercises()
+          .timeout(const Duration(seconds: 8));
+      if (!mounted) return;
+      setState(() {
+        _allExercises = all;
+        _catalogLoading = false;
+        _catalogLoadError = null;
+      });
+      _loadFavoriteFlags();
+    } catch (e) {
+      if (mounted) {
+        final fallback = ExerciseService.getLocalFallbackExercises();
+        setState(() {
+          if (_allExercises.isEmpty) {
+            _allExercises = fallback;
+            _catalogLoadError = null;
+          } else {
+            _catalogLoadError = e.toString();
+          }
+          _catalogLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadFavoriteFlags() async {
+    try {
+      final favoriteIds = await ExerciseService.getFavoriteExerciseIds()
+          .timeout(const Duration(seconds: 8));
+      if (!mounted || favoriteIds.isEmpty) return;
+      setState(() {
+        _allExercises = [
+          for (final exercise in _allExercises)
+            exercise.copyWith(isFavorite: favoriteIds.contains(exercise.id)),
+        ];
+      });
+    } catch (_) {}
+  }
+
+  void _loadSortData() {
     // Load sort data in background — only needed when user switches sort mode.
-    ExerciseService.getBest1RMs().then((orms) {
+    ExerciseService.getBest1RMs()
+        .timeout(const Duration(seconds: 12))
+        .then((orms) {
       if (mounted) setState(() => _userBest1RMs = orms);
     }).catchError((_) {});
-    ExerciseService.getPopularity().then((pop) {
+    ExerciseService.getPopularity()
+        .timeout(const Duration(seconds: 12))
+        .then((pop) {
       if (mounted) setState(() => _popularity = pop);
     }).catchError((_) {});
   }
@@ -1592,6 +1679,15 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         // sees the exercise without waiting for the DB round-trip. We give
         // it a temporary id (`tmp_…`) so the row is identifiable; the next
         // _load() will replace it with the canonical server row.
+        final resolvedExercise = await ExerciseService.resolveExercise(ex)
+            .timeout(const Duration(seconds: 8));
+        if (resolvedExercise == null) {
+          if (mounted) {
+            _showMessage('Не удалось найти упражнение в каталоге');
+          }
+          return;
+        }
+
         final tmpId = 'tmp_${DateTime.now().microsecondsSinceEpoch}';
         final maxExistingOrder = _programExercises
             .map((e) => e.order)
@@ -1599,7 +1695,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         final optimistic = WorkoutExercise(
           id: tmpId,
           workoutId: widget.workoutId,
-          exerciseId: ex.id,
+          exerciseId: resolvedExercise.id,
           order: maxExistingOrder + 1,
           sets: s,
           repsRange: r,
@@ -1609,7 +1705,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           dropSetWeeklyTargetWeights: dropSetWeeklyWeights,
           durationMinutes: dur,
           day: _selectedDay,
-          exercise: ex,
+          exercise: resolvedExercise,
         );
         if (mounted) {
           _searchDebounce?.cancel();
@@ -1630,7 +1726,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
         try {
           await WorkoutService.addExerciseToWorkout(
             widget.workoutId,
-            ex.id,
+            resolvedExercise.id,
             sets: s,
             repsRange: r,
             restSeconds: rest,
@@ -1651,6 +1747,52 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
           }
         }
       },
+    );
+  }
+
+  Future<void> _openWorkoutExerciseSettings(WorkoutExercise we) async {
+    var exercise = we.exercise;
+    if (exercise != null &&
+        ((exercise.descriptionRu == null || exercise.descriptionRu!.isEmpty) &&
+            (exercise.description == null || exercise.description!.isEmpty))) {
+      try {
+        final detailed = await ExerciseService.getExercise(
+          exercise.id,
+          includeDetails: true,
+        ).timeout(const Duration(seconds: 8));
+        if (detailed != null) exercise = detailed;
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    _showExerciseSettingsSheet(
+      title: exercise?.displayName ?? '?',
+      gifUrl: exercise?.gifUrl,
+      description: exercise?.descriptionRu ?? exercise?.description,
+      isCardio: exercise?.category == 'cardio',
+      initialSets: we.sets,
+      initialRepsRange: we.repsRange,
+      initialRest: we.restSeconds,
+      initialTargetWeight: we.targetWeight,
+      initialWeeklyTargetWeights: we.weeklyTargetWeights,
+      initialDropSetWeeklyTargetWeights: we.dropSetWeeklyTargetWeights,
+      initialDurationMinutes: we.durationMinutes ?? 30,
+      saveLabel: 'Сохранить',
+      showInfoTabs: true,
+      cycleWeeks: _workout?.cycleWeeks ?? 0,
+      currentWeek: _currentCycleWeek,
+      isDropSet: we.isDropSet,
+      onSave: (s, r, rest, tw, dur, weeklyWeights, dropSetWeeklyWeights) =>
+          WorkoutService.updateWorkoutExercise(
+        we.id,
+        sets: s,
+        repsRange: r,
+        restSeconds: rest,
+        targetWeight: tw,
+        durationMinutes: dur,
+        weeklyTargetWeights: weeklyWeights,
+        dropSetWeeklyTargetWeights: dropSetWeeklyWeights,
+      ),
     );
   }
 
@@ -1722,6 +1864,57 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
       );
     }
 
+    if (_loadError != null && _workout == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(backgroundColor: AppColors.background, elevation: 0),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.wifi_off_rounded,
+                    color: AppColors.error,
+                    size: 42,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Не удалось открыть программу',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _loadError!,
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 14,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _load,
+                    child: const Text('Повторить'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final workout = _workout;
     final days = workout?.days ?? [];
 
@@ -1763,6 +1956,13 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             _categorySearchController.clear();
           }
         }),
+      ));
+    }
+    if (catalogWidgets.isEmpty) {
+      catalogWidgets.add(_CatalogStateCard(
+        loading: _catalogLoading,
+        error: _catalogLoadError,
+        onRetry: _loadExerciseCatalog,
       ));
     }
 
@@ -2303,38 +2503,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                           onToggleDropSet: () => _toggleDropSet(realIdx),
                           onCopy: () => _copyWorkoutExercise(we),
                           currentWeek: _currentCycleWeek,
-                          onEdit: () => _showExerciseSettingsSheet(
-                            title: we.exercise?.displayName ?? '?',
-                            gifUrl: we.exercise?.gifUrl,
-                            description: we.exercise?.descriptionRu ??
-                                we.exercise?.description,
-                            isCardio: we.exercise?.category == 'cardio',
-                            initialSets: we.sets,
-                            initialRepsRange: we.repsRange,
-                            initialRest: we.restSeconds,
-                            initialTargetWeight: we.targetWeight,
-                            initialWeeklyTargetWeights: we.weeklyTargetWeights,
-                            initialDropSetWeeklyTargetWeights:
-                                we.dropSetWeeklyTargetWeights,
-                            initialDurationMinutes: we.durationMinutes ?? 30,
-                            saveLabel: 'Сохранить',
-                            showInfoTabs: true,
-                            cycleWeeks: _workout?.cycleWeeks ?? 0,
-                            currentWeek: _currentCycleWeek,
-                            isDropSet: we.isDropSet,
-                            onSave: (s, r, rest, tw, dur, weeklyWeights,
-                                    dropSetWeeklyWeights) =>
-                                WorkoutService.updateWorkoutExercise(
-                              we.id,
-                              sets: s,
-                              repsRange: r,
-                              restSeconds: rest,
-                              targetWeight: tw,
-                              durationMinutes: dur,
-                              weeklyTargetWeights: weeklyWeights,
-                              dropSetWeeklyTargetWeights: dropSetWeeklyWeights,
-                            ),
-                          ),
+                          onEdit: () => _openWorkoutExerciseSettings(we),
                           onDelete: () async {
                             await WorkoutService.removeExerciseFromWorkout(
                                 we.id);
@@ -3162,6 +3331,82 @@ class _MinuteStepper extends StatelessWidget {
 }
 
 // ─── Разделитель групп упражнений ────────────────────────────────────────────
+
+class _CatalogStateCard extends StatelessWidget {
+  final bool loading;
+  final String? error;
+  final VoidCallback onRetry;
+
+  const _CatalogStateCard({
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = error != null && error!.isNotEmpty;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF2D2D2D)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (loading)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            )
+          else
+            Icon(
+              hasError ? Icons.wifi_off_rounded : Icons.fitness_center_rounded,
+              color: hasError ? AppColors.error : AppColors.textSecondary,
+              size: 28,
+            ),
+          const SizedBox(height: 10),
+          Text(
+            loading
+                ? 'Загружаю каталог упражнений'
+                : hasError
+                    ? 'Каталог не загрузился'
+                    : 'Каталог упражнений пуст',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (hasError) ...[
+            const SizedBox(height: 6),
+            Text(
+              error!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onRetry,
+              child: const Text('Повторить'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
 class _GroupSeparator extends StatelessWidget {
   final String label;

@@ -18,7 +18,15 @@ const _categoryChips = [
   ('cardio', 'Кардио'),
 ];
 
-const _categoryOrder = ['Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Пресс', 'Кардио'];
+const _categoryOrder = [
+  'Грудь',
+  'Спина',
+  'Плечи',
+  'Руки',
+  'Ноги',
+  'Пресс',
+  'Кардио'
+];
 
 class ExerciseCatalogScreen extends StatefulWidget {
   const ExerciseCatalogScreen({super.key});
@@ -48,7 +56,8 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
 
   Future<void> _load() async {
     try {
-      final exercises = await ExerciseService.getExercises();
+      final exercises =
+          await ExerciseService.getExercises(includeDetails: true);
       if (!mounted) return;
       setState(() {
         _allExercises = exercises;
@@ -212,8 +221,8 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
                 const Center(
                   child: Text(
                     'Описание пока не добавлено',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 14),
+                    style:
+                        TextStyle(color: AppColors.textSecondary, fontSize: 14),
                   ),
                 ),
               ],
@@ -369,9 +378,7 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
       child: ListTile(
         onTap: () => _showExerciseDetail(ex),
         leading: Icon(
-          ex.category == 'cardio'
-              ? Icons.directions_run
-              : Icons.fitness_center,
+          ex.category == 'cardio' ? Icons.directions_run : Icons.fitness_center,
           color: AppColors.accent,
         ),
         title: Row(
@@ -384,8 +391,7 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
             if (ex.isCustom) ...[
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppColors.accent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
@@ -401,15 +407,13 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
         ),
         subtitle: Text(
           Exercise.categoryDisplayName(ex.category),
-          style:
-              const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         trailing: ex.gifUrl != null
             ? const Icon(Icons.play_circle_outline,
                 color: AppColors.textSecondary, size: 20)
             : null,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
 

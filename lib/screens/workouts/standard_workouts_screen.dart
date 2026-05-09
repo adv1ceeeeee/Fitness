@@ -17,6 +17,7 @@ class StandardWorkoutsTab extends StatefulWidget {
 
 class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
   List<Exercise> _exercises = [];
+  bool _usingProgram = false;
 
   @override
   void initState() {
@@ -25,21 +26,44 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
   }
 
   Future<void> _loadExercises() async {
-    final list = await ExerciseService.getExercises();
-    if (mounted) setState(() => _exercises = list);
+    try {
+      final cached = await ExerciseService.getCachedExercises();
+      if (mounted && cached.isNotEmpty) setState(() => _exercises = cached);
+      final list = await ExerciseService.getExercises()
+          .timeout(const Duration(seconds: 8));
+      if (mounted) setState(() => _exercises = list);
+    } catch (_) {
+      if (mounted && _exercises.isEmpty) {
+        setState(
+            () => _exercises = ExerciseService.getLocalFallbackExercises());
+      }
+    }
   }
 
   /// Returns exercises, loading them first if not yet loaded.
   Future<List<Exercise>> _ensureExercises() async {
     if (_exercises.isNotEmpty) return _exercises;
-    final list = await ExerciseService.getExercises();
-    if (mounted) setState(() => _exercises = list);
-    return list;
+    final cached = await ExerciseService.getCachedExercises();
+    if (cached.isNotEmpty) {
+      if (mounted) setState(() => _exercises = cached);
+      return cached;
+    }
+    try {
+      final list = await ExerciseService.getExercises()
+          .timeout(const Duration(seconds: 8));
+      if (mounted) setState(() => _exercises = list);
+      return list;
+    } catch (_) {
+      final fallback = ExerciseService.getLocalFallbackExercises();
+      if (mounted) setState(() => _exercises = fallback);
+      return fallback;
+    }
   }
 
   Exercise? _findExercise(String name, List<Exercise> exercises) {
     // Normalize: lowercase + ё→е for Russian text matching
-    String n(String s) => s.toLowerCase().replaceAll('ё', 'е').replaceAll('й', 'й');
+    String n(String s) =>
+        s.toLowerCase().replaceAll('ё', 'е').replaceAll('й', 'й');
 
     final q = n(name);
 
@@ -50,18 +74,17 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
         ];
 
     // 1. Exact match
-    final exact = exercises.where(
-        (e) => candidates(e).any((c) => c == q));
+    final exact = exercises.where((e) => candidates(e).any((c) => c == q));
     if (exact.isNotEmpty) return exact.first;
 
     // 2. Candidate contains full query
-    final contains = exercises.where(
-        (e) => candidates(e).any((c) => c.contains(q)));
+    final contains =
+        exercises.where((e) => candidates(e).any((c) => c.contains(q)));
     if (contains.isNotEmpty) return contains.first;
 
     // 3. Full query contains candidate (shortened DB names)
-    final contained = exercises.where(
-        (e) => candidates(e).any((c) => q.contains(c)));
+    final contained =
+        exercises.where((e) => candidates(e).any((c) => q.contains(c)));
     if (contained.isNotEmpty) return contained.first;
 
     // 4. Word-bag: all meaningful words from query appear in candidate
@@ -98,15 +121,20 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
     List<Exercise> allExercises, {
     String? groupId,
   }) async {
-    final workout = await WorkoutService.createWorkout(name, days, groupId: groupId);
+    final workout =
+        await WorkoutService.createWorkout(name, days, groupId: groupId);
     final notFound = <String>[];
     for (final ex in exercises) {
       final exName = ex['name'] as String;
       final exercise = _findExercise(exName, allExercises);
-      if (exercise != null) {
+      final resolved = exercise == null
+          ? null
+          : await ExerciseService.resolveExercise(exercise)
+              .timeout(const Duration(seconds: 8), onTimeout: () => null);
+      if (resolved != null) {
         await WorkoutService.addExerciseToWorkout(
           workout.id,
-          exercise.id,
+          resolved.id,
           sets: ex['sets'] as int? ?? 3,
           repsRange: ex['reps'] as String? ?? '8-12',
           restSeconds: ex['rest'] as int? ?? 90,
@@ -119,6 +147,11 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
   }
 
   Future<void> _useProgram(Map<String, dynamic> program) async {
+    if (_usingProgram) return;
+    setState(() => _usingProgram = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Добавляю программу...')),
+    );
     try {
       // Ensure the exercise catalog is loaded before building the program.
       final allExercises = await _ensureExercises();
@@ -183,7 +216,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
         if (allNotFound.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Программа "${program['name']}" добавлена в "Мои программы"'),
+              content: Text(
+                  'Программа "${program['name']}" добавлена в "Мои программы"'),
               backgroundColor: Colors.green,
             ),
           );
@@ -209,13 +243,16 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _usingProgram = false);
     }
   }
 
   int _totalDays(Map<String, dynamic> program) {
     final sections = program['sections'] as List?;
     if (sections != null) {
-      return sections.fold<int>(0, (sum, s) => sum + ((s as Map)['days'] as List).length);
+      return sections.fold<int>(
+          0, (sum, s) => sum + ((s as Map)['days'] as List).length);
     }
     return (program['days'] as List).length;
   }
@@ -257,15 +294,18 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                     ),
                     if (isPremium)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFB800).withValues(alpha: 0.15),
+                          color:
+                              const Color(0xFFFFB800).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFB800)),
+                            Icon(Icons.star_rounded,
+                                size: 13, color: Color(0xFFFFB800)),
                             SizedBox(width: 4),
                             Text(
                               '\$5',
@@ -303,11 +343,13 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                           ),
                           const SizedBox(height: 4),
                           ...(s['exercises'] as List).map((e) => Padding(
-                                padding: const EdgeInsets.only(bottom: 3, left: 8),
+                                padding:
+                                    const EdgeInsets.only(bottom: 3, left: 8),
                                 child: Text(
                                   '• ${e['name']} — ${e['sets']}×${e['reps']}',
                                   style: const TextStyle(
-                                      color: AppColors.textSecondary, fontSize: 13),
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13),
                                 ),
                               )),
                         ],
@@ -324,7 +366,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                               padding: const EdgeInsets.only(bottom: 4),
                               child: Text(
                                 '• ${e['name']} — ${e['sets']}×${e['reps']}',
-                                style: const TextStyle(color: AppColors.textSecondary),
+                                style: const TextStyle(
+                                    color: AppColors.textSecondary),
                               ),
                             )),
                       ],
@@ -335,6 +378,7 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(ctx);
+                            if (_usingProgram) return;
                             if (isPremium) {
                               // Wait for the bottom-sheet pop animation to
                               // finish before pushing a new full-screen route.
@@ -409,7 +453,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                   ),
                   child: Icon(
                     Icons.list_alt_rounded,
-                    color: isPremium ? const Color(0xFFFFB800) : AppColors.accent,
+                    color:
+                        isPremium ? const Color(0xFFFFB800) : AppColors.accent,
                     size: 28,
                   ),
                 ),
@@ -439,7 +484,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                           if (isMulti) ...[
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: AppColors.accent.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
@@ -462,7 +508,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                 if (isPremium)
                   Container(
                     margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFB800).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
@@ -470,7 +517,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.star_rounded, size: 11, color: Color(0xFFFFB800)),
+                        Icon(Icons.star_rounded,
+                            size: 11, color: Color(0xFFFFB800)),
                         SizedBox(width: 3),
                         Text(
                           'Pro',
@@ -495,10 +543,12 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
   @override
   Widget build(BuildContext context) {
     final basic = standardPrograms.where((p) => p['premium'] != true).toList();
-    final premium = standardPrograms.where((p) => p['premium'] == true).toList();
+    final premium =
+        standardPrograms.where((p) => p['premium'] == true).toList();
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
       children: [
         // ── Готовые программы ─────────────────────────────────────────────
         const Padding(
@@ -539,7 +589,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.star_rounded, size: 11, color: Color(0xFFFFB800)),
+                    Icon(Icons.star_rounded,
+                        size: 11, color: Color(0xFFFFB800)),
                     SizedBox(width: 3),
                     Text(
                       'Pro',
@@ -604,7 +655,8 @@ class _PaymentScreenState extends State<_PaymentScreen> {
         ),
         title: const Text(
           'Оплата',
-          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w600),
         ),
       ),
       body: Column(
@@ -647,7 +699,8 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('Стоимость',
-                                style: TextStyle(color: AppColors.textSecondary)),
+                                style:
+                                    TextStyle(color: AppColors.textSecondary)),
                             Text(
                               '\$5.00',
                               style: TextStyle(
@@ -684,20 +737,24 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                         onTap: () => setState(() => _selectedBank = i),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
                           decoration: BoxDecoration(
                             color: selected
                                 ? AppColors.accent.withValues(alpha: 0.12)
                                 : AppColors.card,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: selected ? AppColors.accent : Colors.transparent,
+                              color: selected
+                                  ? AppColors.accent
+                                  : Colors.transparent,
                               width: 1.5,
                             ),
                           ),
                           child: Row(
                             children: [
-                              Text(bank.emoji, style: const TextStyle(fontSize: 22)),
+                              Text(bank.emoji,
+                                  style: const TextStyle(fontSize: 22)),
                               const SizedBox(width: 14),
                               Expanded(
                                 child: Text(
@@ -725,7 +782,8 @@ class _PaymentScreenState extends State<_PaymentScreen> {
 
                   // ── Mock card number ───────────────────────────────────────
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     decoration: BoxDecoration(
                       color: AppColors.card,
                       borderRadius: BorderRadius.circular(12),
@@ -771,7 +829,8 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                 onPressed: _loading ? null : _pay,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
-                  disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.6),
+                  disabledBackgroundColor:
+                      AppColors.accent.withValues(alpha: 0.6),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),

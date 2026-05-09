@@ -222,6 +222,7 @@ Future<void> showMicroSurveySheet(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,
     useRootNavigator: true,
+    isScrollControlled: true,
     backgroundColor: AppColors.card,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -274,7 +275,8 @@ class _MicroSurveySheetState extends State<_MicroSurveySheet> {
       );
     }
 
-    return Padding(
+    return SingleChildScrollView(
+      child: Padding(
       padding: EdgeInsets.fromLTRB(
           24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
       child: Column(
@@ -330,6 +332,7 @@ class _MicroSurveySheetState extends State<_MicroSurveySheet> {
           }),
         ],
       ),
+    ),
     );
   }
 }
