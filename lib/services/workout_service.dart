@@ -346,30 +346,45 @@ class WorkoutService {
 
   static Future<void> reorderExercises(
       String workoutId, List<String> exerciseIds) async {
-    // Write the new order to cache up-front so a re-entry to the screen
-    // before the DB round-trips finish still sees the new order.
     final cached = await getWorkoutExercises(workoutId);
     final byId = {for (final e in cached) e.id: e};
     final reordered = <WorkoutExercise>[
       for (final id in exerciseIds)
         if (byId[id] != null) byId[id]!,
     ];
-    if (reordered.length == exerciseIds.length) {
-      await AppCache.set<List<WorkoutExercise>>(
-        key: 'workout_exercises:$workoutId',
-        value: reordered,
-        encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
-      );
-    }
+    await reorderWorkoutExercises(workoutId, reordered);
+  }
+
+  static Future<void> reorderWorkoutExercises(
+      String workoutId, List<WorkoutExercise> exercises) async {
+    final reordered = [
+      for (var i = 0; i < exercises.length; i++) exercises[i].copyWith(order: i)
+    ];
+
+    // Write the new order to cache up-front so a re-entry to the screen
+    // before the DB round-trips finish still sees the new order.
+    await AppCache.set<List<WorkoutExercise>>(
+      key: 'workout_exercises:$workoutId',
+      value: reordered,
+      encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
+    );
 
     // Apply DB updates in parallel — N round-trips, but concurrent.
     await Future.wait([
-      for (var i = 0; i < exerciseIds.length; i++)
-        _client
-            .from('workout_exercises')
-            .update({'order': i}).eq('id', exerciseIds[i]),
+      for (final exercise in reordered)
+        if (!exercise.id.startsWith('tmp_'))
+          _client
+              .from('workout_exercises')
+              .update({'order': exercise.order}).eq('id', exercise.id),
     ]);
-    await _invalidateWorkoutExercises(workoutId);
+
+    // Keep the confirmed order in cache so Android can reopen the program
+    // without waiting on another network read.
+    await AppCache.set<List<WorkoutExercise>>(
+      key: 'workout_exercises:$workoutId',
+      value: reordered,
+      encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
+    );
   }
 
   static Future<void> removeExerciseFromWorkout(

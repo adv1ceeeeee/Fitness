@@ -2465,12 +2465,16 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                   ? _programExercises.length
                                   : insertIdx,
                               movedItem);
+                          _programExercises = [
+                            for (var i = 0; i < _programExercises.length; i++)
+                              _programExercises[i].copyWith(order: i),
+                          ];
                         });
                         final messenger = ScaffoldMessenger.of(context);
                         try {
-                          await WorkoutService.reorderExercises(
+                          await WorkoutService.reorderWorkoutExercises(
                             widget.workoutId,
-                            _programExercises.map((e) => e.id).toList(),
+                            _programExercises,
                           );
                         } catch (e) {
                           if (mounted) {
@@ -2491,24 +2495,27 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                             we.supersetGroup != null &&
                             we.supersetGroup == nextWe?.supersetGroup;
                         final realIdx = _programExercises.indexOf(we);
-                        return _ProgramExerciseCard(
+                        return ReorderableDelayedDragStartListener(
                           key: ValueKey(we.id),
-                          dragIndex: i,
-                          workoutExercise: we,
-                          supersetLabel: _supersetLabel(realIdx),
-                          isLinkedWithNext: isLinkedWithNext,
-                          canLink: !isLast,
-                          isDropSet: we.isDropSet,
-                          onToggleLink: () => _toggleSuperset(realIdx),
-                          onToggleDropSet: () => _toggleDropSet(realIdx),
-                          onCopy: () => _copyWorkoutExercise(we),
-                          currentWeek: _currentCycleWeek,
-                          onEdit: () => _openWorkoutExerciseSettings(we),
-                          onDelete: () async {
-                            await WorkoutService.removeExerciseFromWorkout(
-                                we.id);
-                            _load();
-                          },
+                          index: i,
+                          child: _ProgramExerciseCard(
+                            dragIndex: i,
+                            workoutExercise: we,
+                            supersetLabel: _supersetLabel(realIdx),
+                            isLinkedWithNext: isLinkedWithNext,
+                            canLink: !isLast,
+                            isDropSet: we.isDropSet,
+                            onToggleLink: () => _toggleSuperset(realIdx),
+                            onToggleDropSet: () => _toggleDropSet(realIdx),
+                            onCopy: () => _copyWorkoutExercise(we),
+                            currentWeek: _currentCycleWeek,
+                            onEdit: () => _openWorkoutExerciseSettings(we),
+                            onDelete: () async {
+                              await WorkoutService.removeExerciseFromWorkout(
+                                  we.id);
+                              _load();
+                            },
+                          ),
                         );
                       }).toList(),
                     ),
@@ -2698,7 +2705,6 @@ class _ProgramExerciseCard extends StatelessWidget {
   final VoidCallback onDelete;
 
   const _ProgramExerciseCard({
-    super.key,
     required this.dragIndex,
     required this.workoutExercise,
     required this.onEdit,

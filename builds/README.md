@@ -44,7 +44,7 @@ Release APKs are built with OpenJDK 17 and Flutter:
   /opt/homebrew/share/flutter/bin/flutter build apk \
     --release \
     --build-name 1.9.1 \
-    --build-number 35 \
+    --build-number 39 \
     --dart-define=DART_DEFINE_PRODUCTION=true \
     --no-tree-shake-icons
 ```
@@ -53,7 +53,7 @@ Then copy the artifact:
 
 ```bash
 cp build/app/outputs/flutter-apk/app-release.apk \
-  builds/android/apk/sportwai-v1.9.1+35.apk
+  builds/android/apk/sportwai-v1.9.1+39.apk
 ```
 
 Verify package metadata and signing:

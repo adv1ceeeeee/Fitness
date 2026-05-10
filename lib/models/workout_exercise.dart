@@ -39,6 +39,28 @@ class WorkoutExercise {
 
   bool get isCardio => exercise?.category == 'cardio';
 
+  WorkoutExercise copyWith({
+    int? order,
+  }) =>
+      WorkoutExercise(
+        id: id,
+        workoutId: workoutId,
+        exerciseId: exerciseId,
+        order: order ?? this.order,
+        sets: sets,
+        repsRange: repsRange,
+        restSeconds: restSeconds,
+        targetWeight: targetWeight,
+        weeklyTargetWeights: weeklyTargetWeights,
+        dropSetWeeklyTargetWeights: dropSetWeeklyTargetWeights,
+        targetRpe: targetRpe,
+        durationMinutes: durationMinutes,
+        supersetGroup: supersetGroup,
+        isDropSet: isDropSet,
+        day: day,
+        exercise: exercise,
+      );
+
   double? weightForWeek(int week) {
     final direct = weeklyTargetWeights[week];
     if (direct != null) return direct;
