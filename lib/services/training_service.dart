@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
@@ -19,6 +20,16 @@ class TrainingService {
   // Short TTLs: session data changes more often than workouts.
   static const _shortTtl = Duration(minutes: 2);
   static const _mediumTtl = Duration(minutes: 5);
+  static const _networkTimeout = Duration(seconds: 10);
+  static const _workoutExerciseSelect = '''
+*, exercises(id,name,name_ru,category,image_url,is_standard,user_id,gif_url)
+''';
+  static const _workoutExerciseCachePrefix = 'workout_exercises_v2';
+  static final Map<String, Future<List<WorkoutExercise>>>
+      _workoutExercisesInFlight = {};
+
+  static String _workoutExerciseCacheKey(String workoutId) =>
+      '$_workoutExerciseCachePrefix:$workoutId';
 
   /// Invalidate every cache entry related to training sessions for a user.
   /// Called after any session mutation (create, complete, skip, delete).
@@ -65,7 +76,8 @@ class TrainingService {
             .from('workouts')
             .select()
             .eq('user_id', userId)
-            .eq('is_standard', false);
+            .eq('is_standard', false)
+            .timeout(_networkTimeout);
 
         for (final row in res as List) {
           final days = row['days'] as List<dynamic>?;
@@ -85,15 +97,40 @@ class TrainingService {
 
   static Future<List<WorkoutExercise>> getWorkoutExercisesForToday(
       String workoutId) async {
-    final res = await _client
-        .from('workout_exercises')
-        .select('*, exercises(*)')
-        .eq('workout_id', workoutId)
-        .order('order');
+    final inFlight = _workoutExercisesInFlight[workoutId];
+    if (inFlight != null) return inFlight;
 
-    return (res as List)
-        .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final future = _fetchWorkoutExercisesForToday(workoutId);
+    _workoutExercisesInFlight[workoutId] = future;
+    future.whenComplete(() => _workoutExercisesInFlight.remove(workoutId));
+    return future;
+  }
+
+  static Future<List<WorkoutExercise>> _fetchWorkoutExercisesForToday(
+      String workoutId) async {
+    return AppCache.get<List<WorkoutExercise>>(
+      key: _workoutExerciseCacheKey(workoutId),
+      ttl: _mediumTtl,
+      fetch: () async {
+        final res = await _client
+            .from('workout_exercises')
+            .select(_workoutExerciseSelect)
+            .eq('workout_id', workoutId)
+            .order('order')
+            .timeout(_networkTimeout);
+        return (res as List)
+            .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+      encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
+      decode: (cached) {
+        if (cached == null) return <WorkoutExercise>[];
+        final list = jsonDecode(cached) as List;
+        return list
+            .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+            .toList();
+      },
+    );
   }
 
   /// Создать сессию тренировки
@@ -103,16 +140,22 @@ class TrainingService {
 
     int? streakAtStart;
     try {
-      streakAtStart = await AnalyticsService.getCurrentStreak();
+      streakAtStart = await AnalyticsService.getCurrentStreak()
+          .timeout(const Duration(seconds: 2));
     } catch (_) {}
 
-    final res = await _client.from('training_sessions').insert({
-      'user_id': userId,
-      'workout_id': workoutId,
-      'date': today,
-      'completed': false,
-      if (streakAtStart != null) 'streak_at_start': streakAtStart,
-    }).select().single();
+    final res = await _client
+        .from('training_sessions')
+        .insert({
+          'user_id': userId,
+          'workout_id': workoutId,
+          'date': today,
+          'completed': false,
+          if (streakAtStart != null) 'streak_at_start': streakAtStart,
+        })
+        .select()
+        .single()
+        .timeout(_networkTimeout);
 
     await _invalidateSessionCaches();
     return TrainingSession.fromJson(res);
@@ -133,14 +176,17 @@ class TrainingService {
           .eq('user_id', userId)
           .eq('workout_id', workoutId)
           .eq('date', today)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(_networkTimeout);
 
       if (res == null) {
         return await createSession(workoutId);
       }
       return TrainingSession.fromJson(res);
     } catch (e) {
-      if (kDebugMode) debugPrint('[TrainingService.getOrCreateTodaySession] error: $e');
+      if (kDebugMode) {
+        debugPrint('[TrainingService.getOrCreateTodaySession] error: $e');
+      }
       return null;
     }
   }
@@ -154,7 +200,7 @@ class TrainingService {
     String? notes,
     int? sessionRpe,
   }) async {
-    await _client.rpc('fn_complete_session', params: {
+    final params = {
       'p_session_id': sessionId,
       if (durationSeconds != null && durationSeconds >= 0)
         'p_duration_seconds': durationSeconds,
@@ -162,8 +208,78 @@ class TrainingService {
           ? notes.substring(0, 1000)
           : notes,
       if (sessionRpe != null) 'p_session_rpe': sessionRpe.clamp(1, 10),
-    });
+    };
+
+    try {
+      await _client
+          .rpc('fn_complete_session', params: params)
+          .timeout(_networkTimeout);
+    } on TimeoutException catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+            '[TrainingService.completeSession] RPC timeout, using fallback: $e');
+      }
+      await _completeSessionFallback(
+        sessionId,
+        durationSeconds: durationSeconds,
+        notes: notes,
+        sessionRpe: sessionRpe,
+      );
+    }
     await _invalidateSessionCaches();
+  }
+
+  static Future<void> _completeSessionFallback(
+    String sessionId, {
+    int? durationSeconds,
+    String? notes,
+    int? sessionRpe,
+  }) async {
+    double volumeKg = 0;
+    double kcalTotal = 0;
+    try {
+      final rows = await _client
+          .from('sets')
+          .select('weight, reps, kcal_estimated, is_warmup')
+          .eq('training_session_id', sessionId)
+          .eq('completed', true)
+          .timeout(_networkTimeout);
+
+      for (final row in rows as List) {
+        final map = row as Map<String, dynamic>;
+        kcalTotal += (map['kcal_estimated'] as num?)?.toDouble() ?? 0;
+        final isWarmup = map['is_warmup'] as bool? ?? false;
+        if (!isWarmup) {
+          final weight = (map['weight'] as num?)?.toDouble() ?? 0;
+          final reps = (map['reps'] as num?)?.toInt() ?? 0;
+          volumeKg += weight * reps;
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+            '[TrainingService._completeSessionFallback] totals error: $e');
+      }
+    }
+
+    final update = <String, dynamic>{
+      'completed': true,
+      if (durationSeconds != null && durationSeconds >= 0)
+        'duration_seconds': durationSeconds,
+      'notes': notes != null && notes.length > 1000
+          ? notes.substring(0, 1000)
+          : notes,
+      if (sessionRpe != null) 'session_rpe': sessionRpe.clamp(1, 10),
+      if (kcalTotal > 0)
+        'kcal_total': double.parse(kcalTotal.toStringAsFixed(1)),
+      if (volumeKg > 0) 'volume_kg': double.parse(volumeKg.toStringAsFixed(2)),
+    };
+
+    await _client
+        .from('training_sessions')
+        .update(update)
+        .eq('id', sessionId)
+        .timeout(_networkTimeout);
   }
 
   /// Mark a planned session as skipped with a reason.
@@ -245,10 +361,13 @@ class TrainingService {
             if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
             if (durationSeconds != null) 'duration_seconds': durationSeconds,
             if (distanceM != null) 'distance_m': distanceM,
-          }));
+          }).timeout(_networkTimeout));
       return true;
     } catch (e) {
-      if (kDebugMode) debugPrint('[TrainingService.saveSet] error: $e — queuing for offline retry');
+      if (kDebugMode) {
+        debugPrint(
+            '[TrainingService.saveSet] error: $e — queuing for offline retry');
+      }
       await OfflineQueueService.enqueue(
         sessionId: sessionId,
         workoutExerciseId: workoutExerciseId,
@@ -271,7 +390,8 @@ class TrainingService {
           .from('sets')
           .select('kcal_estimated')
           .eq('training_session_id', sessionId)
-          .eq('completed', true);
+          .eq('completed', true)
+          .timeout(_networkTimeout);
 
       double total = 0;
       for (final r in rows as List) {
@@ -282,8 +402,8 @@ class TrainingService {
 
       await _client
           .from('training_sessions')
-          .update({'kcal_total': double.parse(total.toStringAsFixed(1))})
-          .eq('id', sessionId);
+          .update({'kcal_total': double.parse(total.toStringAsFixed(1))}).eq(
+              'id', sessionId);
     } catch (e) {
       if (kDebugMode) debugPrint('[TrainingService.saveSessionKcal] error: $e');
     }
@@ -294,9 +414,11 @@ class TrainingService {
       String sessionId) async {
     final res = await _client
         .from('sets')
-        .select('*, workout_exercises(order, reps_range, sets, exercises(name, name_ru, category))')
+        .select(
+            '*, workout_exercises(order, reps_range, sets, exercises(name, name_ru, category))')
         .eq('training_session_id', sessionId)
-        .order('set_number');
+        .order('set_number')
+        .timeout(_networkTimeout);
     return (res as List).cast<Map<String, dynamic>>();
   }
 
@@ -309,13 +431,17 @@ class TrainingService {
     bool? isWarmup,
     double? kcalEstimated,
   }) async {
-    await _client.from('sets').update({
-      'weight': weight,
-      'reps': reps,
-      'rpe': rpe,
-      if (isWarmup != null) 'is_warmup': isWarmup,
-      if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
-    }).eq('id', setId);
+    await _client
+        .from('sets')
+        .update({
+          'weight': weight,
+          'reps': reps,
+          'rpe': rpe,
+          if (isWarmup != null) 'is_warmup': isWarmup,
+          if (kcalEstimated != null) 'kcal_estimated': kcalEstimated,
+        })
+        .eq('id', setId)
+        .timeout(_networkTimeout);
   }
 
   /// Sum volume (weight × reps) for all non-warmup completed sets and persist it.
@@ -338,10 +464,12 @@ class TrainingService {
 
       await _client
           .from('training_sessions')
-          .update({'volume_kg': double.parse(total.toStringAsFixed(2))})
-          .eq('id', sessionId);
+          .update({'volume_kg': double.parse(total.toStringAsFixed(2))}).eq(
+              'id', sessionId);
     } catch (e) {
-      if (kDebugMode) debugPrint('[TrainingService.saveSessionVolume] error: $e');
+      if (kDebugMode) {
+        debugPrint('[TrainingService.saveSessionVolume] error: $e');
+      }
     }
   }
 
@@ -372,10 +500,8 @@ class TrainingService {
     if (existing != null) {
       if (ptStr != null) {
         try {
-          await _client
-              .from('training_sessions')
-              .update({'planned_time': ptStr})
-              .eq('id', existing['id'] as String);
+          await _client.from('training_sessions').update(
+              {'planned_time': ptStr}).eq('id', existing['id'] as String);
         } catch (_) {} // Column may not exist yet
       }
       return TrainingSession.fromJson(
@@ -427,7 +553,8 @@ class TrainingService {
         .eq('user_id', userId)
         .eq('date', today)
         .eq('completed', false)
-        .order('created_at', ascending: true);
+        .order('created_at', ascending: true)
+        .timeout(_networkTimeout);
 
     return (res as List).cast<Map<String, dynamic>>();
   }
@@ -455,7 +582,8 @@ class TrainingService {
             .gte('created_at', cutoff)
             .order('created_at', ascending: false)
             .limit(1)
-            .maybeSingle();
+            .maybeSingle()
+            .timeout(_networkTimeout);
       },
       encode: (v) => v == null ? null : jsonEncode(v),
       decode: (cached) {
@@ -489,10 +617,49 @@ class TrainingService {
     return (res?['weight_kg'] as num?)?.toDouble();
   }
 
+  /// Returns the best recorded working weight per exercise in one request.
+  static Future<Map<String, double>> getPersonalBestsForExercises(
+      List<String> exerciseIds) async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null || exerciseIds.isEmpty) return {};
+    final sortedIds = [...exerciseIds]..sort();
+
+    return AppCache.get<Map<String, double>>(
+      key: 'personal_bests:$userId:${sortedIds.join(',')}',
+      ttl: const Duration(minutes: 10),
+      fetch: () async {
+        final res = await _client
+            .from('personal_records')
+            .select('exercise_id, weight_kg')
+            .eq('user_id', userId)
+            .inFilter('exercise_id', exerciseIds)
+            .timeout(_networkTimeout);
+        final result = <String, double>{};
+        for (final row in res as List) {
+          final map = row as Map<String, dynamic>;
+          final exerciseId = map['exercise_id'] as String?;
+          final weight = (map['weight_kg'] as num?)?.toDouble();
+          if (exerciseId == null || weight == null) continue;
+          if (!result.containsKey(exerciseId) || weight > result[exerciseId]!) {
+            result[exerciseId] = weight;
+          }
+        }
+        return result;
+      },
+      encode: (value) => jsonEncode(value),
+      decode: (cached) {
+        if (cached == null) return <String, double>{};
+        return (jsonDecode(cached) as Map<String, dynamic>).map(
+          (key, value) => MapEntry(key, (value as num).toDouble()),
+        );
+      },
+    );
+  }
+
   /// Returns the most recent completed session info per workout_id.
   /// Result: { workoutId → { 'date': String, 'duration_seconds': int? } }
-  static Future<Map<String, Map<String, dynamic>>> getLastSessionInfoForWorkouts(
-      List<String> workoutIds) async {
+  static Future<Map<String, Map<String, dynamic>>>
+      getLastSessionInfoForWorkouts(List<String> workoutIds) async {
     if (workoutIds.isEmpty) return {};
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
@@ -603,8 +770,8 @@ class TrainingService {
 
   /// Returns the nearest upcoming (future, incomplete, non-skipped) session per workout.
   /// Result: { workoutId → { 'date': String 'yyyy-MM-dd', 'session_id': String } }
-  static Future<Map<String, Map<String, dynamic>>> getUpcomingSessionsForWorkouts(
-      List<String> workoutIds) async {
+  static Future<Map<String, Map<String, dynamic>>>
+      getUpcomingSessionsForWorkouts(List<String> workoutIds) async {
     if (workoutIds.isEmpty) return {};
     final userId = AuthService.currentUser?.id;
     if (userId == null) return {};
@@ -658,7 +825,6 @@ class TrainingService {
     );
   }
 
-
   /// All completed sessions, newest first, with workout name and duration.
   /// Pass [offset] for pagination (page size = [limit]).
   static Future<List<Map<String, dynamic>>> getCompletedSessions({
@@ -670,7 +836,8 @@ class TrainingService {
 
     final res = await _client
         .from('training_sessions')
-        .select('id, workout_id, date, duration_seconds, notes, kcal_total, volume_kg, workouts(name)')
+        .select(
+            'id, workout_id, date, duration_seconds, notes, kcal_total, volume_kg, workouts(name)')
         .eq('user_id', userId)
         .eq('completed', true)
         .order('date', ascending: false)
@@ -718,9 +885,12 @@ class TrainingService {
   ///   'firstDate'     → String? ('yyyy-MM-dd')
   ///   'byDay'         → Map<int, Map> where key is 0-based weekday (0=Mon…6=Sun)
   ///                     each value: {date, rpe, durationSeconds, exercises:[{name,setCount,maxWeight,lastReps}]}
-  static Future<Map<String, dynamic>> getWorkoutDayHistory(String workoutId) async {
+  static Future<Map<String, dynamic>> getWorkoutDayHistory(
+      String workoutId) async {
     final userId = AuthService.currentUser?.id;
-    if (userId == null) return {'totalSessions': 0, 'firstDate': null, 'byDay': <int, Map>{}};
+    if (userId == null) {
+      return {'totalSessions': 0, 'firstDate': null, 'byDay': <int, Map>{}};
+    }
 
     // 1. Last 60 sessions for total count + first date + per-day grouping
     final sessRes = await _client
@@ -748,11 +918,11 @@ class TrainingService {
       final weekday = DateTime.parse(dateStr).weekday - 1; // 0=Mon…6=Sun
       if (!byDay.containsKey(weekday)) {
         byDay[weekday] = {
-          'id':              s['id'] as String,
-          'date':            dateStr,
-          'rpe':             s['session_rpe'] as int?,
+          'id': s['id'] as String,
+          'date': dateStr,
+          'rpe': s['session_rpe'] as int?,
           'durationSeconds': s['duration_seconds'] as int?,
-          'exercises':       <Map<String, dynamic>>[],
+          'exercises': <Map<String, dynamic>>[],
         };
       }
     }
@@ -761,7 +931,8 @@ class TrainingService {
     final sessionIds = byDay.values.map((d) => d['id'] as String).toList();
     final setsRes = await _client
         .from('sets')
-        .select('training_session_id, workout_exercise_id, weight, reps, set_number')
+        .select(
+            'training_session_id, workout_exercise_id, weight, reps, set_number')
         .inFilter('training_session_id', sessionIds)
         .eq('completed', true)
         .eq('is_warmup', false)
@@ -785,7 +956,7 @@ class TrainingService {
         final ex = row['exercises'] as Map<String, dynamic>?;
         if (ex == null) continue;
         final nameRu = ex['name_ru'] as String?;
-        final name   = ex['name']    as String? ?? '';
+        final name = ex['name'] as String? ?? '';
         weNames[row['id'] as String] =
             (nameRu != null && nameRu.isNotEmpty) ? nameRu : name;
       }
@@ -796,20 +967,22 @@ class TrainingService {
     final setsBySess = <String, Map<String, Map<String, dynamic>>>{};
     for (final s in setsRes as List) {
       final sessId = s['training_session_id'] as String;
-      final weId   = s['workout_exercise_id'] as String;
+      final weId = s['workout_exercise_id'] as String;
       setsBySess.putIfAbsent(sessId, () => {});
-      setsBySess[sessId]!.putIfAbsent(weId, () => {
-        'name':      weNames[weId] ?? weId,
-        'setCount':  0,
-        'maxWeight': 0.0,
-        'lastReps':  0,
-      });
+      setsBySess[sessId]!.putIfAbsent(
+          weId,
+          () => {
+                'name': weNames[weId] ?? weId,
+                'setCount': 0,
+                'maxWeight': 0.0,
+                'lastReps': 0,
+              });
       final agg = setsBySess[sessId]![weId]!;
       agg['setCount'] = (agg['setCount'] as int) + 1;
       final w = (s['weight'] as num?)?.toDouble() ?? 0.0;
       if (w > (agg['maxWeight'] as double)) {
         agg['maxWeight'] = w;
-        agg['lastReps']  = (s['reps'] as num?)?.toInt() ?? 0;
+        agg['lastReps'] = (s['reps'] as num?)?.toInt() ?? 0;
       }
     }
 
@@ -819,6 +992,10 @@ class TrainingService {
           setsBySess[sessId]?.values.toList() ?? <Map<String, dynamic>>[];
     }
 
-    return {'totalSessions': totalSessions, 'firstDate': firstDate, 'byDay': byDay};
+    return {
+      'totalSessions': totalSessions,
+      'firstDate': firstDate,
+      'byDay': byDay
+    };
   }
 }

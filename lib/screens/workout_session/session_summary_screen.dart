@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,28 +72,28 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
     final Map<String, _ExerciseGroup> map = {};
 
     for (final row in rows) {
-      final weInfo =
-          row['workout_exercises'] as Map<String, dynamic>? ?? {};
+      final weInfo = row['workout_exercises'] as Map<String, dynamic>? ?? {};
       final exInfo = weInfo['exercises'] as Map<String, dynamic>? ?? {};
-      final exerciseName = (exInfo['name_ru'] as String?)
-          ?? exInfo['name'] as String?
-          ?? 'Упражнение';
+      final exerciseName = (exInfo['name_ru'] as String?) ??
+          exInfo['name'] as String? ??
+          'Упражнение';
       final exerciseCategory = exInfo['category'] as String? ?? 'chest';
       final weOrder = weInfo['order'] as int? ?? 0;
       final key = '${weOrder}_$exerciseName';
 
       map.putIfAbsent(
         key,
-        () => _ExerciseGroup(name: exerciseName, order: weOrder, category: exerciseCategory),
+        () => _ExerciseGroup(
+            name: exerciseName, order: weOrder, category: exerciseCategory),
       );
       map[key]!.sets.add(_SetRow(
-        id: row['id'] as String,
-        setNumber: row['set_number'] as int? ?? 1,
-        weight: (row['weight'] as num?)?.toDouble(),
-        reps: row['reps'] as int?,
-        rpe: row['rpe'] as int?,
-        isWarmup: row['is_warmup'] as bool? ?? false,
-      ));
+            id: row['id'] as String,
+            setNumber: row['set_number'] as int? ?? 1,
+            weight: (row['weight'] as num?)?.toDouble(),
+            reps: row['reps'] as int?,
+            rpe: row['rpe'] as int?,
+            isWarmup: row['is_warmup'] as bool? ?? false,
+          ));
     }
 
     final sorted = map.values.toList()
@@ -185,6 +187,14 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
     } catch (_) {}
   }
 
+  Future<T> _quickOptional<T>(Future<T> future, T fallback) async {
+    try {
+      return await future.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      return fallback;
+    }
+  }
+
   String _formatDuration(int seconds) {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
@@ -248,27 +258,30 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
     setState(() => _saving = true);
     try {
       // Update edited sets (including recalculated kcal_estimated)
+      final updateFutures = <Future<void>>[];
       for (final group in _groups) {
         for (final set in group.sets) {
           final kcal = (set.reps != null && set.reps! > 0)
-              ? estimateSetKcal(category: group.category, reps: set.reps!, rpe: set.rpe)
+              ? estimateSetKcal(
+                  category: group.category, reps: set.reps!, rpe: set.rpe)
               : null;
-          await TrainingService.updateSet(
+          updateFutures.add(TrainingService.updateSet(
             set.id,
             weight: set.weight,
             reps: set.reps,
             rpe: set.rpe,
             kcalEstimated: kcal,
-          );
+          ));
         }
       }
+      await Future.wait(updateFutures).timeout(const Duration(seconds: 20));
       // Mark session complete
       await TrainingService.completeSession(
         widget.sessionId,
         durationSeconds: widget.durationSeconds,
         notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         sessionRpe: _sessionRpe,
-      );
+      ).timeout(const Duration(seconds: 20));
       if (_sessionRpe != null) {
         EventLogger.sessionRpeLogged(
           sessionId: widget.sessionId,
@@ -281,20 +294,45 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
       final totalSets = _groups.fold<int>(0, (s, g) => s + g.sets.length);
       final duration = widget.durationSeconds;
       if (duration >= minWorkoutDurationForXp) {
-        xpGained += await GamificationService.award('workout_completed', sourceId: widget.sessionId);
-        xpGained += await GamificationService.awardSets(totalSets, sessionId: widget.sessionId);
-        xpGained += await GamificationService.awardDuration(duration, sessionId: widget.sessionId);
-        final streak = await AnalyticsService.getCurrentStreak();
+        xpGained += await _quickOptional(
+          GamificationService.award(
+            'workout_completed',
+            sourceId: widget.sessionId,
+          ),
+          0,
+        );
+        xpGained += await _quickOptional(
+          GamificationService.awardSets(totalSets, sessionId: widget.sessionId),
+          0,
+        );
+        xpGained += await _quickOptional(
+          GamificationService.awardDuration(duration,
+              sessionId: widget.sessionId),
+          0,
+        );
+        final streak =
+            await _quickOptional(AnalyticsService.getCurrentStreak(), 0);
         if (streak >= 7) {
-          xpGained += await GamificationService.award('streak_bonus', sourceId: widget.sessionId);
+          xpGained += await _quickOptional(
+            GamificationService.award(
+              'streak_bonus',
+              sourceId: widget.sessionId,
+            ),
+            0,
+          );
         }
       }
       // Schedule inactivity reminder (fires in 3 days if no workout)
-      NotificationService.scheduleInactivityReminder(daysLater: 3);
+      unawaited(
+        NotificationService.scheduleInactivityReminder(daysLater: 3)
+            .timeout(const Duration(seconds: 5))
+            .catchError((_) {}),
+      );
       // Clear global session state
       ref.read(activeSessionProvider.notifier).stop();
       // Show NPS survey after 3rd session (before navigating away)
-      final showNps = await FeedbackService.shouldShowNps();
+      final showNps =
+          await _quickOptional(FeedbackService.shouldShowNps(), false);
       if (mounted && showNps) {
         // ignore: use_build_context_synchronously
         await showNpsSheet(context);
@@ -341,8 +379,8 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Выйти',
-                style: TextStyle(color: AppColors.error)),
+            child:
+                const Text('Выйти', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -380,7 +418,8 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
               const Center(child: CircularProgressIndicator())
             else
               ListView(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 80),
+                padding: EdgeInsets.fromLTRB(
+                    16, 16, 16, MediaQuery.of(context).padding.bottom + 80),
                 children: [
                   // ── Duration card ──────────────────────────────────────
                   _SummaryHeader(
@@ -403,7 +442,8 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                     controller: _notesCtrl,
                     maxLines: 3,
                     decoration: InputDecoration(
-                      hintText: 'Заметки к тренировке (самочувствие, что помогло…)',
+                      hintText:
+                          'Заметки к тренировке (самочувствие, что помогло…)',
                       filled: true,
                       fillColor: AppColors.card,
                       border: OutlineInputBorder(
@@ -458,8 +498,8 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                 ],
                 createParticlePath: (size) {
                   final path = Path();
-                  path.addOval(
-                      Rect.fromCircle(center: Offset.zero, radius: size.width / 2));
+                  path.addOval(Rect.fromCircle(
+                      center: Offset.zero, radius: size.width / 2));
                   return path;
                 },
               ),
@@ -479,7 +519,8 @@ class _ExerciseGroup {
   final String category;
   final List<_SetRow> sets;
 
-  _ExerciseGroup({required this.name, required this.order, required this.category})
+  _ExerciseGroup(
+      {required this.name, required this.order, required this.category})
       : sets = [];
 }
 
@@ -510,9 +551,16 @@ class _SessionRpeCard extends StatelessWidget {
   const _SessionRpeCard({required this.selected, required this.onChanged});
 
   static const _labels = {
-    1: 'Очень легко', 2: 'Легко', 3: 'Умеренно', 4: 'Чуть тяжело',
-    5: 'Тяжело', 6: 'Тяжело+', 7: 'Очень тяжело', 8: 'Предел',
-    9: 'Почти максимум', 10: 'Максимум',
+    1: 'Очень легко',
+    2: 'Легко',
+    3: 'Умеренно',
+    4: 'Чуть тяжело',
+    5: 'Тяжело',
+    6: 'Тяжело+',
+    7: 'Очень тяжело',
+    8: 'Предел',
+    9: 'Почти максимум',
+    10: 'Максимум',
   };
 
   Color _rpeColor(int v) {
@@ -695,8 +743,8 @@ class _StatChip extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 fontSize: 16)),
         Text(title,
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 11)),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
       ],
     );
   }
@@ -725,8 +773,7 @@ class _ExerciseCardState extends State<_ExerciseCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Text(
                 widget.group.name,
                 style: const TextStyle(
@@ -754,7 +801,8 @@ class _SetRowWidget extends StatelessWidget {
   final String category;
   final VoidCallback onChanged;
 
-  const _SetRowWidget({required this.set, required this.category, required this.onChanged});
+  const _SetRowWidget(
+      {required this.set, required this.category, required this.onChanged});
 
   void _editSet(BuildContext context) {
     showModalBottomSheet(
@@ -765,7 +813,8 @@ class _SetRowWidget extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => _SetEditSheet(set: set, category: category, onSave: onChanged),
+      builder: (ctx) =>
+          _SetEditSheet(set: set, category: category, onSave: onChanged),
     );
   }
 
@@ -812,8 +861,7 @@ class _SetRowWidget extends StatelessWidget {
             ),
             if (set.rpe != null)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.accent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
@@ -857,7 +905,8 @@ class _SetEditSheet extends StatefulWidget {
   final String category;
   final VoidCallback onSave;
 
-  const _SetEditSheet({required this.set, required this.category, required this.onSave});
+  const _SetEditSheet(
+      {required this.set, required this.category, required this.onSave});
 
   @override
   State<_SetEditSheet> createState() => _SetEditSheetState();
@@ -875,8 +924,8 @@ class _SetEditSheetState extends State<_SetEditSheet> {
     super.initState();
     _weightCtrl = TextEditingController(
         text: widget.set.weight != null
-            ? widget.set.weight!.toStringAsFixed(
-                widget.set.weight! % 1 == 0 ? 0 : 1)
+            ? widget.set.weight!
+                .toStringAsFixed(widget.set.weight! % 1 == 0 ? 0 : 1)
             : '');
     _repsCtrl = TextEditingController(
         text: widget.set.reps != null ? '${widget.set.reps}' : '');
@@ -902,8 +951,8 @@ class _SetEditSheetState extends State<_SetEditSheet> {
     final kcal = (r != null && r > 0)
         ? estimateSetKcal(category: widget.category, reps: r, rpe: _rpe)
         : null;
-    TrainingService.updateSet(widget.set.id, weight: w, reps: r, rpe: _rpe,
-        kcalEstimated: kcal);
+    TrainingService.updateSet(widget.set.id,
+        weight: w, reps: r, rpe: _rpe, kcalEstimated: kcal);
   }
 
   @override
@@ -946,8 +995,7 @@ class _SetEditSheetState extends State<_SetEditSheet> {
           ),
           const SizedBox(height: 20),
           const Text('RPE',
-              style: TextStyle(
-                  color: AppColors.textSecondary, fontSize: 14)),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -961,8 +1009,7 @@ class _SetEditSheetState extends State<_SetEditSheet> {
                 checkmarkColor: Colors.black,
                 labelStyle: TextStyle(
                   color: sel ? Colors.black : AppColors.textPrimary,
-                  fontWeight:
-                      sel ? FontWeight.w600 : FontWeight.w400,
+                  fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                 ),
               );
             }).toList(),
@@ -1033,7 +1080,8 @@ class _AchievementUnlockSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: achievement.rarity.color.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
@@ -1086,7 +1134,8 @@ class _AchievementUnlockSheet extends StatelessWidget {
             },
             icon: const Icon(Icons.share_rounded, size: 16),
             label: const Text('Поделиться'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
+            style:
+                TextButton.styleFrom(foregroundColor: AppColors.textSecondary),
           ),
         ],
       ),
@@ -1102,10 +1151,22 @@ class _InsightChip extends StatelessWidget {
   const _InsightChip({required this.insight});
 
   static const _kindStyle = {
-    PostSessionInsightKind.streak:     (Icons.local_fire_department_rounded, Color(0xFFFF9F0A)),
-    PostSessionInsightKind.volumeUp:   (Icons.trending_up_rounded,           Color(0xFF32D74B)),
-    PostSessionInsightKind.volumeDown: (Icons.trending_down_rounded,         Color(0xFF8E8E93)),
-    PostSessionInsightKind.setsCount:  (Icons.check_circle_rounded,          Color(0xFF0A84FF)),
+    PostSessionInsightKind.streak: (
+      Icons.local_fire_department_rounded,
+      Color(0xFFFF9F0A)
+    ),
+    PostSessionInsightKind.volumeUp: (
+      Icons.trending_up_rounded,
+      Color(0xFF32D74B)
+    ),
+    PostSessionInsightKind.volumeDown: (
+      Icons.trending_down_rounded,
+      Color(0xFF8E8E93)
+    ),
+    PostSessionInsightKind.setsCount: (
+      Icons.check_circle_rounded,
+      Color(0xFF0A84FF)
+    ),
   };
 
   @override

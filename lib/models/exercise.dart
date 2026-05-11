@@ -47,7 +47,8 @@ class Exercise {
     this.inputMode,
   });
 
-  String get displayName => nameRu ?? name;
+  String get displayName =>
+      nameRu != null && nameRu!.trim().isNotEmpty ? nameRu!.trim() : name;
 
   Exercise copyWith({
     String? id,

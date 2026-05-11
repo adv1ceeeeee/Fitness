@@ -52,6 +52,8 @@ class CacheService {
     }
   }
 
+  static Future<void> clearTodayWorkout() => saveTodayWorkout(null);
+
   static Future<Map<String, dynamic>?> loadTodayWorkout() async {
     try {
       final file = await _file('today_workout');

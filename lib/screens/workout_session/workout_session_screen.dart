@@ -173,69 +173,118 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
   }
 
+  Future<T> _optionalLoad<T>(
+    String label,
+    Future<T> future,
+    T fallback, {
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    try {
+      return await future.timeout(timeout);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('optional session load failed ($label): $e\n$st');
+      }
+      return fallback;
+    }
+  }
+
+  double? _asDouble(Object? value) => (value as num?)?.toDouble();
+
+  int? _asInt(Object? value) => (value as num?)?.toInt();
+
+  String _formatWeightForInput(double weightKg) {
+    final useKg = ref.read(useKgProvider);
+    final displayWeight = useKg ? weightKg : weightKg * 2.20462;
+    return displayWeight.toStringAsFixed(displayWeight % 1 == 0 ? 0 : 1);
+  }
+
+  void _prefillCurrentWeightFromLast(WorkoutExercise we) {
+    if (_weightControllers.isEmpty) return;
+    if (_sets.any((set) => set.completed)) return;
+    if (_weightControllers.any((controller) => controller.text.isNotEmpty)) {
+      return;
+    }
+
+    final lastWeight = _asDouble(_lastSets[we.exerciseId]?['weight']);
+    if (lastWeight == null) return;
+    final prefillWeight = _deloadActive ? lastWeight * 0.6 : lastWeight;
+    _weightControllers.first.text = _formatWeightForInput(prefillWeight);
+  }
+
+  void _applyLastSets(Map<String, Map<String, dynamic>> lastSets) {
+    if (!mounted || lastSets.isEmpty) return;
+    final current = _currentExercise;
+    setState(() {
+      _lastSets = lastSets;
+      if (current != null) {
+        _prefillCurrentWeightFromLast(current);
+      }
+    });
+  }
+
+  String? _lastPerformanceText(WorkoutExercise we) {
+    final last = _lastSets[we.exerciseId];
+    if (last == null || last.isEmpty) return null;
+    final weightKg = _asDouble(last['weight']);
+    final reps = _asInt(last['reps']);
+    if ((weightKg == null || weightKg <= 0) && (reps == null || reps <= 0)) {
+      return null;
+    }
+
+    final useKg = ref.read(useKgProvider);
+    final unit = useKg ? 'кг' : 'лб';
+    final parts = <String>[];
+    if (weightKg != null && weightKg > 0) {
+      final displayWeight = useKg ? weightKg : weightKg * 2.20462;
+      parts.add(
+        '${displayWeight.toStringAsFixed(displayWeight % 1 == 0 ? 0 : 1)} $unit',
+      );
+    }
+    if (reps != null && reps > 0) {
+      parts.add('$reps повт.');
+    }
+    return parts.isEmpty ? null : 'Прошлый раз: ${parts.join(' × ')}';
+  }
+
   Future<void> _loadSession() async {
-    if (mounted) setState(() => _loadError = false);
+    if (mounted) {
+      setState(() {
+        _loadError = false;
+        _loading = true;
+      });
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final deload = prefs.getBool('deload_active') ?? false;
       if (mounted) setState(() => _deloadActive = deload);
 
-      final sessionRes = await Supabase.instance.client
-          .from('training_sessions')
-          .select('workout_id')
-          .eq('id', widget.sessionId)
-          .single()
-          .timeout(const Duration(seconds: 15));
+      final activeSession = ref.read(activeSessionProvider);
+      var workoutId = activeSession.sessionId == widget.sessionId
+          ? activeSession.workoutId
+          : null;
+      if (workoutId == null) {
+        final sessionRes = await Supabase.instance.client
+            .from('training_sessions')
+            .select('workout_id')
+            .eq('id', widget.sessionId)
+            .single()
+            .timeout(const Duration(seconds: 5));
+        workoutId = sessionRes['workout_id'] as String;
+      }
 
-      final workoutId = sessionRes['workout_id'] as String;
-
-      // Load exercises, workout settings, personal bests, and last sets concurrently
+      // Phase 1: load only the data required to render the workout.
       final workoutFuture = Supabase.instance.client
           .from('workouts')
           .select('warmup_minutes, cooldown_minutes, cycle_weeks, created_at')
           .eq('id', workoutId)
-          .single();
-      final ex = await TrainingService.getWorkoutExercisesForToday(workoutId);
+          .single()
+          .timeout(const Duration(seconds: 5));
+      final exercisesFuture = TrainingService.getWorkoutExercisesForToday(
+        workoutId,
+      ).timeout(const Duration(seconds: 5));
       final workoutRes2 = await workoutFuture;
-      final exerciseIds = ex.map((e) => e.exerciseId).toList();
-
-      final pbFutures =
-          ex.map((e) => TrainingService.getPersonalBest(e.exerciseId)).toList();
-      final lastSetsFuture =
-          AnalyticsService.getLastSetsForExercises(exerciseIds);
-      final userMetricsFuture = BodyMetricsService.getLatest();
-      final userStateFuture = UserStateService.computeUserState();
-      final best1RMFuture =
-          AnalyticsService.getPersonalBest1RMForExercises(exerciseIds);
-      final pbValues = await Future.wait(pbFutures);
-      final lastSets = await lastSetsFuture;
-      final userMetrics = await userMetricsFuture;
-      final userState = await userStateFuture;
-      final todayWellness = userState.todayWellness;
-      final energyState = userState.energyState;
-      final personalBests1RM = await best1RMFuture;
-
-      // Build topReps map for auto-progress check
-      final topRepsMap = <String, int>{};
-      for (final e in ex) {
-        final top = _parseTopReps(e.repsRange);
-        if (top != null) topRepsMap[e.exerciseId] = top;
-      }
-      final autoProgress =
-          await AnalyticsService.getConsecutiveFullRepsExercises(
-              exerciseIds, topRepsMap);
-
-      // Fatigue check: categories of today's workout vs recently trained (<48h)
-      final recentCats = await AnalyticsService.getRecentlyTrainedCategories();
-      final workoutCats =
-          ex.map((e) => e.exercise?.category).whereType<String>().toSet();
-      final fatigued = recentCats.intersection(workoutCats)
-        ..remove('cardio'); // cardio doesn't count as fatigue
-
-      final pbs = <String, double>{};
-      for (var i = 0; i < ex.length; i++) {
-        if (pbValues[i] != null) pbs[ex[i].exerciseId] = pbValues[i]!;
-      }
+      final ex = await exercisesFuture;
 
       final warmupMins = workoutRes2['warmup_minutes'] as int? ?? 0;
       final cooldownMins = workoutRes2['cooldown_minutes'] as int? ?? 0;
@@ -251,17 +300,6 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       if (mounted) {
         setState(() {
           _exercises = ex;
-          _personalBests = pbs;
-          _personalBests1RM = personalBests1RM;
-          _lastSets = lastSets;
-          _autoProgressSuggestions = autoProgress;
-          _fatiguedCategories = fatigued;
-          _todayWellness = todayWellness;
-          _sessionEnergyState = energyState;
-          _sessionEnergyEnd = energyState.reserve;
-          _userGoal = userState.userGoal;
-          _rpeCalibrationOffset = userState.rpeCalibrationOffset;
-          _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
           _totalExpectedSets = ex.fold(0, (sum, e) => sum + e.sets);
           _warmupMinutes = warmupMins;
           _cooldownMinutes = cooldownMins;
@@ -285,36 +323,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
           await _maybeRestoreDraft(_exercises[_currentExerciseIndex]);
         }
 
-        // Load avg rest seconds per exercise (non-blocking — used only as a UI hint)
-        Future.wait(ex.map(
-            (e) => AnalyticsService.getAvgRestSeconds(e.exerciseId).then((v) {
-                  if (v != null && mounted) {
-                    setState(() => _avgRestByExercise[e.exerciseId] = v);
-                  }
-                }).catchError((_) {}))).ignore();
-
-        // Log RecSys increase suggestions shown to user
-        for (final we in ex) {
-          final isDb = we.exercise?.equipmentType == 'dumbbell';
-          final dbIncrement = isDb ? ref.read(dumbbellIncrementProvider) : 2.5;
-          final rec = evaluateProgression(
-            lastSets[we.exerciseId],
-            consecutiveFullReps: autoProgress.contains(we.exerciseId) ? 3 : 0,
-            topRepsInRange: _parseTopReps(we.repsRange),
-            weightIncrement: dbIncrement,
-            energyState: energyState,
-            personalBest1RMKg: personalBests1RM[we.exerciseId],
-            userGoal: _userGoal,
-            rpeCalibrationOffset: _rpeCalibrationOffset,
-            isBodyweight: we.exercise?.equipmentType == 'bodyweight',
-          );
-          if (rec != null && rec.direction == ProgressionDirection.increase) {
-            EventLogger.autoProgressSuggestionShown(
-              exerciseId: we.exerciseId,
-              isStrong: autoProgress.contains(we.exerciseId),
-            );
-          }
-        }
+        _loadSessionEnhancements(ex);
       }
     } catch (e, st) {
       if (kDebugMode) debugPrint('_loadSession error: $e\n$st');
@@ -327,14 +336,124 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
   }
 
+  void _loadSessionEnhancements(List<WorkoutExercise> ex) {
+    final exerciseIds = ex.map((e) => e.exerciseId).toList();
+    final topRepsMap = <String, int>{};
+    for (final e in ex) {
+      final top = _parseTopReps(e.repsRange);
+      if (top != null) topRepsMap[e.exerciseId] = top;
+    }
+
+    final personalBestsFuture = _optionalLoad(
+      'personal bests',
+      TrainingService.getPersonalBestsForExercises(exerciseIds),
+      <String, double>{},
+    );
+    final lastSetsFuture = _optionalLoad(
+      'last sets',
+      AnalyticsService.getLastSetsForExercises(exerciseIds),
+      <String, Map<String, dynamic>>{},
+    );
+    final userMetricsFuture = _optionalLoad<Map<String, dynamic>?>(
+      'user metrics',
+      BodyMetricsService.getLatest(),
+      null,
+    );
+    final userStateFuture = _optionalLoad(
+      'user state',
+      UserStateService.computeUserState(),
+      const UserState(energyState: EnergyState(reserve: 100)),
+    );
+    final best1RMFuture = _optionalLoad(
+      '1rm',
+      AnalyticsService.getPersonalBest1RMForExercises(exerciseIds),
+      <String, double>{},
+    );
+    final autoProgressFuture = _optionalLoad(
+      'auto progress',
+      AnalyticsService.getConsecutiveFullRepsExercises(
+        exerciseIds,
+        topRepsMap,
+      ),
+      <String>{},
+    );
+    final recentCatsFuture = _optionalLoad(
+      'recent categories',
+      AnalyticsService.getRecentlyTrainedCategories(),
+      <String>{},
+    );
+
+    unawaited(lastSetsFuture.then(_applyLastSets));
+    unawaited(() async {
+      final pbs = await personalBestsFuture;
+      final userMetrics = await userMetricsFuture;
+      final userState = await userStateFuture;
+      final personalBests1RM = await best1RMFuture;
+      final autoProgress = await autoProgressFuture;
+      final lastSets = await lastSetsFuture;
+
+      final recentCats = await recentCatsFuture;
+      final workoutCats =
+          ex.map((e) => e.exercise?.category).whereType<String>().toSet();
+      final fatigued = recentCats.intersection(workoutCats)..remove('cardio');
+
+      if (!mounted) return;
+      setState(() {
+        _personalBests = pbs;
+        _personalBests1RM = personalBests1RM;
+        _lastSets = lastSets;
+        _autoProgressSuggestions = autoProgress;
+        _fatiguedCategories = fatigued;
+        _todayWellness = userState.todayWellness;
+        _sessionEnergyState = userState.energyState;
+        _sessionEnergyEnd = userState.energyState.reserve;
+        _userGoal = userState.userGoal;
+        _rpeCalibrationOffset = userState.rpeCalibrationOffset;
+        _userWeightKg = (userMetrics?['weight_kg'] as num?)?.toDouble();
+      });
+
+      final energyState = userState.energyState;
+      for (final we in ex) {
+        final isDb = we.exercise?.equipmentType == 'dumbbell';
+        final dbIncrement = isDb ? ref.read(dumbbellIncrementProvider) : 2.5;
+        final rec = evaluateProgression(
+          lastSets[we.exerciseId],
+          consecutiveFullReps: autoProgress.contains(we.exerciseId) ? 3 : 0,
+          topRepsInRange: _parseTopReps(we.repsRange),
+          weightIncrement: dbIncrement,
+          energyState: energyState,
+          personalBest1RMKg: personalBests1RM[we.exerciseId],
+          userGoal: _userGoal,
+          rpeCalibrationOffset: _rpeCalibrationOffset,
+          isBodyweight: we.exercise?.equipmentType == 'bodyweight',
+        );
+        if (rec != null && rec.direction == ProgressionDirection.increase) {
+          EventLogger.autoProgressSuggestionShown(
+            exerciseId: we.exerciseId,
+            isStrong: autoProgress.contains(we.exerciseId),
+          );
+        }
+      }
+    }());
+
+    if (mounted) {
+      // Load avg rest seconds per exercise (non-blocking — used only as a UI hint)
+      Future.wait(ex.map(
+          (e) => AnalyticsService.getAvgRestSeconds(e.exerciseId).then((v) {
+                if (v != null && mounted) {
+                  setState(() => _avgRestByExercise[e.exerciseId] = v);
+                }
+              }).catchError((_) {}))).ignore();
+    }
+  }
+
   void _initExercise(WorkoutExercise we) {
     final defaultReps = _parseDefaultReps(we.repsRange);
-    final lastWeight = _lastSets[we.exerciseId]?['weight'] as double?;
+    final lastWeight = _asDouble(_lastSets[we.exerciseId]?['weight']);
     final prefillWeight =
         lastWeight != null && _deloadActive ? lastWeight * 0.6 : lastWeight;
-    final lastWeightText = prefillWeight != null
-        ? prefillWeight.toStringAsFixed(prefillWeight % 1 == 0 ? 0 : 1)
-        : '';
+    final lastWeightText =
+        prefillWeight != null ? _formatWeightForInput(prefillWeight) : '';
     for (final c in _weightControllers) {
       c.dispose();
     }
@@ -564,7 +683,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     final weightKg = useKg ? displayWeight : displayWeight / 2.20462;
 
     // Compute comparison with last session
-    final lastWeight = _lastSets[we.exerciseId]?['weight'] as double?;
+    final lastWeight = _asDouble(_lastSets[we.exerciseId]?['weight']);
     if (lastWeight != null && weightKg > 0) {
       final diff = weightKg - lastWeight;
       _setComparisons[index] = diff > 0.001 ? 1 : (diff < -0.001 ? -1 : 0);
@@ -577,13 +696,19 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     // Optimistic update — instant visual feedback
     setState(() {
       _sets[index] = setData.copyWith(completed: true);
-      // Drop-set: auto-fill next set with half the current weight
-      if (we.isDropSet && index + 1 < _sets.length && weightKg > 0) {
-        final half = weightKg / 2;
-        final useKgLocal = ref.read(useKgProvider);
-        final displayHalf = useKgLocal ? half : half * 2.20462;
-        _weightControllers[index + 1].text =
-            displayHalf.toStringAsFixed(displayHalf % 1 == 0 ? 0 : 1);
+      if (we.isDropSet && index + 1 < _sets.length) {
+        _sets[index + 1] = _sets[index + 1].copyWith(
+          reps: setData.reps,
+          repsTarget: setData.repsTarget,
+        );
+        // Drop-set: auto-fill next set with half the current weight.
+        if (weightKg > 0) {
+          final half = weightKg / 2;
+          final useKgLocal = ref.read(useKgProvider);
+          final displayHalf = useKgLocal ? half : half * 2.20462;
+          _weightControllers[index + 1].text =
+              displayHalf.toStringAsFixed(displayHalf % 1 == 0 ? 0 : 1);
+        }
       }
     });
     _lastRestSeconds = 0;
@@ -843,9 +968,16 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
       _lastRestSeconds = DateTime.now().difference(_restStartedAt!).inSeconds;
       _restStartedAt = null;
     }
-    // Pre-fill next set's weight from the just-completed set (weight only, not reps)
+    // Pre-fill the next set from the just-completed one.
     if (!_goToNextAfterRest && _lastCompletedSetIndex != null) {
       final nextIdx = _lastCompletedSetIndex! + 1;
+      if (nextIdx < _sets.length && !_sets[nextIdx].completed) {
+        final previousSet = _sets[_lastCompletedSetIndex!];
+        _sets[nextIdx] = _sets[nextIdx].copyWith(
+          reps: previousSet.reps,
+          repsTarget: previousSet.repsTarget,
+        );
+      }
       if (nextIdx < _weightControllers.length &&
           _weightControllers[nextIdx].text.isEmpty) {
         final prevWeight = _weightControllers[_lastCompletedSetIndex!].text;
@@ -856,6 +988,7 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
     }
     _currentSetStartedAt = DateTime.now().toUtc();
     setState(() => _resting = false);
+    _saveDraft();
     if (_goToNextAfterRest) _advanceExercise();
   }
 
@@ -1524,43 +1657,38 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                           style: const TextStyle(
                               fontSize: 13, color: AppColors.textSecondary),
                         ),
+                        Builder(builder: (_) {
+                          final previous = _lastPerformanceText(we);
+                          if (previous == null) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(
+                              previous,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }),
                         // Exercise GIF
                         if (we.exercise?.gifUrl != null) ...[
                           const SizedBox(height: 12),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: CachedNetworkImage(
-                              cacheManager: AppImageCacheManager.instance,
-                              imageUrl: we.exercise!.gifUrl!,
-                              height: 180,
-                              width: double.infinity,
-                              fit: BoxFit.contain,
-                              placeholder: (_, __) => Container(
-                                height: 180,
-                                color: AppColors.surface,
-                                child: const Center(
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              ),
-                              errorWidget: (_, __, ___) =>
-                                  const SizedBox.shrink(),
-                            ),
+                          _ExerciseMedia(
+                            url: we.exercise!.gifUrl!,
+                            height: 180,
+                            width: double.infinity,
                           ),
                         ],
                         if (_lastSets[we.exerciseId] != null) ...[
                           const SizedBox(height: 2),
                           Builder(builder: (_) {
                             final last = _lastSets[we.exerciseId]!;
-                            final w = last['weight'] as double;
-                            final r = last['reps'] as int;
-                            final d = last['date'] as String;
+                            final w = _asDouble(last['weight']);
+                            if (w == null) return const SizedBox.shrink();
                             final useKg = ref.read(useKgProvider);
-                            final displayW = useKg ? w : w * 2.20462;
                             final unit = useKg ? 'кг' : 'лб';
-                            final dateShort = d.length >= 10
-                                ? '${d.substring(8, 10)}.${d.substring(5, 7)}'
-                                : d;
                             // ── Unified RecSys progression chip ──────────────
                             final isDumbbell =
                                 we.exercise?.equipmentType == 'dumbbell';
@@ -1588,24 +1716,15 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                               isBodyweight:
                                   we.exercise?.equipmentType == 'bodyweight',
                             );
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Прошлый: ${displayW.toStringAsFixed(1)} $unit × $r ($dateShort)',
-                                  style: const TextStyle(
-                                      fontSize: 12, color: AppColors.accent),
-                                ),
-                                if (progRec != null) ...[
-                                  _buildProgressionChip(
-                                    progRec: progRec,
-                                    currentWeightKg: w,
-                                    exerciseId: we.exerciseId,
-                                    useKg: useKg,
-                                    unit: unit,
-                                  ),
-                                ],
-                              ],
+                            if (progRec == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return _buildProgressionChip(
+                              progRec: progRec,
+                              currentWeightKg: w,
+                              exerciseId: we.exerciseId,
+                              useKg: useKg,
+                              unit: unit,
                             );
                           }),
                         ],
@@ -2197,12 +2316,12 @@ class _MiniBtnState extends State<_MiniBtn> {
       onLongPressEnd: (_) => _stopRepeat(),
       onLongPressCancel: _stopRepeat,
       child: Container(
-        width: 20,
-        height: 20,
+        width: 22,
+        height: 22,
         decoration: const BoxDecoration(
             shape: BoxShape.circle, color: AppColors.surface),
         child: Icon(widget.icon,
-            size: 12,
+            size: 14,
             color: widget.enabled
                 ? AppColors.textPrimary
                 : AppColors.textSecondary.withValues(alpha: 0.35)),
@@ -2241,6 +2360,119 @@ class _AddSetButton extends StatelessWidget {
                     fontWeight: FontWeight.w500)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ExerciseMedia extends StatefulWidget {
+  final String url;
+  final double height;
+  final double width;
+
+  const _ExerciseMedia({
+    required this.url,
+    required this.height,
+    required this.width,
+  });
+
+  @override
+  State<_ExerciseMedia> createState() => _ExerciseMediaState();
+}
+
+class _ExerciseMediaState extends State<_ExerciseMedia> {
+  Timer? _timer;
+  bool _loaded = false;
+  bool _timedOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimeout();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExerciseMedia oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _loaded = false;
+      _timedOut = false;
+      _startTimeout();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimeout() {
+    _timer?.cancel();
+    _timer = Timer(const Duration(seconds: 8), () {
+      if (mounted && !_loaded) {
+        setState(() => _timedOut = true);
+      }
+    });
+  }
+
+  void _markLoaded() {
+    if (_loaded) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _loaded) return;
+      _timer?.cancel();
+      setState(() => _loaded = true);
+    });
+  }
+
+  Widget _fallback() {
+    return Container(
+      height: widget.height,
+      width: widget.width,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: 30,
+          color: AppColors.textSecondary.withValues(alpha: 0.55),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_timedOut) return _fallback();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: CachedNetworkImage(
+        cacheManager: AppImageCacheManager.instance,
+        imageUrl: widget.url,
+        height: widget.height,
+        width: widget.width,
+        fit: BoxFit.contain,
+        imageBuilder: (context, imageProvider) {
+          _markLoaded();
+          return Image(
+            image: imageProvider,
+            height: widget.height,
+            width: widget.width,
+            fit: BoxFit.contain,
+          );
+        },
+        placeholder: (_, __) => Container(
+          height: widget.height,
+          width: widget.width,
+          color: AppColors.surface,
+          child: const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        errorWidget: (_, __, ___) => _fallback(),
       ),
     );
   }
@@ -2762,22 +2994,10 @@ class _RestScreen extends StatelessWidget {
               ),
               if (nextExerciseGifUrl != null) ...[
                 const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    cacheManager: AppImageCacheManager.instance,
-                    imageUrl: nextExerciseGifUrl!,
-                    height: 140,
-                    width: 220,
-                    fit: BoxFit.contain,
-                    placeholder: (_, __) => const SizedBox(
-                      height: 140,
-                      width: 220,
-                      child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2)),
-                    ),
-                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                  ),
+                _ExerciseMedia(
+                  url: nextExerciseGifUrl!,
+                  height: 140,
+                  width: 220,
                 ),
               ],
             ],

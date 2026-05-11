@@ -14,6 +14,8 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
+  static const _todayWorkoutCacheVersion = 2;
+
   Workout? _workout;
   List<WorkoutExercise> _exercises = [];
   bool _loading = true;
@@ -26,14 +28,29 @@ class _TodayScreenState extends State<TodayScreen> {
 
   bool _fromCache = false;
 
+  String get _todayCacheDate =>
+      DateTime.now().toIso8601String().split('T').first;
+
+  bool _canUseCachedTodayWorkout(Map<String, dynamic> cached) {
+    return cached['cache_version'] == _todayWorkoutCacheVersion &&
+        cached['date'] == _todayCacheDate;
+  }
+
+  List<WorkoutExercise> _sortExercises(List<WorkoutExercise> exercises) {
+    return [...exercises]..sort((a, b) => a.order.compareTo(b.order));
+  }
+
   Future<void> _load() async {
     // Phase 1: show cache immediately if available
     final cached = await CacheService.loadTodayWorkout();
-    if (cached != null && mounted) {
-      final workout = Workout.fromJson(cached['workout'] as Map<String, dynamic>);
-      final exercises = (cached['exercises'] as List<dynamic>)
-          .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
-          .toList();
+    if (cached != null && _canUseCachedTodayWorkout(cached) && mounted) {
+      final workout =
+          Workout.fromJson(cached['workout'] as Map<String, dynamic>);
+      final exercises = _sortExercises(
+        (cached['exercises'] as List<dynamic>)
+            .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
       setState(() {
         _workout = workout;
         _exercises = exercises;
@@ -49,8 +66,13 @@ class _TodayScreenState extends State<TodayScreen> {
     try {
       final workout = await TrainingService.getTodayWorkout();
       if (workout != null) {
-        final ex = await TrainingService.getWorkoutExercisesForToday(workout.id);
+        final ex = _sortExercises(
+          await TrainingService.getWorkoutExercisesForToday(workout.id),
+        );
         await CacheService.saveTodayWorkout({
+          'cache_version': _todayWorkoutCacheVersion,
+          'date': _todayCacheDate,
+          'workout_id': workout.id,
           'workout': workout.toJson(),
           'exercises': ex.map((e) => e.toJson()).toList(),
         });
@@ -81,8 +103,7 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _startWorkout() async {
     if (_workout == null) return;
-    final session =
-        await TrainingService.getOrCreateTodaySession(_workout!.id);
+    final session = await TrainingService.getOrCreateTodaySession(_workout!.id);
     if (session != null && mounted) {
       context.push('/session/${session.id}');
     }
@@ -253,7 +274,7 @@ class _WorkoutContent extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    ex?.name ?? '?',
+                                    ex?.displayName ?? '?',
                                     style: const TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -282,7 +303,10 @@ class _WorkoutContent extends StatelessWidget {
         ),
         Padding(
           padding: EdgeInsets.fromLTRB(
-            24, 0, 24, 16 + MediaQuery.of(context).padding.bottom,
+            24,
+            0,
+            24,
+            16 + MediaQuery.of(context).padding.bottom,
           ),
           child: Column(
             children: [
@@ -292,11 +316,13 @@ class _WorkoutContent extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.wifi_off, size: 13, color: AppColors.textSecondary),
+                      Icon(Icons.wifi_off,
+                          size: 13, color: AppColors.textSecondary),
                       SizedBox(width: 4),
                       Text(
                         'Нет соединения \u2014 данные из кеша',
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        style: TextStyle(
+                            fontSize: 12, color: AppColors.textSecondary),
                       ),
                     ],
                   ),

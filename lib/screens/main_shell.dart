@@ -7,6 +7,8 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/models/workout.dart';
+import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/providers/active_session_provider.dart';
 import 'package:sportwai/providers/connectivity_provider.dart';
 import 'package:sportwai/screens/workout_session/free_workout_screen.dart';
@@ -184,6 +186,7 @@ class _PlayStopFab extends ConsumerStatefulWidget {
 
 class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   Timer? _ticker;
+  bool _starting = false;
 
   @override
   void initState() {
@@ -293,8 +296,11 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   Future<bool> _showWellnessWarning(WellnessRec rec) async {
     final (color, icon) = switch (rec.severity) {
       RecSeverity.critical => (const Color(0xFFFF453A), Icons.warning_rounded),
-      RecSeverity.warning  => (const Color(0xFFFF9F0A), Icons.info_outline_rounded),
-      RecSeverity.info     => (AppColors.accent,        Icons.info_outline_rounded),
+      RecSeverity.warning => (
+          const Color(0xFFFF9F0A),
+          Icons.info_outline_rounded
+        ),
+      RecSeverity.info => (AppColors.accent, Icons.info_outline_rounded),
     };
     final proceed = await showDialog<bool>(
       context: context,
@@ -308,7 +314,8 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
             Expanded(
               child: Text(
                 rec.title,
-                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: color, fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -333,10 +340,28 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
   }
 
   Future<void> _onPlayTap() async {
-    final cyclicWorkout = await TrainingService.getTodayWorkout();
-    final todaySessions = await TrainingService.getTodayIncompleteSessions();
-    final allWorkouts = await WorkoutService.getMyWorkouts();
+    if (_starting) return;
+    setState(() => _starting = true);
+
+    final cyclicWorkoutFuture = TrainingService.getTodayWorkout()
+        .timeout(const Duration(seconds: 5))
+        .catchError((_) => null);
+    final todaySessionsFuture = TrainingService.getTodayIncompleteSessions()
+        .timeout(const Duration(seconds: 5))
+        .catchError((_) => <Map<String, dynamic>>[]);
+    final allWorkoutsFuture = WorkoutService.getMyWorkouts()
+        .timeout(const Duration(seconds: 5))
+        .catchError((_) => <Workout>[]);
+    final wellnessFuture = WellnessService.getTodayLog()
+        .timeout(const Duration(seconds: 3))
+        .catchError((_) => null);
+
+    final cyclicWorkout = await cyclicWorkoutFuture;
+    final todaySessions = await todaySessionsFuture;
+    final allWorkouts = await allWorkoutsFuture;
+    final wellness = await wellnessFuture;
     if (!mounted) return;
+    setState(() => _starting = false);
 
     final choices = <_WorkoutChoice>[];
 
@@ -373,12 +398,12 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     }
 
     // ── Wellness check before starting ──────────────────────────────────────
-    final wellness = await WellnessService.getTodayLog();
     final rec = evaluateWellness(wellness);
     if (rec != null && mounted) {
       final proceed = await _showWellnessWarning(rec);
       if (!proceed || !mounted) return;
     }
+    if (!mounted) return;
 
     // Show sheet (even if empty — user can pick free workout)
     if (choices.isEmpty) {
@@ -411,9 +436,18 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     if (choice.sessionId != null) {
       finalSessionId = choice.sessionId!;
     } else {
+      setState(() => _starting = true);
+      unawaited(
+        TrainingService.getWorkoutExercisesForToday(choice.workoutId)
+            .timeout(const Duration(seconds: 6))
+            .catchError((_) => <WorkoutExercise>[]),
+      );
       final session =
           await TrainingService.getOrCreateTodaySession(choice.workoutId);
-      if (!mounted || session == null) return;
+      if (!mounted || session == null) {
+        if (mounted) setState(() => _starting = false);
+        return;
+      }
       finalSessionId = session.id;
     }
 
@@ -429,6 +463,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     );
     NotificationService.cancelInactivityReminder();
     _startTicker();
+    if (mounted) setState(() => _starting = false);
     context.push('/session/$finalSessionId');
   }
 
@@ -503,7 +538,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
       children: [
         GestureDetector(
           onLongPress: isActive ? _onStopLongPress : null,
-          onTap: isActive ? _onStopTap : _onPlayTap,
+          onTap: _starting ? null : (isActive ? _onStopTap : _onPlayTap),
           child: Container(
             width: 60,
             height: 60,
@@ -523,17 +558,27 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
             ),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
-              child: Transform.translate(
-                offset: Offset(isActive ? 0 : 2, 0),
-                child: Icon(
-                  isActive
-                      ? CupertinoIcons.stop_fill
-                      : CupertinoIcons.play_fill,
-                  key: ValueKey(isActive),
-                  color: Colors.white,
-                  size: 26,
-                ),
-              ),
+              child: _starting
+                  ? const SizedBox(
+                      key: ValueKey('starting'),
+                      width: 23,
+                      height: 23,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Transform.translate(
+                      offset: Offset(isActive ? 0 : 2, 0),
+                      child: Icon(
+                        isActive
+                            ? CupertinoIcons.stop_fill
+                            : CupertinoIcons.play_fill,
+                        key: ValueKey(isActive),
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                    ),
             ),
           ),
         ),
@@ -675,8 +720,8 @@ class _StartChoiceSheet extends StatelessWidget {
                       onTap: onFreeWorkout,
                       borderRadius: BorderRadius.circular(14),
                       child: const Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                         child: Row(
                           children: [
                             Icon(Icons.shuffle,
@@ -858,10 +903,8 @@ class _NavItem extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 10,
-              fontWeight:
-                  isSelected ? FontWeight.w600 : FontWeight.w400,
-              color:
-                  isSelected ? AppColors.accent : AppColors.textSecondary,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              color: isSelected ? AppColors.accent : AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 2),

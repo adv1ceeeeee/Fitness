@@ -5,6 +5,7 @@ import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
+import 'package:sportwai/services/cache_service.dart';
 
 class WorkoutService {
   static SupabaseClient get _client => Supabase.instance.client;
@@ -17,6 +18,10 @@ class WorkoutService {
   static const _workoutsTtl = Duration(minutes: 5);
   static const _workoutTtl = Duration(minutes: 5);
   static const _exercisesTtl = Duration(minutes: 5);
+  static const _workoutExerciseCachePrefix = 'workout_exercises_v2';
+
+  static String _workoutExerciseCacheKey(String workoutId) =>
+      '$_workoutExerciseCachePrefix:$workoutId';
 
   /// Invalidate all workout-related caches for the current user.
   /// Call after any mutation that affects the user's workout list.
@@ -31,7 +36,11 @@ class WorkoutService {
   }
 
   static Future<void> _invalidateWorkoutExercises(String workoutId) async {
-    await AppCache.invalidate('workout_exercises:$workoutId');
+    await Future.wait([
+      AppCache.invalidate(_workoutExerciseCacheKey(workoutId)),
+      AppCache.invalidate('workout_exercises:$workoutId'),
+      CacheService.clearTodayWorkout(),
+    ]);
   }
 
   static Future<void> _invalidateGroup(String? groupId) async {
@@ -283,7 +292,7 @@ class WorkoutService {
   static Future<List<WorkoutExercise>> getWorkoutExercises(
       String workoutId) async {
     return AppCache.get<List<WorkoutExercise>>(
-      key: 'workout_exercises:$workoutId',
+      key: _workoutExerciseCacheKey(workoutId),
       ttl: _exercisesTtl,
       fetch: () async {
         final res = await _client
@@ -364,7 +373,7 @@ class WorkoutService {
     // Write the new order to cache up-front so a re-entry to the screen
     // before the DB round-trips finish still sees the new order.
     await AppCache.set<List<WorkoutExercise>>(
-      key: 'workout_exercises:$workoutId',
+      key: _workoutExerciseCacheKey(workoutId),
       value: reordered,
       encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
     );
@@ -377,11 +386,12 @@ class WorkoutService {
               .from('workout_exercises')
               .update({'order': exercise.order}).eq('id', exercise.id),
     ]);
+    await CacheService.clearTodayWorkout();
 
     // Keep the confirmed order in cache so Android can reopen the program
     // without waiting on another network read.
     await AppCache.set<List<WorkoutExercise>>(
-      key: 'workout_exercises:$workoutId',
+      key: _workoutExerciseCacheKey(workoutId),
       value: reordered,
       encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
     );
@@ -514,6 +524,8 @@ class WorkoutService {
     await AppCache.invalidatePrefix('workouts:');
     await AppCache.invalidatePrefix('workout:');
     await AppCache.invalidatePrefix('workout_exercises:');
+    await AppCache.invalidatePrefix('workout_exercises_v2:');
     await AppCache.invalidatePrefix('workout_group:');
+    await CacheService.clearTodayWorkout();
   }
 }
