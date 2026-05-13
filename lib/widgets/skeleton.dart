@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:sportwai/config/theme.dart';
 
-/// Base shimmer wrapper — dark-theme aware.
+/// Base shimmer wrapper — theme aware.
 class _ShimmerBox extends StatelessWidget {
   final double width;
   final double height;
@@ -18,8 +18,8 @@ class _ShimmerBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Shimmer.fromColors(
-      baseColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
-      highlightColor: isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5),
+      baseColor: isDark ? AppColors.surface : const Color(0xFFE3DCC5),
+      highlightColor: isDark ? AppColors.card : const Color(0xFFFDF6E3),
       child: Container(
         width: width,
         height: height,
@@ -51,14 +51,24 @@ class WorkoutCardSkeleton extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              _ShimmerBox(width: 180, height: 18, borderRadius: BorderRadius.circular(6)),
+              _ShimmerBox(
+                  width: 180,
+                  height: 18,
+                  borderRadius: BorderRadius.circular(6)),
               const Spacer(),
-              _ShimmerBox(width: 40, height: 18, borderRadius: BorderRadius.circular(6)),
+              _ShimmerBox(
+                  width: 40,
+                  height: 18,
+                  borderRadius: BorderRadius.circular(6)),
             ]),
             const SizedBox(height: 10),
-            _ShimmerBox(width: 120, height: 13, borderRadius: BorderRadius.circular(5)),
+            _ShimmerBox(
+                width: 120, height: 13, borderRadius: BorderRadius.circular(5)),
             const SizedBox(height: 8),
-            _ShimmerBox(width: double.infinity, height: 13, borderRadius: BorderRadius.circular(5)),
+            _ShimmerBox(
+                width: double.infinity,
+                height: 13,
+                borderRadius: BorderRadius.circular(5)),
           ],
         ),
       ),
@@ -98,16 +108,25 @@ class SessionCardSkeleton extends StatelessWidget {
         ),
         child: Row(children: [
           Column(children: [
-            _ShimmerBox(width: 28, height: 22, borderRadius: BorderRadius.circular(5)),
+            _ShimmerBox(
+                width: 28, height: 22, borderRadius: BorderRadius.circular(5)),
             const SizedBox(height: 4),
-            _ShimmerBox(width: 22, height: 12, borderRadius: BorderRadius.circular(4)),
+            _ShimmerBox(
+                width: 22, height: 12, borderRadius: BorderRadius.circular(4)),
           ]),
           const SizedBox(width: 24),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _ShimmerBox(width: 140, height: 15, borderRadius: BorderRadius.circular(5)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _ShimmerBox(
+                  width: 140,
+                  height: 15,
+                  borderRadius: BorderRadius.circular(5)),
               const SizedBox(height: 6),
-              _ShimmerBox(width: 80, height: 12, borderRadius: BorderRadius.circular(4)),
+              _ShimmerBox(
+                  width: 80,
+                  height: 12,
+                  borderRadius: BorderRadius.circular(4)),
             ]),
           ),
         ]),
@@ -127,7 +146,8 @@ class HistoryListSkeleton extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ShimmerBox(width: 100, height: 14, borderRadius: BorderRadius.circular(5)),
+          _ShimmerBox(
+              width: 100, height: 14, borderRadius: BorderRadius.circular(5)),
           const SizedBox(height: 12),
           ...List.generate(count, (_) => const SessionCardSkeleton()),
         ],
@@ -165,8 +185,8 @@ class AnalyticsSkeleton extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Shimmer.fromColors(
-              baseColor: const Color(0xFF2A2A2A),
-              highlightColor: const Color(0xFF3A3A3A),
+              baseColor: const Color(0xFFE3DCC5),
+              highlightColor: const Color(0xFFFDF6E3),
               child: Container(
                 decoration: BoxDecoration(
                   color: AppColors.card,
@@ -176,7 +196,8 @@ class AnalyticsSkeleton extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          _ShimmerBox(width: 140, height: 16, borderRadius: BorderRadius.circular(6)),
+          _ShimmerBox(
+              width: 140, height: 16, borderRadius: BorderRadius.circular(6)),
           const SizedBox(height: 12),
           Container(
             height: 140,
@@ -185,8 +206,8 @@ class AnalyticsSkeleton extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Shimmer.fromColors(
-              baseColor: const Color(0xFF2A2A2A),
-              highlightColor: const Color(0xFF3A3A3A),
+              baseColor: const Color(0xFFE3DCC5),
+              highlightColor: const Color(0xFFFDF6E3),
               child: Container(
                 decoration: BoxDecoration(
                   color: AppColors.card,
@@ -208,9 +229,11 @@ class AnalyticsSkeleton extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(children: [
-            _ShimmerBox(width: 36, height: 24, borderRadius: BorderRadius.circular(5)),
+            _ShimmerBox(
+                width: 36, height: 24, borderRadius: BorderRadius.circular(5)),
             const SizedBox(height: 6),
-            _ShimmerBox(width: 50, height: 11, borderRadius: BorderRadius.circular(4)),
+            _ShimmerBox(
+                width: 50, height: 11, borderRadius: BorderRadius.circular(4)),
           ]),
         ),
       );

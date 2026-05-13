@@ -2148,12 +2148,11 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                     horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? const Color(0xFF3A3A3A)
+                                      ? AppColors.surface
                                       : AppColors.card,
                                   borderRadius: BorderRadius.circular(8),
                                   border: isSelected
-                                      ? Border.all(
-                                          color: const Color(0xFF6B6B6B))
+                                      ? Border.all(color: AppColors.cardBorder)
                                       : null,
                                 ),
                                 child: Text(
@@ -2162,7 +2161,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                     color: isSelected
-                                        ? Colors.white
+                                        ? AppColors.textPrimary
                                         : AppColors.textSecondary,
                                   ),
                                 ),
@@ -2397,7 +2396,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                   ),
                 ),
               ),
-            const Divider(height: 1, color: Color(0xFF2A2A2A)),
+            const Divider(height: 1, color: AppColors.separator),
             Expanded(
               child: ListView(
                 key: ValueKey(

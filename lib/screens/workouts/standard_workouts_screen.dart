@@ -694,7 +694,7 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const Divider(height: 24, color: Color(0xFF2C2C2E)),
+                        const Divider(height: 24, color: AppColors.separator),
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [

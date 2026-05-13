@@ -266,7 +266,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         );
       }
       EventLogger.sessionScheduled(
-        workoutName: _workouts.where((w) => w.id == workoutId).firstOrNull?.name,
+        workoutName:
+            _workouts.where((w) => w.id == workoutId).firstOrNull?.name,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -315,8 +316,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             const SizedBox(height: 16),
             _ActionBtn(
               icon: Icons.calendar_month_outlined,
-              label:
-                  'Плановую по программе: ${_workoutName(programWorkoutId)}',
+              label: 'Плановую по программе: ${_workoutName(programWorkoutId)}',
               onTap: () {
                 Navigator.pop(ctx);
                 context.push('/workouts/$programWorkoutId/exercises');
@@ -357,9 +357,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final sessionWorkoutId = hasSession
         ? events.firstWhere((e) => !e.planned && !e.completed).workoutId
         : null;
-    final programWorkoutId = hasProgram
-        ? events.firstWhere((e) => e.planned).workoutId
-        : null;
+    final programWorkoutId =
+        hasProgram ? events.firstWhere((e) => e.planned).workoutId : null;
 
     // Any non-completed DB session that can be deleted
     final deletableEvent = events
@@ -369,7 +368,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // Uncompleted non-skipped session that can be marked as skipped (past only)
     final skippableEvent = isPast
         ? events
-            .where((e) => !e.planned && !e.completed && !e.skipped && e.sessionId != null)
+            .where((e) =>
+                !e.planned && !e.completed && !e.skipped && e.sessionId != null)
             .firstOrNull
         : null;
 
@@ -404,8 +404,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             icon: Icons.edit_outlined,
             label: 'Изменить разовую тренировку',
             accent: true,
-            onTap: () =>
-                context.push('/workouts/$sessionWorkoutId/exercises'),
+            onTap: () => context.push('/workouts/$sessionWorkoutId/exercises'),
           ),
         ] else if (hasProgram) ...[
           const SizedBox(height: 8),
@@ -413,8 +412,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             icon: Icons.edit_calendar_outlined,
             label: 'Изменить программу тренировок',
             accent: true,
-            onTap: () =>
-                context.push('/workouts/$programWorkoutId/exercises'),
+            onTap: () => context.push('/workouts/$programWorkoutId/exercises'),
           ),
         ],
         if (skippableEvent != null) ...[
@@ -456,15 +454,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить',
-                style: TextStyle(color: AppColors.error)),
+            child:
+                const Text('Удалить', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
     try {
-      try { await NotificationService.cancelSessionNotification(sessionId); } catch (_) {}
+      try {
+        await NotificationService.cancelSessionNotification(sessionId);
+      } catch (_) {}
       await TrainingService.deleteSession(sessionId);
       EventLogger.sessionDeleted(sessionId: sessionId);
       await _load(silent: true);
@@ -561,18 +561,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   const SizedBox(height: 8),
                   TableCalendar<_DayEvent>(
-                    firstDay: DateTime.now()
-                        .subtract(const Duration(days: 365)),
-                    lastDay:
-                        DateTime.now().add(const Duration(days: 365)),
+                    firstDay:
+                        DateTime.now().subtract(const Duration(days: 365)),
+                    lastDay: DateTime.now().add(const Duration(days: 365)),
                     focusedDay: _focusedDay,
                     selectedDayPredicate: (d) =>
-                        _selectedDay != null &&
-                        isSameDay(d, _selectedDay!),
+                        _selectedDay != null && isSameDay(d, _selectedDay!),
                     eventLoader: _eventsFor,
                     onDaySelected: _onDaySelected,
-                    onPageChanged: (d) =>
-                        setState(() => _focusedDay = d),
+                    onPageChanged: (d) => setState(() => _focusedDay = d),
                     locale: 'ru_RU',
                     startingDayOfWeek: StartingDayOfWeek.monday,
                     calendarStyle: CalendarStyle(
@@ -624,9 +621,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       defaultBuilder: (ctx, day, focused) =>
                           _DayCell(day: day, events: _eventsFor(day)),
                       todayBuilder: (ctx, day, focused) => _DayCell(
-                          day: day,
-                          events: _eventsFor(day),
-                          isToday: true),
+                          day: day, events: _eventsFor(day), isToday: true),
                       selectedBuilder: (ctx, day, focused) => _DayCell(
                         day: day,
                         events: _eventsFor(day),
@@ -639,8 +634,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   const SizedBox(height: 12),
                   // Legend
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Row(
                       children: [
                         const _LegendDot(
@@ -662,8 +656,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   // Buttons + events list
                   Expanded(
                     child: SingleChildScrollView(
-                      padding:
-                          const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
                       child: _selectedDay == null
                           ? (_workouts.isEmpty
                               ? const Padding(
@@ -679,21 +672,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 )
                               : const SizedBox.shrink())
                           : Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.stretch,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 _buildActionButtons(_selectedDay!),
-                                if (_eventsFor(_selectedDay!)
-                                    .isNotEmpty) ...[
+                                if (_eventsFor(_selectedDay!).isNotEmpty) ...[
                                   const SizedBox(height: 16),
-                                  ..._eventsFor(_selectedDay!).map(
-                                      (ev) => Padding(
-                                            padding:
-                                                const EdgeInsets.only(
-                                                    bottom: 8),
+                                  ..._eventsFor(_selectedDay!)
+                                      .map((ev) => Padding(
+                                            padding: const EdgeInsets.only(
+                                                bottom: 8),
                                             child: _EventCard(
-                                              name: _workoutName(
-                                                  ev.workoutId),
+                                              name: _workoutName(ev.workoutId),
                                               completed: ev.completed,
                                               planned: ev.planned,
                                               skipped: ev.skipped,
@@ -752,33 +741,26 @@ class _ActionBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: accent
-          ? AppColors.accent.withValues(alpha: 0.12)
-          : AppColors.card,
+      color: accent ? AppColors.accent.withValues(alpha: 0.12) : AppColors.card,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Icon(
                 icon,
                 size: 20,
-                color: accent
-                    ? AppColors.accent
-                    : AppColors.textSecondary,
+                color: accent ? AppColors.accent : AppColors.textSecondary,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   label,
                   style: TextStyle(
-                    color: accent
-                        ? AppColors.accent
-                        : AppColors.textPrimary,
+                    color: accent ? AppColors.accent : AppColors.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -953,8 +935,7 @@ class _WorkoutPickerSheet extends StatelessWidget {
                           ),
                         ),
                         const Icon(Icons.chevron_right,
-                            size: 18,
-                            color: AppColors.textSecondary),
+                            size: 18, color: AppColors.textSecondary),
                       ],
                     ),
                   ),
@@ -1084,16 +1065,21 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
 
   Future<void> _loadExercises() async {
     final list = await ExerciseService.getExercises();
-    if (mounted) setState(() { _exercises = list; _loading = false; });
+    if (mounted)
+      setState(() {
+        _exercises = list;
+        _loading = false;
+      });
   }
 
   List<Exercise> get _filtered {
     if (_search.isEmpty) return _exercises;
     final q = _search.toLowerCase();
-    return _exercises.where((e) =>
-      e.name.toLowerCase().contains(q) ||
-      (e.nameRu?.toLowerCase().contains(q) ?? false)
-    ).toList();
+    return _exercises
+        .where((e) =>
+            e.name.toLowerCase().contains(q) ||
+            (e.nameRu?.toLowerCase().contains(q) ?? false))
+        .toList();
   }
 
   void _toggleExercise(String id) {
@@ -1188,7 +1174,8 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                   if (_selected.isNotEmpty)
                     Text(
                       '${_selected.length} выбрано',
-                      style: const TextStyle(fontSize: 13, color: AppColors.accent),
+                      style: const TextStyle(
+                          fontSize: 13, color: AppColors.accent),
                     ),
                 ],
               ),
@@ -1246,7 +1233,8 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                                   }),
                                   borderRadius: BorderRadius.circular(8),
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 10),
                                     child: Row(
                                       children: [
                                         Text(
@@ -1263,12 +1251,15 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                                           '${items.length}',
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: AppColors.textSecondary.withValues(alpha: 0.6),
+                                            color: AppColors.textSecondary
+                                                .withValues(alpha: 0.6),
                                           ),
                                         ),
                                         const Spacer(),
                                         Icon(
-                                          expanded ? Icons.expand_less : Icons.expand_more,
+                                          expanded
+                                              ? Icons.expand_less
+                                              : Icons.expand_more,
                                           size: 18,
                                           color: AppColors.textSecondary,
                                         ),
@@ -1280,7 +1271,8 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                                   ...items.map((ex) {
                                     final params = _selected[ex.id];
                                     final isSelected = params != null;
-                                    final isExpanded = _expandedIds.contains(ex.id);
+                                    final isExpanded =
+                                        _expandedIds.contains(ex.id);
                                     return _ExerciseItem(
                                       exercise: ex,
                                       isSelected: isSelected,
@@ -1291,7 +1283,8 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                                           ? () => _toggleExpand(ex.id)
                                           : null,
                                       onParamsChanged: isSelected
-                                          ? (p) => setState(() => _selected[ex.id] = p)
+                                          ? (p) => setState(
+                                              () => _selected[ex.id] = p)
                                           : null,
                                     );
                                   }),
@@ -1511,9 +1504,8 @@ class _ExerciseItemState extends State<_ExerciseItem> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Divider(color: Color(0xFF2C2C2E), height: 1),
+                          const Divider(color: AppColors.separator, height: 1),
                           const SizedBox(height: 12),
-
                           if (widget.exercise.category == 'cardio') ...[
                             // Cardio: duration slider only
                             const Text('Длительность',
@@ -1541,14 +1533,14 @@ class _ExerciseItemState extends State<_ExerciseItem> {
                                     AppColors.accent.withValues(alpha: 0.12),
                               ),
                               child: Slider(
-                                value: p.durationMinutes.clamp(5, 120).toDouble(),
+                                value:
+                                    p.durationMinutes.clamp(5, 120).toDouble(),
                                 min: 5,
                                 max: 120,
                                 divisions: 23,
                                 label: '${p.durationMinutes} мин',
-                                onChanged: (v) => _updateParams(
-                                    p.copyWith(
-                                        durationMinutes: (v / 5).round() * 5)),
+                                onChanged: (v) => _updateParams(p.copyWith(
+                                    durationMinutes: (v / 5).round() * 5)),
                               ),
                             ),
                             const Row(
@@ -1906,8 +1898,7 @@ class _EventCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
@@ -1950,8 +1941,7 @@ class _EventCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right,
-                  color: AppColors.textSecondary),
+              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
             ],
           ),
         ),
@@ -1978,8 +1968,8 @@ class _LegendDot extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(label,
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 12)),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
       ],
     );
   }

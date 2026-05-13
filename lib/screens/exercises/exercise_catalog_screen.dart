@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/exercise_service.dart';
-import 'package:sportwai/services/image_cache_manager.dart';
 
 /// Category chip data: DB key → display name.
 const _categoryChips = [
@@ -36,6 +37,8 @@ class ExerciseCatalogScreen extends StatefulWidget {
 }
 
 class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
+  static const _loadTimeout = Duration(seconds: 8);
+
   List<Exercise> _allExercises = [];
   bool _loading = true;
   String _searchQuery = '';
@@ -55,16 +58,39 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
   }
 
   Future<void> _load() async {
+    final cached = await ExerciseService.getCachedExercises();
+    if (cached.isNotEmpty && mounted) {
+      setState(() {
+        _allExercises = cached;
+        _loading = false;
+      });
+    }
+
     try {
       final exercises =
-          await ExerciseService.getExercises(includeDetails: true);
+          await ExerciseService.getExercises().timeout(_loadTimeout);
       if (!mounted) return;
       setState(() {
         _allExercises = exercises;
         _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      final hadVisibleData = _allExercises.isNotEmpty;
+      final fallback = hadVisibleData
+          ? _allExercises
+          : ExerciseService.getLocalFallbackExercises();
+      setState(() {
+        _allExercises = fallback;
+        _loading = false;
+      });
+      if (fallback.isEmpty || hadVisibleData) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Каталог открыт из локального кеша'),
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -113,9 +139,6 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
   }
 
   void _showExerciseDetail(Exercise ex) {
-    final gifUrl = ex.gifUrl;
-    final description = ex.descriptionRu ?? ex.description;
-
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -129,108 +152,21 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
         initialChildSize: 0.6,
         maxChildSize: 0.9,
         minChildSize: 0.3,
-        builder: (ctx, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          padding: EdgeInsets.fromLTRB(
-              24, 16, 24, MediaQuery.of(ctx).padding.bottom + 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Drag handle
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.textSecondary.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                ex.displayName,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      Exercise.categoryDisplayName(ex.category),
-                      style: const TextStyle(
-                        color: AppColors.accent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (ex.equipmentType != null) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      ex.equipmentType!,
-                      style: const TextStyle(
-                          color: AppColors.textSecondary, fontSize: 12),
-                    ),
-                  ],
-                ],
-              ),
-              if (gifUrl != null) ...[
-                const SizedBox(height: 16),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    cacheManager: AppImageCacheManager.instance,
-                    imageUrl: gifUrl,
-                    width: double.infinity,
-                    height: 260,
-                    fit: BoxFit.contain,
-                    placeholder: (_, __) => const SizedBox(
-                      height: 260,
-                      child:
-                          Center(child: CircularProgressIndicator.adaptive()),
-                    ),
-                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                  ),
-                ),
-              ],
-              if (description != null && description.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 14,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-              if (gifUrl == null &&
-                  (description == null || description.isEmpty)) ...[
-                const SizedBox(height: 24),
-                const Center(
-                  child: Text(
-                    'Описание пока не добавлено',
-                    style:
-                        TextStyle(color: AppColors.textSecondary, fontSize: 14),
-                  ),
-                ),
-              ],
-            ],
-          ),
+        builder: (ctx, scrollController) => _ExerciseDetailSheet(
+          exercise: ex,
+          scrollController: scrollController,
+          onLoaded: _replaceExercise,
         ),
       ),
     );
+  }
+
+  void _replaceExercise(Exercise updated) {
+    if (!mounted) return;
+    setState(() {
+      final idx = _allExercises.indexWhere((e) => e.id == updated.id);
+      if (idx != -1) _allExercises[idx] = updated;
+    });
   }
 
   @override
@@ -526,5 +462,362 @@ class _ExerciseCatalogScreenState extends State<ExerciseCatalogScreen> {
       }
       return false;
     }
+  }
+}
+
+class _ExerciseDetailSheet extends StatefulWidget {
+  final Exercise exercise;
+  final ScrollController scrollController;
+  final ValueChanged<Exercise> onLoaded;
+
+  const _ExerciseDetailSheet({
+    required this.exercise,
+    required this.scrollController,
+    required this.onLoaded,
+  });
+
+  @override
+  State<_ExerciseDetailSheet> createState() => _ExerciseDetailSheetState();
+}
+
+class _ExerciseDetailSheetState extends State<_ExerciseDetailSheet> {
+  static const _detailTimeout = Duration(seconds: 8);
+
+  late Exercise _exercise = widget.exercise;
+  bool _loadingDetails = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetails();
+  }
+
+  Future<void> _loadDetails() async {
+    if (ExerciseService.isLocalFallbackExercise(widget.exercise)) return;
+    setState(() => _loadingDetails = true);
+    try {
+      final detail = await ExerciseService.getExercise(
+        widget.exercise.id,
+        includeDetails: true,
+      ).timeout(_detailTimeout);
+      if (!mounted || detail == null) return;
+      setState(() => _exercise = detail);
+      widget.onLoaded(detail);
+    } catch (_) {
+      // Keep the lightweight exercise data visible. Details are optional here.
+    } finally {
+      if (mounted) setState(() => _loadingDetails = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaUrls = {
+      if (_exercise.gifUrl != null && _exercise.gifUrl!.trim().isNotEmpty)
+        _exercise.gifUrl!.trim(),
+      if (_exercise.imageUrl != null && _exercise.imageUrl!.trim().isNotEmpty)
+        _exercise.imageUrl!.trim(),
+    }.toList();
+    final description = _exercise.descriptionRu ?? _exercise.description;
+
+    return SingleChildScrollView(
+      controller: widget.scrollController,
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        MediaQuery.of(context).padding.bottom + 24,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _exercise.displayName,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  Exercise.categoryDisplayName(_exercise.category),
+                  style: const TextStyle(
+                    color: AppColors.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (_exercise.equipmentType != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  _exercise.equipmentType!,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (mediaUrls.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _ExerciseMedia(urls: mediaUrls),
+          ],
+          if (_loadingDetails) ...[
+            const SizedBox(height: 16),
+            const Center(child: CircularProgressIndicator.adaptive()),
+          ] else if (description != null && description.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              description,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+          ] else if (mediaUrls.isEmpty) ...[
+            const SizedBox(height: 24),
+            const Center(
+              child: Text(
+                'Описание пока не добавлено',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ExerciseMedia extends StatefulWidget {
+  final List<String> urls;
+
+  const _ExerciseMedia({required this.urls});
+
+  @override
+  State<_ExerciseMedia> createState() => _ExerciseMediaState();
+}
+
+class _ExerciseMediaState extends State<_ExerciseMedia> {
+  static const _height = 260.0;
+  static const _slowLoadDelay = Duration(seconds: 10);
+  static const _imageTimeout = Duration(seconds: 45);
+
+  int _index = 0;
+  int _loadToken = 0;
+  Uint8List? _bytes;
+  bool _loading = true;
+  bool _slow = false;
+  int _retrySeed = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startLoad(notify: false);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExerciseMedia oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.urls.join('|') == widget.urls.join('|')) return;
+    _index = 0;
+    _startLoad();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startLoad({bool notify = true}) {
+    _timer?.cancel();
+    final token = ++_loadToken;
+
+    void apply() {
+      _bytes = null;
+      _loading = widget.urls.isNotEmpty;
+      _slow = false;
+    }
+
+    if (notify && mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+
+    if (widget.urls.isEmpty) return;
+    _timer = Timer(_slowLoadDelay, () {
+      if (!mounted || token != _loadToken || !_loading) return;
+      setState(() => _slow = true);
+    });
+
+    unawaited(_loadBytes(token));
+  }
+
+  Future<void> _loadBytes(int token) async {
+    try {
+      final uri = Uri.tryParse(widget.urls[_index]);
+      if (uri == null) throw const FormatException('Bad image URL');
+
+      final response = await http.get(
+        uri,
+        headers: const {'accept': 'image/*,*/*'},
+      ).timeout(_imageTimeout);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('Image HTTP ${response.statusCode}');
+      }
+      if (response.bodyBytes.isEmpty) {
+        throw Exception('Empty image response');
+      }
+
+      if (!mounted || token != _loadToken) return;
+      _timer?.cancel();
+      setState(() {
+        _bytes = response.bodyBytes;
+        _loading = false;
+        _slow = false;
+      });
+    } catch (_) {
+      _handleError(token);
+    }
+  }
+
+  void _handleError(int token) {
+    if (!mounted || token != _loadToken) return;
+    if (_index + 1 < widget.urls.length) {
+      setState(() {
+        _index += 1;
+      });
+      _startLoad();
+      return;
+    }
+    _timer?.cancel();
+    setState(() {
+      _loading = false;
+      _slow = false;
+      _bytes = null;
+    });
+  }
+
+  void _retry() {
+    _timer?.cancel();
+    _index = 0;
+    _retrySeed += 1;
+    _startLoad();
+  }
+
+  Widget _box({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        height: _height,
+        color: AppColors.surface,
+        child: Center(child: child),
+      ),
+    );
+  }
+
+  Widget _fallback() {
+    return _box(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.image_not_supported_outlined,
+            size: 34,
+            color: AppColors.textSecondary.withValues(alpha: 0.55),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Картинка не загрузилась',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: _retry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Повторить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loadingBox() {
+    return _box(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 34,
+            height: 34,
+            child: CircularProgressIndicator.adaptive(),
+          ),
+          if (_slow) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Загружаем картинку...',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.urls.isEmpty) return _fallback();
+    if (_loading) return _loadingBox();
+    final bytes = _bytes;
+    if (bytes == null) return _fallback();
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        height: _height,
+        color: AppColors.surface,
+        child: Image.memory(
+          bytes,
+          key: ValueKey('${widget.urls[_index]}:$_retrySeed'),
+          width: double.infinity,
+          height: _height,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => _fallback(),
+        ),
+      ),
+    );
   }
 }

@@ -35,13 +35,13 @@ import 'package:sportwai/services/gamification_service.dart';
 // ─── Metric options for body progress panel ───────────────────────────────────
 
 const _metricOptions = <String, (String label, String unit)>{
-  'weight_kg':       ('Вес',        'кг'),
-  'body_fat_pct':    ('% жира',     '%'),
-  'waist_cm':        ('Талия',      'см'),
-  'chest_cm':        ('Грудь',      'см'),
-  'hips_cm':         ('Бёдра',      'см'),
-  'right_arm_cm':    ('Бицепс',     'см'),
-  'shoulders_cm':    ('Плечи',      'см'),
+  'weight_kg': ('Вес', 'кг'),
+  'body_fat_pct': ('% жира', '%'),
+  'waist_cm': ('Талия', 'см'),
+  'chest_cm': ('Грудь', 'см'),
+  'hips_cm': ('Бёдра', 'см'),
+  'right_arm_cm': ('Бицепс', 'см'),
+  'shoulders_cm': ('Плечи', 'см'),
 };
 
 // ─── Pure helpers (top-level for testability) ─────────────────────────────────
@@ -134,7 +134,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _wellnessLogged = true;
   // RecSys fields — always derived from the same UserState snapshot so they
   // can never contradict each other.  See UserStateService.computeUserState().
-  WellnessRec? _wellnessRec;   // null = no issues / dismissed by user
+  WellnessRec? _wellnessRec; // null = no issues / dismissed by user
   EnergyState? _energyState;
 
   WorkoutInsight? _insight;
@@ -147,7 +147,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _showMeasurementReminder = false;
 
   // Weekly workout goal
-  int _weeklyWorkoutGoal = 0;   // 0 = not set
+  int _weeklyWorkoutGoal = 0; // 0 = not set
   int _workoutsThisWeek = 0;
   int _daysSinceLastWorkout = -1;
   int _streak = 0;
@@ -244,15 +244,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       DateTime.now().subtract(const Duration(days: 1)),
       DateTime.now().add(const Duration(days: 1)),
     );
-    final found = sessions.where((s) => s.id == saved.sessionId && !s.completed).firstOrNull;
+    final found = sessions
+        .where((s) => s.id == saved.sessionId && !s.completed)
+        .firstOrNull;
     if (found == null || !mounted) return;
     // Restore provider state
     ref.read(activeSessionProvider.notifier).start(
-      sessionId: saved.sessionId!,
-      workoutId: saved.workoutId ?? '',
-      workoutName: saved.workoutName ?? '',
-      startTime: saved.startTime,
-    );
+          sessionId: saved.sessionId!,
+          workoutId: saved.workoutId ?? '',
+          workoutName: saved.workoutName ?? '',
+          startTime: saved.startTime,
+        );
     // Show banner
     if (!mounted) return;
     ScaffoldMessenger.of(context).showMaterialBanner(
@@ -371,15 +373,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final weeklyGoal = prefs.getInt('weekly_workout_goal') ?? 0;
 
       final results = await Future.wait([
-        ProfileService.getProfile(),           // [0]
-        TrainingService.getTodayWorkout(),     // [1]
+        ProfileService.getProfile(), // [0]
+        TrainingService.getTodayWorkout(), // [1]
         AnalyticsService.getLastWorkoutInsight(), // [2]
-        BodyMetricsService.getHistory(),       // [3]
+        BodyMetricsService.getHistory(), // [3]
         AnalyticsService.getWorkoutsThisWeek(), // [4]
         TrainingService.getDaysSinceLastWorkout(), // [5]
-        AnalyticsService.getCurrentStreak(),   // [6]
-        UserStateService.computeUserState(),   // [7] unified RecSys — replaces
-                                               //     getTodayLog + getEnergyState
+        AnalyticsService.getCurrentStreak(), // [6]
+        UserStateService.computeUserState(), // [7] unified RecSys — replaces
+        //     getTodayLog + getEnergyState
       ]).timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
@@ -403,11 +405,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // Check if today is a rest day in any active workout
       final todayAppDay = DateTime.now().weekday - 1; // 0=Mon…6=Sun
       final allWorkouts = await WorkoutService.getMyWorkouts();
-      final isRestDay = allWorkouts.any((w) => w.restDays.contains(todayAppDay));
+      final isRestDay =
+          allWorkouts.any((w) => w.restDays.contains(todayAppDay));
       // Load next scheduled workout if inactive for 2+ days
       Workout? nextWorkout;
       if (daysSince >= 2 && !isRestDay) {
-        nextWorkout = results[1] as Workout? ?? await TrainingService.getNextScheduledWorkout();
+        nextWorkout = results[1] as Workout? ??
+            await TrainingService.getNextScheduledWorkout();
       }
       // Load planned time for today's session (for countdown)
       final plannedTime = await TrainingService.getTodayPlannedTime();
@@ -483,7 +487,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _maybeShowDeloadSuggestion() async {
     if (AppStorage.deloadActive) return; // уже включён
     final today = DateTime.now().toIso8601String().split('T')[0];
-    if (AppStorage.lastDeloadSuggestionDate == today) return; // уже показывали сегодня
+    if (AppStorage.lastDeloadSuggestionDate == today)
+      return; // уже показывали сегодня
     final suggest = await AnalyticsService.shouldSuggestDeload();
     if (!suggest || !mounted) return;
     await AppStorage.setLastDeloadSuggestionDate(today);
@@ -514,7 +519,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 await AppStorage.setDeloadActive(true);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Deload-режим включён (-40% веса)')),
+                    const SnackBar(
+                        content: Text('Deload-режим включён (-40% веса)')),
                   );
                 }
               },
@@ -599,7 +605,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       final userId = _db.auth.currentUser?.id;
       if (userId == null) return;
-      await _db.from('profiles').update({'goal_metric': metric}).eq('id', userId);
+      await _db
+          .from('profiles')
+          .update({'goal_metric': metric}).eq('id', userId);
       EventLogger.goalSet(goal: metric);
     } catch (_) {}
   }
@@ -609,7 +617,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final newEntry = value != null
         ? (target: value, start: now)
         : (target: null as double?, start: null as DateTime?);
-    final newCache = Map<String, ({double? target, DateTime? start})>.from(_goalCache);
+    final newCache =
+        Map<String, ({double? target, DateTime? start})>.from(_goalCache);
     if (value != null) {
       newCache[_goalMetric] = newEntry;
     } else {
@@ -739,7 +748,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onRefresh: _load,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 88),
+            padding: EdgeInsets.fromLTRB(
+                24, 24, 24, MediaQuery.of(context).padding.bottom + 88),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -802,7 +812,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ],
 
                 // ── Inactivity suggestion ─────────────────────────────────
-                if (_daysSinceLastWorkout >= 2 && _todayWorkout == null && !_isRestDay) ...[
+                if (_daysSinceLastWorkout >= 2 &&
+                    _todayWorkout == null &&
+                    !_isRestDay) ...[
                   const SizedBox(height: 16),
                   _InactivityCard(
                     days: _daysSinceLastWorkout,
@@ -830,7 +842,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       // consistent energy + wellness derived from the same log.
                       await UserStateService.invalidate();
                       // Re-fetch UserState so energy card updates immediately.
-                      final userState = await UserStateService.computeUserState();
+                      final userState =
+                          await UserStateService.computeUserState();
                       if (mounted) {
                         setState(() {
                           _energyState = userState.energyState;
@@ -874,7 +887,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   metric: _goalMetric,
                   currentValue: () {
                     for (final m in _bodyMetricsHistory.reversed) {
-                      if (m[_goalMetric] != null) return (m[_goalMetric] as num).toDouble();
+                      if (m[_goalMetric] != null)
+                        return (m[_goalMetric] as num).toDouble();
                     }
                     return null;
                   }(),
@@ -970,7 +984,8 @@ class _AchievementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final diff = insight.newValue - insight.prevValue;
     final unit = insight.isWeight ? 'кг' : 'повт.';
-    final diffStr = '+${diff % 1 == 0 ? diff.toInt() : diff.toStringAsFixed(1)} $unit';
+    final diffStr =
+        '+${diff % 1 == 0 ? diff.toInt() : diff.toStringAsFixed(1)} $unit';
 
     final prevStr = insight.isWeight
         ? '${insight.prevValue % 1 == 0 ? insight.prevValue.toInt() : insight.prevValue} кг'
@@ -1074,19 +1089,19 @@ class _EnergyReadinessCard extends StatelessWidget {
     final IconData icon;
     if (bucket <= 2) {
       color = AppColors.accent; // blue — peak
-      icon  = Icons.bolt_rounded;
+      icon = Icons.bolt_rounded;
     } else if (bucket <= 4) {
       color = AppColors.accent;
-      icon  = Icons.fitness_center_rounded;
+      icon = Icons.fitness_center_rounded;
     } else if (bucket <= 6) {
       color = const Color(0xFFFF9F0A); // amber
-      icon  = Icons.show_chart_rounded;
+      icon = Icons.show_chart_rounded;
     } else if (bucket <= 8) {
       color = const Color(0xFFFF6B35); // orange
-      icon  = Icons.trending_down_rounded;
+      icon = Icons.trending_down_rounded;
     } else {
       color = const Color(0xFFFF453A); // red
-      icon  = Icons.warning_amber_rounded;
+      icon = Icons.warning_amber_rounded;
     }
 
     final pct = state.reserve.toStringAsFixed(0);
@@ -1095,7 +1110,7 @@ class _EnergyReadinessCard extends StatelessWidget {
       <= 4 => 'Хорошее состояние — тренируйся в обычном режиме.',
       <= 6 => 'Умеренная усталость — слушай тело, не перегружайся.',
       <= 8 => 'Организм не восстановился — рассмотри лёгкую тренировку.',
-      _    => 'Критическая усталость — рекомендуется полный отдых.',
+      _ => 'Критическая усталость — рекомендуется полный отдых.',
     };
 
     final fillFactor = (state.reserve / 100.0).clamp(0.0, 1.0);
@@ -1193,8 +1208,11 @@ class _WellnessRecBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final (color, icon) = switch (rec.severity) {
       RecSeverity.critical => (const Color(0xFFFF453A), Icons.warning_rounded),
-      RecSeverity.warning  => (const Color(0xFFFF9F0A), Icons.info_outline_rounded),
-      RecSeverity.info     => (AppColors.accent,        Icons.info_outline_rounded),
+      RecSeverity.warning => (
+          const Color(0xFFFF9F0A),
+          Icons.info_outline_rounded
+        ),
+      RecSeverity.info => (AppColors.accent, Icons.info_outline_rounded),
     };
     return Material(
       color: color.withValues(alpha: 0.12),
@@ -1233,7 +1251,8 @@ class _WellnessRecBanner extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+              icon: const Icon(Icons.close,
+                  size: 16, color: AppColors.textSecondary),
               onPressed: onDismiss,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -1343,12 +1362,15 @@ class _BodyProgressCard extends StatelessWidget {
   }
 
   static String _fmtDT(DateTime dt) {
-    final d = '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year.toString().substring(2)}';
-    final t = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final d =
+        '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year.toString().substring(2)}';
+    final t =
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     return '$d $t';
   }
 
-  String? get _goalStartLabel => goalStartDate != null ? _fmtDT(goalStartDate!) : null;
+  String? get _goalStartLabel =>
+      goalStartDate != null ? _fmtDT(goalStartDate!) : null;
 
   String get _unit => _metricOptions[metric]?.$2 ?? '';
   String get _label => _metricOptions[metric]?.$1 ?? metric;
@@ -1411,8 +1433,7 @@ class _BodyProgressCard extends StatelessWidget {
                         contentPadding:
                             const EdgeInsets.symmetric(horizontal: 8),
                       ),
-                    SizedBox(
-                        height: MediaQuery.of(ctx).padding.bottom + 16),
+                    SizedBox(height: MediaQuery.of(ctx).padding.bottom + 16),
                   ],
                 ),
               ),
@@ -1454,8 +1475,7 @@ class _BodyProgressCard extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              final v = double.tryParse(
-                  ctrl.text.trim().replaceAll(',', '.'));
+              final v = double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
               if (v != null && v > 0 && v < 1000) Navigator.pop(ctx, v);
             },
             child: const Text('Сохранить'),
@@ -1534,8 +1554,8 @@ class _BodyProgressCard extends StatelessWidget {
             // No data yet
             InkWell(
               onTap: onAddMetrics,
-              borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(20)),
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
                 child: Row(
@@ -1558,14 +1578,16 @@ class _BodyProgressCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
               child: Row(
                 children: [
-                  Expanded(child: _MetricBox(
+                  Expanded(
+                      child: _MetricBox(
                     label: 'Фактический',
                     value: '${fmtMetricValue(current)} $_unit',
                     subtitle: _measurementDate,
                     onTap: null,
                   )),
                   const SizedBox(width: 8),
-                  Expanded(child: _MetricBox(
+                  Expanded(
+                      child: _MetricBox(
                     label: 'Цель',
                     value: target != null
                         ? '${fmtMetricValue(target!)} $_unit'
@@ -1640,9 +1662,9 @@ class _BodyProgressCard extends StatelessWidget {
     double sw = 0, swx = 0, swy = 0, swxy = 0, swx2 = 0;
     for (final p in points) {
       final w = math.exp(-lambda * (xMax - p.$1));
-      sw   += w;
-      swx  += w * p.$1;
-      swy  += w * p.$2;
+      sw += w;
+      swx += w * p.$1;
+      swy += w * p.$2;
       swxy += w * p.$1 * p.$2;
       swx2 += w * p.$1 * p.$1;
     }
@@ -1769,22 +1791,20 @@ class _MetricBox extends StatelessWidget {
 class _SkeletonBox extends StatelessWidget {
   final double width;
   final double height;
-  final double radius;
-  // ignore: unused_element_parameter
-  const _SkeletonBox({required this.width, required this.height, this.radius = 8});
+  const _SkeletonBox({required this.width, required this.height});
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Shimmer.fromColors(
-      baseColor: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE0E0E0),
-      highlightColor: isDark ? const Color(0xFF3A3A3A) : const Color(0xFFF5F5F5),
+      baseColor: isDark ? AppColors.surface : const Color(0xFFE3DCC5),
+      highlightColor: isDark ? AppColors.card : const Color(0xFFFDF6E3),
       child: Container(
         width: width,
         height: height,
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: BorderRadius.circular(8),
         ),
       ),
     );
@@ -2074,8 +2094,7 @@ class _ChangeProgramSheetState extends State<_ChangeProgramSheet> {
                               ),
                             ),
                             if (isActive)
-                              Icon(Icons.check_rounded,
-                                  size: 18, color: color)
+                              Icon(Icons.check_rounded, size: 18, color: color)
                             else
                               const Icon(Icons.chevron_right_rounded,
                                   size: 20, color: AppColors.textSecondary),
@@ -2207,7 +2226,8 @@ class _TodayCard extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -2297,10 +2317,15 @@ class _TodayCard extends StatelessWidget {
     const Color kUserColor = Color(0xFFAB7FF8);
     final bool isPremium = premiumWorkoutNames.contains(workout!.name);
     final bool isUserCreated = !allStandardWorkoutNames.contains(workout!.name);
-    final Color iconColor = isPremium ? kPremiumColor : isUserCreated ? kUserColor : AppColors.accent;
+    final Color iconColor = isPremium
+        ? kPremiumColor
+        : isUserCreated
+            ? kUserColor
+            : AppColors.accent;
 
     final badge = _workoutScheduleBadge(workout!.days);
-    final badgeColor = badge.isToday ? AppColors.accent : AppColors.textSecondary;
+    final badgeColor =
+        badge.isToday ? AppColors.accent : AppColors.textSecondary;
 
     return Container(
       decoration: BoxDecoration(
@@ -2333,7 +2358,8 @@ class _TodayCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: badgeColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(5),
@@ -2406,7 +2432,6 @@ class _TodayCard extends StatelessWidget {
     );
   }
 }
-
 
 // ─── Wellness check-in card ───────────────────────────────────────────────────
 
@@ -2571,8 +2596,8 @@ class _RatingRow extends StatelessWidget {
           width: 96,
           child: Text(
             label,
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 14),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 14),
           ),
         ),
         const SizedBox(width: 8),
@@ -2584,9 +2609,7 @@ class _RatingRow extends StatelessWidget {
               padding: const EdgeInsets.only(right: 4),
               child: Icon(
                 selected ? Icons.star_rounded : Icons.star_outline_rounded,
-                color: selected
-                    ? AppColors.accent
-                    : AppColors.textSecondary,
+                color: selected ? AppColors.accent : AppColors.textSecondary,
                 size: 28,
               ),
             ),
@@ -2611,8 +2634,7 @@ class _SleepRow extends StatelessWidget {
           width: 72,
           child: Text(
             'Сон',
-            style: TextStyle(
-                color: AppColors.textSecondary, fontSize: 14),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
           ),
         ),
         const SizedBox(width: 8),
@@ -2672,19 +2694,19 @@ class _ActionCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
-                  children: [
-                    Icon(icon, size: 32, color: AppColors.accent),
-                    const SizedBox(height: 12),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textPrimary,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+            children: [
+              Icon(icon, size: 32, color: AppColors.accent),
+              const SizedBox(height: 12),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
                 ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2812,13 +2834,13 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
         if (mounted) setState(() => _todayWeightLogs = logs);
       } else {
         await BodyMetricsService.upsert(
-          weightKg:       widget.metric == 'weight_kg'       ? v : null,
-          bodyFatPct:     widget.metric == 'body_fat_pct'    ? v : null,
-          waistCm:        widget.metric == 'waist_cm'        ? v : null,
-          chestCm:        widget.metric == 'chest_cm'        ? v : null,
-          hipsCm:         widget.metric == 'hips_cm'         ? v : null,
-          rightArmCm:     widget.metric == 'right_arm_cm'    ? v : null,
-          shouldersCm:    widget.metric == 'shoulders_cm'    ? v : null,
+          weightKg: widget.metric == 'weight_kg' ? v : null,
+          bodyFatPct: widget.metric == 'body_fat_pct' ? v : null,
+          waistCm: widget.metric == 'waist_cm' ? v : null,
+          chestCm: widget.metric == 'chest_cm' ? v : null,
+          hipsCm: widget.metric == 'hips_cm' ? v : null,
+          rightArmCm: widget.metric == 'right_arm_cm' ? v : null,
+          shouldersCm: widget.metric == 'shoulders_cm' ? v : null,
         );
       }
       // Fire-and-forget authoritative refresh so the parent can reconcile.
@@ -2885,7 +2907,9 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
           Row(
             children: [
               Icon(
-                _isWeight ? Icons.monitor_weight_outlined : Icons.straighten_rounded,
+                _isWeight
+                    ? Icons.monitor_weight_outlined
+                    : Icons.straighten_rounded,
                 color: AppColors.accent,
                 size: 22,
               ),
@@ -2902,7 +2926,8 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
                   final w = (log['weight_kg'] as num).toDouble();
                   final t = _formatTime(log['measured_at'] as String);
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(20),
@@ -2976,8 +3001,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
               padding: EdgeInsets.only(top: 6),
               child: Text(
                 'Обновить — заменит ежедневный вес · Ещё раз — сохранит как отдельное взвешивание',
-                style: TextStyle(
-                    color: AppColors.textSecondary, fontSize: 10),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
               ),
             ),
         ],
@@ -3060,35 +3084,42 @@ class _WeeklyGoalCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: isDone ? const Color(0xFF4CAF50) : AppColors.textPrimary,
+                    color: isDone
+                        ? const Color(0xFF4CAF50)
+                        : AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 if (isDone)
                   const Text(
                     'Отличная работа, так держать!',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    style:
+                        TextStyle(fontSize: 13, color: AppColors.textSecondary),
                   )
                 else ...[
                   Text(
                     'Осталось ${goal - done} ${_workoutWord(goal - done)}',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 8),
                   // Mini progress dots
                   Row(
-                    children: List.generate(goal, (i) => Padding(
-                      padding: const EdgeInsets.only(right: 5),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i < done ? ringColor : AppColors.surface,
-                        ),
-                      ),
-                    )),
+                    children: List.generate(
+                        goal,
+                        (i) => Padding(
+                              padding: const EdgeInsets.only(right: 5),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color:
+                                      i < done ? ringColor : AppColors.surface,
+                                ),
+                              ),
+                            )),
                   ),
                 ],
               ],
@@ -3101,7 +3132,8 @@ class _WeeklyGoalCard extends StatelessWidget {
 
   String _workoutWord(int n) {
     if (n % 10 == 1 && n % 100 != 11) return 'тренировка';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'тренировки';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20))
+      return 'тренировки';
     return 'тренировок';
   }
 }
@@ -3198,7 +3230,8 @@ class _RestDayCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF2A1F0A),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD4A454).withValues(alpha: 0.4)),
+        border:
+            Border.all(color: const Color(0xFFD4A454).withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [
@@ -3447,12 +3480,14 @@ class _WeeklySummarySheetState extends State<_WeeklySummarySheet>
 
   String _motivationText() {
     final goal = widget.weeklyGoal;
-    if (goal > 0 && _workouts >= goal) return 'Цель недели выполнена! Отличная работа!';
+    if (goal > 0 && _workouts >= goal)
+      return 'Цель недели выполнена! Отличная работа!';
     if (_workouts == 0) return 'На этой неделе ещё есть время начать. Вперёд!';
     if (goal > 0 && _workouts < goal) {
       return 'Ещё ${goal - _workouts} тренировки до цели — ты справишься!';
     }
-    if (_streak >= 7) return 'Серия $_streak дней — это уже настоящая привычка!';
+    if (_streak >= 7)
+      return 'Серия $_streak дней — это уже настоящая привычка!';
     if (_prs > 0) return '$_prs личных рекорда за неделю — огонь!';
     return 'Хорошая неделя, продолжай в том же духе!';
   }
@@ -3510,8 +3545,8 @@ class _WeeklySummarySheetState extends State<_WeeklySummarySheet>
                   ),
                   Text(
                     'Как прошла эта неделя',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13),
+                    style:
+                        TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                 ],
               ),
@@ -3657,8 +3692,8 @@ class _SummaryTile extends StatelessWidget {
           ),
           Text(
             label,
-            style: const TextStyle(
-                color: AppColors.textSecondary, fontSize: 12),
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           if (sub != null)
             Text(

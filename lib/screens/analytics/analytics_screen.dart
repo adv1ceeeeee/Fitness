@@ -701,6 +701,7 @@ class _OverviewTab extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final Profile? profile;
   final int bestStreak;
+
   /// Live "current streak" — the count of consecutive completed days
   /// touching today (or covered by a freeze). Goes to 0 if the user has
   /// not trained for 2+ days. Distinct from [bestStreak] which is the
@@ -1227,9 +1228,8 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
                   items: widget.trackedExercises
                       .map((ex) => DropdownMenuItem(
                             value: ex,
-                            child: Text(
-                                (ex['name_ru'] as String?) ??
-                                    ex['name'] as String),
+                            child: Text((ex['name_ru'] as String?) ??
+                                ex['name'] as String),
                           ))
                       .toList(),
                   onChanged: widget.onExerciseChanged,
@@ -3630,8 +3630,8 @@ class _StreakCard extends StatelessWidget {
                 Tooltip(
                   message: 'Заморозка стрика доступна',
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFF4FC3F7).withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(20),
@@ -3849,7 +3849,7 @@ class _ProgressChart extends StatelessWidget {
                 show: true,
                 drawVerticalLine: false,
                 getDrawingHorizontalLine: (_) => const FlLine(
-                  color: Color(0xFF2C2C2E),
+                  color: AppColors.separator,
                   strokeWidth: 1,
                 ),
               ),
@@ -4051,7 +4051,7 @@ class _CaloriesChart extends StatelessWidget {
             show: true,
             drawVerticalLine: false,
             getDrawingHorizontalLine: (_) => const FlLine(
-              color: Color(0xFF2C2C2E),
+              color: AppColors.separator,
               strokeWidth: 1,
             ),
           ),

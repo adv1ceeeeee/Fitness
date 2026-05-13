@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/data/standard_programs.dart';
 import 'package:sportwai/models/exercise.dart';
@@ -6,6 +7,7 @@ import 'package:sportwai/services/app_cache.dart';
 
 class ExerciseService {
   static SupabaseClient get _client => Supabase.instance.client;
+  static const _networkTimeout = Duration(seconds: 8);
 
   static const _lightColumns = '''
 id,name,name_ru,category,image_url,is_standard,user_id,gif_url
@@ -258,25 +260,26 @@ id,name,name_ru,category,description,description_ru,image_url,is_standard,user_i
       query = query.ilike('name', '%$search%');
     }
 
-    final results = await Future.wait([
-      query.order('name'),
-      if (userId != null && includeFavorites)
-        _client
+    final res = await query.order('name').timeout(_networkTimeout);
+    var favoriteIds = <String>{};
+    if (userId != null && includeFavorites) {
+      try {
+        final favoriteRows = await _client
             .from('user_favorite_exercises')
             .select('exercise_id')
             .eq('user_id', userId)
-      else
-        Future<List<dynamic>>.value(const []),
-    ]);
-    final res = results[0];
-    final favoriteRows = results[1];
-    final favoriteIds = favoriteRows
-        .map((row) => (row as Map)['exercise_id'] as String?)
-        .whereType<String>()
-        .toSet();
+            .timeout(_networkTimeout);
+        favoriteIds = (favoriteRows as List)
+            .map((row) => (row as Map)['exercise_id'] as String?)
+            .whereType<String>()
+            .toSet();
+      } catch (_) {
+        favoriteIds = const <String>{};
+      }
+    }
 
     final exercises = res.map((e) {
-      final map = e as Map<String, dynamic>;
+      final map = e;
       return Exercise.fromJson({
         ...map,
         'is_favorite': favoriteIds.contains(map['id'] as String?),
@@ -293,7 +296,8 @@ id,name,name_ru,category,description,description_ru,image_url,is_standard,user_i
     final rows = await _client
         .from('user_favorite_exercises')
         .select('exercise_id')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .timeout(_networkTimeout);
     return (rows as List)
         .map((row) => (row as Map)['exercise_id'] as String?)
         .whereType<String>()
@@ -306,23 +310,30 @@ id,name,name_ru,category,description,description_ru,image_url,is_standard,user_i
   }) async {
     final userId = _client.auth.currentUser?.id;
     final columns = includeDetails ? _detailColumns : _lightColumns;
-    final results = await Future.wait<dynamic>([
-      _client.from('exercises').select(columns).eq('id', id).maybeSingle(),
-      if (userId != null)
-        _client
+    final row = await _client
+        .from('exercises')
+        .select(columns)
+        .eq('id', id)
+        .maybeSingle()
+        .timeout(_networkTimeout);
+    if (row == null) return null;
+    var isFavorite = false;
+    if (userId != null) {
+      try {
+        final favoriteRows = await _client
             .from('user_favorite_exercises')
             .select('exercise_id')
             .eq('user_id', userId)
             .eq('exercise_id', id)
-      else
-        Future<List<dynamic>>.value(const []),
-    ]);
-    final row = results[0] as Map<String, dynamic>?;
-    if (row == null) return null;
-    final favoriteRows = results[1] as List;
+            .timeout(_networkTimeout);
+        isFavorite = (favoriteRows as List).isNotEmpty;
+      } catch (_) {
+        isFavorite = false;
+      }
+    }
     return Exercise.fromJson({
       ...row,
-      'is_favorite': favoriteRows.isNotEmpty,
+      'is_favorite': isFavorite,
     });
   }
 

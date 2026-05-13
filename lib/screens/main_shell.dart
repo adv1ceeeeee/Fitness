@@ -114,10 +114,10 @@ class _GlassNavBar extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xBB000000),
-            border: Border(
+            color: AppColors.background.withValues(alpha: 0.86),
+            border: const Border(
               top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: AppColors.cardBorder,
                 width: 0.5,
               ),
             ),
@@ -305,7 +305,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     final proceed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: AppColors.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
@@ -414,7 +414,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     // Show sheet with workout choices + free workout option
     final result = await showModalBottomSheet<Object>(
       context: context,
-      backgroundColor: const Color(0xFF1C1C1E),
+      backgroundColor: AppColors.card,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -474,12 +474,12 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
     showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1C1E),
+        backgroundColor: AppColors.card,
         title: const Text('Завершить тренировку?',
-            style: TextStyle(color: Colors.white, fontSize: 17)),
+            style: TextStyle(color: AppColors.textPrimary, fontSize: 17)),
         content: Text(
           'Прошло ${state.elapsedFormatted}. Данные будут сохранены.',
-          style: const TextStyle(color: Color(0xFF8E8E93), fontSize: 14),
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -659,7 +659,8 @@ class _StartChoiceSheet extends StatelessWidget {
                       color: AppColors.card,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(color: AppColors.cardBorder, width: 1),
+                        side: const BorderSide(
+                            color: AppColors.cardBorder, width: 1),
                       ),
                       child: InkWell(
                         onTap: () => Navigator.pop(context, c),
