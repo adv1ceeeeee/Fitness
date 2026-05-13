@@ -46,8 +46,10 @@ class _NpsSheetState extends State<_NpsSheet> {
     final score = _selected!;
     final comment = _commentCtrl.text.trim();
 
-    await FeedbackService.submitNps(score, comment: comment.isEmpty ? null : comment);
-    EventLogger.npsScore(score: score, comment: comment.isEmpty ? null : comment);
+    await FeedbackService.submitNps(score,
+        comment: comment.isEmpty ? null : comment);
+    EventLogger.npsScore(
+        score: score, comment: comment.isEmpty ? null : comment);
 
     setState(() => _submitted = true);
 
@@ -89,7 +91,7 @@ class _NpsSheetState extends State<_NpsSheet> {
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,7 +99,8 @@ class _NpsSheetState extends State<_NpsSheet> {
           // Handle
           Center(
             child: Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
                 color: AppColors.textSecondary.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
@@ -134,9 +137,7 @@ class _NpsSheetState extends State<_NpsSheet> {
                     margin: const EdgeInsets.symmetric(horizontal: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.accent
-                          : AppColors.surface,
+                      color: selected ? AppColors.accent : AppColors.surface,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -144,10 +145,11 @@ class _NpsSheetState extends State<_NpsSheet> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: selected
-                            ? Colors.white
+                            ? AppColors.textOnAccent
                             : AppColors.textSecondary,
                         fontSize: 13,
-                        fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight:
+                            selected ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
                   ),
@@ -159,8 +161,12 @@ class _NpsSheetState extends State<_NpsSheet> {
           const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Вряд ли', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-              Text('Точно да!', style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              Text('Вряд ли',
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+              Text('Точно да!',
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 11)),
             ],
           ),
 
@@ -171,7 +177,8 @@ class _NpsSheetState extends State<_NpsSheet> {
               controller: _commentCtrl,
               maxLines: 3,
               autofocus: true,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              style:
+                  const TextStyle(color: AppColors.textPrimary, fontSize: 14),
               decoration: InputDecoration(
                 hintText: 'Что нам улучшить? (необязательно)',
                 hintStyle: const TextStyle(color: AppColors.textSecondary),
@@ -192,12 +199,14 @@ class _NpsSheetState extends State<_NpsSheet> {
               onPressed: _selected != null ? _submit : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accent,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.textOnAccent,
                 disabledBackgroundColor: AppColors.surface,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
-              child: const Text('Отправить', style: TextStyle(fontWeight: FontWeight.w600)),
+              child: const Text('Отправить',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ),
           TextButton(
@@ -239,11 +248,15 @@ class _MicroSurveySheet extends StatefulWidget {
 
 class _MicroSurveySheetState extends State<_MicroSurveySheet> {
   static const _options = [
-    ('nutrition',   'Питание / КБЖУ',                  Icons.restaurant_rounded),
-    ('more_progs',  'Готовые программы от тренеров',   Icons.fitness_center_rounded),
-    ('social',      'Соцфункции (друзья, соревнования)',Icons.people_rounded),
-    ('wearable',    'Интеграция с часами / трекером',   Icons.watch_rounded),
-    ('ok',          'Всё устраивает',                   Icons.thumb_up_rounded),
+    ('nutrition', 'Питание / КБЖУ', Icons.restaurant_rounded),
+    (
+      'more_progs',
+      'Готовые программы от тренеров',
+      Icons.fitness_center_rounded
+    ),
+    ('social', 'Соцфункции (друзья, соревнования)', Icons.people_rounded),
+    ('wearable', 'Интеграция с часами / трекером', Icons.watch_rounded),
+    ('ok', 'Всё устраивает', Icons.thumb_up_rounded),
   ];
 
   bool _submitted = false;
@@ -268,7 +281,10 @@ class _MicroSurveySheetState extends State<_MicroSurveySheet> {
             SizedBox(height: 12),
             Text(
               'Учтём, спасибо!',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -277,62 +293,68 @@ class _MicroSurveySheetState extends State<_MicroSurveySheet> {
 
     return SingleChildScrollView(
       child: Padding(
-      padding: EdgeInsets.fromLTRB(
-          24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.textSecondary.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Чего не хватает?',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Выбери одно — это займёт 5 секунд',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          ..._options.map((opt) {
-            final (key, label, icon) = opt;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: InkWell(
-                onTap: () => _submit(key),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(icon, color: AppColors.accent, size: 20),
-                      const SizedBox(width: 12),
-                      Text(
-                        label,
-                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                      ),
-                    ],
-                  ),
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).padding.bottom + 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textSecondary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            );
-          }),
-        ],
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Чего не хватает?',
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Выбери одно — это займёт 5 секунд',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            ..._options.map((opt) {
+              final (key, label, icon) = opt;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: InkWell(
+                  onTap: () => _submit(key),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(icon, color: AppColors.accent, size: 20),
+                        const SizedBox(width: 12),
+                        Text(
+                          label,
+                          style: const TextStyle(
+                              color: AppColors.textPrimary, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
       ),
-    ),
     );
   }
 }
@@ -362,8 +384,8 @@ class _ScreenThumbsWidgetState extends State<ScreenThumbsWidget> {
       comment = await _showCommentDialog();
     }
 
-    await FeedbackService.submitScreenFeedback(
-      widget.screen, v, comment: comment);
+    await FeedbackService.submitScreenFeedback(widget.screen, v,
+        comment: comment);
     EventLogger.screenFeedback(screen: widget.screen, vote: v);
 
     if (mounted && v == 1) {

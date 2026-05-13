@@ -14,7 +14,7 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  static const _todayWorkoutCacheVersion = 2;
+  static const _todayWorkoutCacheVersion = 3;
 
   Workout? _workout;
   List<WorkoutExercise> _exercises = [];

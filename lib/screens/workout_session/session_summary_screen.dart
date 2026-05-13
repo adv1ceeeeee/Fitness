@@ -470,7 +470,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppColors.textOnAccent,
                             ),
                           )
                         : const Text('Сохранить тренировку'),
@@ -640,7 +640,7 @@ class _SessionRpeCard extends StatelessWidget {
                     child: Text(
                       '$v',
                       style: TextStyle(
-                        color: sel ? Colors.white : _rpeColor(v),
+                        color: sel ? AppColors.textOnAccent : _rpeColor(v),
                         fontWeight: FontWeight.bold,
                         fontSize: 15,
                       ),
@@ -1006,9 +1006,9 @@ class _SetEditSheetState extends State<_SetEditSheet> {
                 selected: sel,
                 onSelected: (_) => setState(() => _rpe = v),
                 selectedColor: AppColors.accent,
-                checkmarkColor: Colors.black,
+                checkmarkColor: AppColors.textOnAccent,
                 labelStyle: TextStyle(
-                  color: sel ? Colors.black : AppColors.textPrimary,
+                  color: sel ? AppColors.textOnAccent : AppColors.textPrimary,
                   fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                 ),
               );
@@ -1161,7 +1161,7 @@ class _InsightChip extends StatelessWidget {
     ),
     PostSessionInsightKind.volumeDown: (
       Icons.trending_down_rounded,
-      Color(0xFF8E8E93)
+      AppColors.textTertiary
     ),
     PostSessionInsightKind.setsCount: (
       Icons.check_circle_rounded,

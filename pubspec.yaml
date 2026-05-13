@@ -1,7 +1,7 @@
 name: sportwai
 description: Sportify - мобильное приложение для отслеживания тренировок
 publish_to: 'none'
-version: 1.9.0+24
+version: 1.9.0+47
 
 environment:
   sdk: ^3.5.0

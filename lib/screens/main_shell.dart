@@ -71,13 +71,14 @@ class _MainShellState extends ConsumerState<MainShell> {
                 : const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.wifi_off, size: 14, color: Colors.black87),
+                      Icon(Icons.wifi_off,
+                          size: 14, color: AppColors.textOnWarmAccent),
                       SizedBox(width: 6),
                       Text(
                         'Нет соединения — данные могут быть устаревшими',
                         style: TextStyle(
                           fontSize: 11,
-                          color: Colors.black87,
+                          color: AppColors.textOnWarmAccent,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -565,7 +566,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
                       height: 23,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.4,
-                        color: Colors.white,
+                        color: AppColors.textOnAccent,
                       ),
                     )
                   : Transform.translate(
@@ -575,7 +576,7 @@ class _PlayStopFabState extends ConsumerState<_PlayStopFab> {
                             ? CupertinoIcons.stop_fill
                             : CupertinoIcons.play_fill,
                         key: ValueKey(isActive),
-                        color: Colors.white,
+                        color: AppColors.textOnAccent,
                         size: 26,
                       ),
                     ),

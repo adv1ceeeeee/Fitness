@@ -281,8 +281,7 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
                 size: 16, color: AppColors.textSecondary),
             const SizedBox(width: 6),
             const Text('Вес тела (кг):',
-                style:
-                    TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(width: 10),
             SizedBox(
               width: 80,
@@ -316,8 +315,8 @@ class _OneRepMaxTabState extends State<_OneRepMaxTab> {
             child: Column(
               children: [
                 const Text('Расчётный 1ПМ (среднее)',
-                    style:
-                        TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 13)),
                 const SizedBox(height: 4),
                 Text(
                   '${_result! % 1 == 0 ? _result!.toInt() : _result!.toStringAsFixed(1)} кг',
@@ -545,8 +544,7 @@ Map<double, int> groupPlates(List<double> plates) {
 
 /// Builds a progressive warmup scheme from bar to [target].
 /// [barWeight] and [useKg] determine step rounding.
-List<WarmupSet> buildWarmupSets(
-    double target, double barWeight, bool useKg) {
+List<WarmupSet> buildWarmupSets(double target, double barWeight, bool useKg) {
   final step = useKg ? 2.5 : 5.0;
   double snap(double w) => (w / step).round() * step;
 
@@ -563,22 +561,30 @@ List<WarmupSet> buildWarmupSets(
   final List<WarmupSetType> types;
 
   if (ratio < 2.5) {
-    pcts  = [0.60];
-    reps  = [5];
+    pcts = [0.60];
+    reps = [5];
     types = [WarmupSetType.leadIn];
   } else if (ratio < 4.0) {
-    pcts  = [0.45, 0.75];
-    reps  = [5, 3];
+    pcts = [0.45, 0.75];
+    reps = [5, 3];
     types = [WarmupSetType.specific, WarmupSetType.leadIn];
   } else if (ratio < 6.0) {
-    pcts  = [0.40, 0.60, 0.80];
-    reps  = [8, 5, 2];
-    types = [WarmupSetType.specific, WarmupSetType.specific, WarmupSetType.leadIn];
+    pcts = [0.40, 0.60, 0.80];
+    reps = [8, 5, 2];
+    types = [
+      WarmupSetType.specific,
+      WarmupSetType.specific,
+      WarmupSetType.leadIn
+    ];
   } else {
-    pcts  = [0.35, 0.52, 0.67, 0.83];
-    reps  = [8, 5, 3, 1];
-    types = [WarmupSetType.specific, WarmupSetType.specific,
-             WarmupSetType.specific, WarmupSetType.leadIn];
+    pcts = [0.35, 0.52, 0.67, 0.83];
+    reps = [8, 5, 3, 1];
+    types = [
+      WarmupSetType.specific,
+      WarmupSetType.specific,
+      WarmupSetType.specific,
+      WarmupSetType.leadIn
+    ];
   }
 
   for (var i = 0; i < pcts.length; i++) {
@@ -608,8 +614,7 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
   static const _barWeightsKg = [20.0, 15.0, 10.0, 7.5];
   static const _barWeightsLb = [45.0, 35.0, 25.0, 15.0];
 
-  List<double> get _plates =>
-      _useKg ? _plateWeightsKg : _plateWeightsLb;
+  List<double> get _plates => _useKg ? _plateWeightsKg : _plateWeightsLb;
   List<double> get _bars => _useKg ? _barWeightsKg : _barWeightsLb;
   String get _unit => _useKg ? 'кг' : 'lb';
 
@@ -635,11 +640,11 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
   Widget build(BuildContext context) {
     final targetText = _targetCtrl.text.replaceAll(',', '.');
     final target = double.tryParse(targetText);
-    final plates = target != null && target > _barWeight
-        ? _calculate(target)
-        : <double>[];
-    final loadedWeight =
-        target != null ? _barWeight + plates.fold(0.0, (s, p) => s + p) * 2 : 0.0;
+    final plates =
+        target != null && target > _barWeight ? _calculate(target) : <double>[];
+    final loadedWeight = target != null
+        ? _barWeight + plates.fold(0.0, (s, p) => s + p) * 2
+        : 0.0;
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -655,8 +660,7 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
         Row(
           children: [
             const Text('Единицы:',
-                style:
-                    TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(width: 12),
             _ToggleChip(
               label: 'кг',
@@ -683,13 +687,13 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
         Row(
           children: [
             const Text('Гриф:',
-                style:
-                    TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             const SizedBox(width: 12),
             ..._bars.map((b) => Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: _ToggleChip(
-                    label: '${b.toStringAsFixed(b == b.truncate() ? 0 : 1)} $_unit',
+                    label:
+                        '${b.toStringAsFixed(b == b.truncate() ? 0 : 1)} $_unit',
                     selected: _barWeight == b,
                     onTap: () => setState(() => _barWeight = b),
                   ),
@@ -712,13 +716,13 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                   const TextInputType.numberWithOptions(decimal: true),
               onChanged: (v) {
                 setState(() {});
-                if (!_loggedUsage && double.tryParse(v.replaceAll(',', '.')) != null) {
+                if (!_loggedUsage &&
+                    double.tryParse(v.replaceAll(',', '.')) != null) {
                   _loggedUsage = true;
                   EventLogger.calculatorUsed(type: 'plates');
                 }
               },
-              decoration:
-                  InputDecoration(hintText: _useKg ? '100' : '225'),
+              decoration: InputDecoration(hintText: _useKg ? '100' : '225'),
             ),
           ],
         ),
@@ -743,8 +747,8 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
               decoration: BoxDecoration(
                 color: AppColors.accent.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.3)),
+                border:
+                    Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -812,8 +816,7 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 4),
                           decoration: BoxDecoration(
-                            color: _plateColor(primary)
-                                .withValues(alpha: 0.15),
+                            color: _plateColor(primary).withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -878,12 +881,24 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                     ..._buildWarmup(target).asMap().entries.map((e) {
                       final i = e.key;
                       final s = e.value;
-                      const jointColor = Color(0xFF30D158);
+                      const jointColor = AppColors.success;
                       final (color, label) = switch (s.type) {
-                        WarmupSetType.joint    => (jointColor, 'Суставная разминка'),
-                        WarmupSetType.general  => (const Color(0xFF636366), 'Общая разминка'),
-                        WarmupSetType.specific => (const Color(0xFF007AFF), 'Специфическая'),
-                        WarmupSetType.leadIn   => (const Color(0xFFFF9500), 'Подводящий'),
+                        WarmupSetType.joint => (
+                            jointColor,
+                            'Суставная разминка'
+                          ),
+                        WarmupSetType.general => (
+                            AppColors.textTertiary,
+                            'Общая разминка'
+                          ),
+                        WarmupSetType.specific => (
+                            AppColors.accent,
+                            'Специфическая'
+                          ),
+                        WarmupSetType.leadIn => (
+                            AppColors.warning,
+                            'Подводящий'
+                          ),
                       };
                       if (s.type == WarmupSetType.joint) {
                         return Padding(
@@ -891,7 +906,8 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                           child: Row(
                             children: [
                               Container(
-                                width: 26, height: 26,
+                                width: 26,
+                                height: 26,
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
                                   color: color.withValues(alpha: 0.15),
@@ -899,24 +915,29 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                                 ),
                                 child: Text('${i + 1}',
                                     style: const TextStyle(
-                                        color: jointColor, fontSize: 12,
+                                        color: jointColor,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w700)),
                               ),
                               const SizedBox(width: 10),
                               const Expanded(
-                                child: Text('Резинки / гантели / гриф без блинов',
+                                child: Text(
+                                    'Резинки / гантели / гриф без блинов',
                                     style: TextStyle(
-                                        color: AppColors.textSecondary, fontSize: 13)),
+                                        color: AppColors.textSecondary,
+                                        fontSize: 13)),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: color.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(label,
                                     style: const TextStyle(
-                                        color: jointColor, fontSize: 11,
+                                        color: jointColor,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.w600)),
                               ),
                             ],
@@ -930,7 +951,8 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                         child: Row(
                           children: [
                             Container(
-                              width: 26, height: 26,
+                              width: 26,
+                              height: 26,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 color: color.withValues(alpha: 0.15),
@@ -938,7 +960,8 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                               ),
                               child: Text('${i + 1}',
                                   style: TextStyle(
-                                      color: color, fontSize: 12,
+                                      color: color,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w700)),
                             ),
                             const SizedBox(width: 10),
@@ -953,17 +976,20 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                             Expanded(
                               child: Text('× ${s.reps} повт.',
                                   style: const TextStyle(
-                                      color: AppColors.textSecondary, fontSize: 13)),
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13)),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
                                 color: color.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(label,
                                   style: TextStyle(
-                                      color: color, fontSize: 11,
+                                      color: color,
+                                      fontSize: 11,
                                       fontWeight: FontWeight.w600)),
                             ),
                           ],
@@ -976,7 +1002,8 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                       child: Row(
                         children: [
                           Container(
-                            width: 26, height: 26,
+                            width: 26,
+                            height: 26,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: AppColors.accent.withValues(alpha: 0.15),
@@ -998,7 +1025,8 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
                           ),
                           const Expanded(child: SizedBox()),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
                               color: AppColors.accent.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(6),
@@ -1026,18 +1054,18 @@ class _PlateCalculatorTabState extends State<_PlateCalculatorTab> {
 
   Color _plateColor(double weight) {
     if (_useKg) {
-      if (weight >= 25) return const Color(0xFFFF3B30);
-      if (weight >= 20) return const Color(0xFF007AFF);
-      if (weight >= 15) return const Color(0xFFFFCC00);
-      if (weight >= 10) return const Color(0xFF34C759);
-      if (weight >= 5) return const Color(0xFFFF9500);
-      return const Color(0xFF636366);
+      if (weight >= 25) return AppColors.error;
+      if (weight >= 20) return AppColors.accent;
+      if (weight >= 15) return AppColors.favorite;
+      if (weight >= 10) return AppColors.success;
+      if (weight >= 5) return AppColors.warning;
+      return AppColors.textTertiary;
     } else {
-      if (weight >= 45) return const Color(0xFFFF3B30);
-      if (weight >= 35) return const Color(0xFF007AFF);
-      if (weight >= 25) return const Color(0xFFFFCC00);
-      if (weight >= 10) return const Color(0xFF34C759);
-      return const Color(0xFF636366);
+      if (weight >= 45) return AppColors.error;
+      if (weight >= 35) return AppColors.accent;
+      if (weight >= 25) return AppColors.favorite;
+      if (weight >= 10) return AppColors.success;
+      return AppColors.textTertiary;
     }
   }
 }
@@ -1114,7 +1142,8 @@ class _BodyCompositionTabState extends State<_BodyCompositionTab> {
     });
   }
 
-  String _fmt(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+  String _fmt(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
 
   ({double bmi, double? ffmi, double? lbm})? get _result {
     final w = double.tryParse(_weightCtrl.text.replaceAll(',', '.'));
@@ -1168,7 +1197,8 @@ class _BodyCompositionTabState extends State<_BodyCompositionTab> {
   Widget build(BuildContext context) {
     final r = _result;
     return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
+      padding: EdgeInsets.fromLTRB(
+          24, 24, 24, MediaQuery.of(context).padding.bottom + 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1253,7 +1283,9 @@ class _BodyCompositionTabState extends State<_BodyCompositionTab> {
         padding: const EdgeInsets.symmetric(vertical: 14),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? AppColors.accent.withValues(alpha: 0.2) : AppColors.card,
+          color: selected
+              ? AppColors.accent.withValues(alpha: 0.2)
+              : AppColors.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: selected ? AppColors.accent : Colors.transparent,
@@ -1274,7 +1306,9 @@ class _BodyCompositionTabState extends State<_BodyCompositionTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+        Text(label,
+            style:
+                const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
@@ -1292,7 +1326,11 @@ class _ResultTile extends StatelessWidget {
   final String value;
   final String sub;
   final Color color;
-  const _ResultTile({required this.label, required this.value, required this.sub, required this.color});
+  const _ResultTile(
+      {required this.label,
+      required this.value,
+      required this.sub,
+      required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -1308,15 +1346,22 @@ class _ResultTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                Text(label,
+                    style: const TextStyle(
+                        color: AppColors.textSecondary, fontSize: 13)),
                 const SizedBox(height: 2),
-                Text(sub, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w500)),
+                Text(sub,
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500)),
               ],
             ),
           ),
           Text(
             value,
-            style: TextStyle(color: color, fontSize: 26, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: color, fontSize: 26, fontWeight: FontWeight.bold),
           ),
         ],
       ),

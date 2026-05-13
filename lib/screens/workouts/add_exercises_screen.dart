@@ -648,9 +648,11 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         }
                       }),
                       selectedColor: AppColors.accent,
-                      checkmarkColor: Colors.black,
+                      checkmarkColor: AppColors.textOnAccent,
                       labelStyle: TextStyle(
-                        color: sel ? Colors.black : AppColors.textPrimary,
+                        color: sel
+                            ? AppColors.textOnAccent
+                            : AppColors.textPrimary,
                         fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                       ),
                       backgroundColor: AppColors.surface,
@@ -1154,7 +1156,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                         ? AppColors.accent
                                             .withValues(alpha: 0.18)
                                         : current
-                                            ? const Color(0xFFAB7FF8)
+                                            ? AppColors.metric
                                                 .withValues(alpha: 0.14)
                                             : AppColors.surface,
                                     borderRadius: BorderRadius.circular(9),
@@ -1162,9 +1164,9 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                       color: selected
                                           ? AppColors.accent
                                           : current
-                                              ? const Color(0xFFAB7FF8)
+                                              ? AppColors.metric
                                               : hasWeight
-                                                  ? const Color(0xFFAB7FF8)
+                                                  ? AppColors.metric
                                                       .withValues(alpha: 0.55)
                                                   : Colors.transparent,
                                     ),
@@ -1175,7 +1177,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                       color: selected
                                           ? AppColors.accent
                                           : current
-                                              ? const Color(0xFFAB7FF8)
+                                              ? AppColors.metric
                                               : AppColors.textSecondary,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
@@ -1425,7 +1427,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                     child: Text(
                                       '$restSeconds с',
                                       style: const TextStyle(
-                                        color: Colors.white,
+                                        color: AppColors.textOnAccent,
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -1664,7 +1666,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   void _openAddSheet(Exercise ex) {
     _showExerciseSettingsSheet(
       title: ex.displayName,
-      gifUrl: ex.gifUrl,
+      gifUrl: ex.primaryMediaUrl,
       description: ex.descriptionRu ?? ex.description,
       isCardio: ex.category == 'cardio',
       initialSets: 3,
@@ -1767,7 +1769,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     if (!mounted) return;
     _showExerciseSettingsSheet(
       title: exercise?.displayName ?? '?',
-      gifUrl: exercise?.gifUrl,
+      gifUrl: exercise?.primaryMediaUrl,
       description: exercise?.descriptionRu ?? exercise?.description,
       isCardio: exercise?.category == 'cardio',
       initialSets: we.sets,
@@ -1831,7 +1833,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                               : Icons.star_outline_rounded,
                           size: 20,
                           color: ex.isFavorite
-                              ? const Color(0xFFFFB800)
+                              ? AppColors.favorite
                               : AppColors.textSecondary,
                         ),
                         onPressed: () => _toggleFavorite(ex),
@@ -1967,8 +1969,8 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
     }
 
     // Same color logic as program cards in workouts_screen
-    const Color kPremiumColor = Color(0xFFFFB800);
-    const Color kUserColor = Color(0xFFAB7FF8);
+    const Color kPremiumColor = AppColors.favorite;
+    const Color kUserColor = AppColors.metric;
     final String wName = workout?.name ?? '';
     final Color workoutIconColor = premiumWorkoutNames.contains(wName)
         ? kPremiumColor
@@ -2110,7 +2112,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             color: isActive
-                                ? Colors.white
+                                ? AppColors.textOnAccent
                                 : AppColors.textSecondary,
                           ),
                         ),
@@ -2148,7 +2150,7 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                                     horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? AppColors.surface
+                                      ? AppColors.surfacePressed
                                       : AppColors.card,
                                   borderRadius: BorderRadius.circular(8),
                                   border: isSelected
@@ -2237,16 +2239,18 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                         ? Icons.star_rounded
                         : Icons.star_outline_rounded,
                     size: 16,
-                    color:
-                        _favoritesOnly ? Colors.black : AppColors.textSecondary,
+                    color: _favoritesOnly
+                        ? AppColors.textOnWarmAccent
+                        : AppColors.textSecondary,
                   ),
                   selected: _favoritesOnly,
                   onSelected: (v) => setState(() => _favoritesOnly = v),
-                  selectedColor: const Color(0xFFFFB800),
-                  checkmarkColor: Colors.black,
+                  selectedColor: AppColors.favorite,
+                  checkmarkColor: AppColors.textOnWarmAccent,
                   labelStyle: TextStyle(
-                    color:
-                        _favoritesOnly ? Colors.black : AppColors.textSecondary,
+                    color: _favoritesOnly
+                        ? AppColors.textOnWarmAccent
+                        : AppColors.textSecondary,
                     fontSize: 13,
                   ),
                   backgroundColor: AppColors.card,
@@ -2865,7 +2869,7 @@ class _ProgramExerciseCard extends StatelessWidget {
                           mainLine,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: Color(0xFFAB7FF8),
+                            color: AppColors.metric,
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                           ),
@@ -2876,7 +2880,7 @@ class _ProgramExerciseCard extends StatelessWidget {
                             dropLine,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: Color(0xFFAB7FF8),
+                              color: AppColors.metric,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                             ),
@@ -3512,7 +3516,7 @@ class _ExerciseHistorySheetState extends State<_ExerciseHistorySheet> {
               Row(
                 children: [
                   const Icon(Icons.emoji_events_rounded,
-                      color: Color(0xFFFFB800), size: 16),
+                      color: AppColors.favorite, size: 16),
                   const SizedBox(width: 4),
                   Text(
                     'Личный рекорд: ${pb % 1 == 0 ? pb.toInt() : pb.toStringAsFixed(1)} кг'

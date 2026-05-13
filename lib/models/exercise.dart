@@ -50,6 +50,23 @@ class Exercise {
   String get displayName =>
       nameRu != null && nameRu!.trim().isNotEmpty ? nameRu!.trim() : name;
 
+  String? get primaryMediaUrl {
+    final gif = gifUrl?.trim();
+    if (gif != null && gif.isNotEmpty) return gif;
+    final image = imageUrl?.trim();
+    if (image != null && image.isNotEmpty) return image;
+    return null;
+  }
+
+  List<String> get mediaUrls {
+    final urls = <String>[];
+    final gif = gifUrl?.trim();
+    final image = imageUrl?.trim();
+    if (gif != null && gif.isNotEmpty) urls.add(gif);
+    if (image != null && image.isNotEmpty && image != gif) urls.add(image);
+    return urls;
+  }
+
   Exercise copyWith({
     String? id,
     String? name,

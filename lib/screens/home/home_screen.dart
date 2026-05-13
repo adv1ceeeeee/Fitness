@@ -1943,7 +1943,7 @@ class _CountdownChip extends StatelessWidget {
           Icon(
             Icons.timer_outlined,
             size: 14,
-            color: isIminent ? Colors.white : AppColors.accent,
+            color: isIminent ? AppColors.textOnAccent : AppColors.accent,
           ),
           const SizedBox(width: 6),
           Text(
@@ -1951,7 +1951,7 @@ class _CountdownChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: isIminent ? Colors.white : AppColors.textPrimary,
+              color: isIminent ? AppColors.textOnAccent : AppColors.textPrimary,
             ),
           ),
         ],
@@ -1980,8 +1980,8 @@ class _ChangeProgramSheet extends StatefulWidget {
 class _ChangeProgramSheetState extends State<_ChangeProgramSheet> {
   List<Workout>? _workouts;
 
-  static const Color _kPremiumColor = Color(0xFFFFB800);
-  static const Color _kUserColor = Color(0xFFAB7FF8);
+  static const Color _kPremiumColor = AppColors.favorite;
+  static const Color _kUserColor = AppColors.metric;
 
   Color _iconColor(String name) {
     if (premiumWorkoutNames.contains(name)) return _kPremiumColor;
@@ -2274,7 +2274,7 @@ class _TodayCard extends StatelessWidget {
                         onPressed: onCreateProgram,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.accent,
-                          foregroundColor: Colors.white,
+                          foregroundColor: AppColors.textOnAccent,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -2313,8 +2313,8 @@ class _TodayCard extends StatelessWidget {
     }
 
     // ── Workout exists — hero card (matches programs-tab style) ──────────────
-    const Color kPremiumColor = Color(0xFFFFB800);
-    const Color kUserColor = Color(0xFFAB7FF8);
+    const Color kPremiumColor = AppColors.favorite;
+    const Color kUserColor = AppColors.metric;
     final bool isPremium = premiumWorkoutNames.contains(workout!.name);
     final bool isUserCreated = !allStandardWorkoutNames.contains(workout!.name);
     final Color iconColor = isPremium
@@ -2396,7 +2396,7 @@ class _TodayCard extends StatelessWidget {
               onPressed: onTap,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.accent,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.textOnAccent,
                 padding: const EdgeInsets.symmetric(vertical: 13),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -2880,7 +2880,7 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
         child: Text(
           label,
           style: TextStyle(
-            color: secondary ? AppColors.textSecondary : Colors.white,
+            color: secondary ? AppColors.textSecondary : AppColors.textOnAccent,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),

@@ -7,11 +7,20 @@ import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/training_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
-const _categoryOrder = ['Грудь', 'Спина', 'Плечи', 'Руки', 'Ноги', 'Кардио', 'Пресс'];
+const _categoryOrder = [
+  'Грудь',
+  'Спина',
+  'Плечи',
+  'Руки',
+  'Ноги',
+  'Кардио',
+  'Пресс'
+];
 
 class FreeWorkoutScreen extends StatefulWidget {
   /// Called with (workoutId, sessionId, workoutName) when session is started.
-  final void Function(String sessionId, String workoutId, String workoutName) onStart;
+  final void Function(String sessionId, String workoutId, String workoutName)
+      onStart;
 
   const FreeWorkoutScreen({super.key, required this.onStart});
 
@@ -282,7 +291,7 @@ class _FreeWorkoutScreenState extends State<FreeWorkoutScreen> {
                     width: 22,
                     height: 22,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2, color: AppColors.textOnAccent),
                   )
                 : Text(
                     _selected.isEmpty
@@ -343,9 +352,8 @@ class _ExerciseTile extends StatelessWidget {
                           color: selected
                               ? AppColors.accent
                               : AppColors.textPrimary,
-                          fontWeight: selected
-                              ? FontWeight.w600
-                              : FontWeight.normal,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.normal,
                         ),
                       ),
                       Text(

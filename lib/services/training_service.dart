@@ -11,6 +11,7 @@ import 'package:sportwai/services/analytics_service.dart';
 import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/offline_queue_service.dart';
+import 'package:sportwai/services/workout_exercise_order_store.dart';
 import 'package:sportwai/utils/retry.dart';
 
 class TrainingService {
@@ -28,8 +29,12 @@ class TrainingService {
   static final Map<String, Future<List<WorkoutExercise>>>
       _workoutExercisesInFlight = {};
 
-  static String _workoutExerciseCacheKey(String workoutId) =>
-      '$_workoutExerciseCachePrefix:$workoutId';
+  static String _workoutExerciseCacheKey(String workoutId, {int? dayIndex}) =>
+      dayIndex == null
+          ? '$_workoutExerciseCachePrefix:$workoutId'
+          : '$_workoutExerciseCachePrefix:$workoutId:day:$dayIndex';
+
+  static int _appDayIndex(DateTime date) => date.weekday - 1;
 
   /// Invalidate every cache entry related to training sessions for a user.
   /// Called after any session mutation (create, complete, skip, delete).
@@ -96,27 +101,35 @@ class TrainingService {
   }
 
   static Future<List<WorkoutExercise>> getWorkoutExercisesForToday(
-      String workoutId) async {
-    final inFlight = _workoutExercisesInFlight[workoutId];
+    String workoutId, {
+    DateTime? date,
+  }) async {
+    final dayIndex = _appDayIndex(date ?? DateTime.now());
+    final inFlightKey = '$workoutId:$dayIndex';
+    final inFlight = _workoutExercisesInFlight[inFlightKey];
     if (inFlight != null) return inFlight;
 
-    final future = _fetchWorkoutExercisesForToday(workoutId);
-    _workoutExercisesInFlight[workoutId] = future;
-    future.whenComplete(() => _workoutExercisesInFlight.remove(workoutId));
+    final future = _fetchWorkoutExercisesForDay(workoutId, dayIndex);
+    _workoutExercisesInFlight[inFlightKey] = future;
+    future.whenComplete(() => _workoutExercisesInFlight.remove(inFlightKey));
     return future;
   }
 
-  static Future<List<WorkoutExercise>> _fetchWorkoutExercisesForToday(
-      String workoutId) async {
-    return AppCache.get<List<WorkoutExercise>>(
-      key: _workoutExerciseCacheKey(workoutId),
+  static Future<List<WorkoutExercise>> _fetchWorkoutExercisesForDay(
+    String workoutId,
+    int dayIndex,
+  ) async {
+    final exercises = await AppCache.get<List<WorkoutExercise>>(
+      key: _workoutExerciseCacheKey(workoutId, dayIndex: dayIndex),
       ttl: _mediumTtl,
       fetch: () async {
         final res = await _client
             .from('workout_exercises')
             .select(_workoutExerciseSelect)
             .eq('workout_id', workoutId)
+            .or('day.is.null,day.eq.$dayIndex')
             .order('order')
+            .order('created_at')
             .timeout(_networkTimeout);
         return (res as List)
             .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
@@ -131,6 +144,7 @@ class TrainingService {
             .toList();
       },
     );
+    return WorkoutExerciseOrderStore.apply(workoutId, exercises);
   }
 
   /// Создать сессию тренировки

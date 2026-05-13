@@ -1666,7 +1666,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
                                           color: _weighInWeekdays.length == 7
-                                              ? Colors.white
+                                              ? AppColors.textOnAccent
                                               : AppColors.textSecondary,
                                         ),
                                       ),
@@ -1702,7 +1702,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w600,
                                                   color: selected
-                                                      ? Colors.white
+                                                      ? AppColors.textOnAccent
                                                       : AppColors.textSecondary,
                                                 ),
                                               ),
@@ -2295,7 +2295,7 @@ class _WeighInDaysRow extends StatelessWidget {
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: selectedDays.length == 7
-                          ? Colors.white
+                          ? AppColors.textOnAccent
                           : AppColors.textSecondary,
                     ),
                   ),
@@ -2324,7 +2324,7 @@ class _WeighInDaysRow extends StatelessWidget {
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                               color: selected
-                                  ? Colors.white
+                                  ? AppColors.textOnAccent
                                   : AppColors.textSecondary,
                             ),
                           ),

@@ -1673,10 +1673,10 @@ class _WorkoutSessionScreenState extends ConsumerState<WorkoutSessionScreen>
                           );
                         }),
                         // Exercise GIF
-                        if (we.exercise?.gifUrl != null) ...[
+                        if (we.exercise?.primaryMediaUrl != null) ...[
                           const SizedBox(height: 12),
                           _ExerciseMedia(
-                            url: we.exercise!.gifUrl!,
+                            url: we.exercise!.primaryMediaUrl!,
                             height: 180,
                             width: double.infinity,
                           ),
@@ -2116,7 +2116,9 @@ class _SetBlock extends StatelessWidget {
                   ),
                   child: Icon(Icons.check,
                       size: 18,
-                      color: isActive ? Colors.white : AppColors.textSecondary),
+                      color: isActive
+                          ? AppColors.textOnAccent
+                          : AppColors.textSecondary),
                 ),
               )
             else
@@ -2185,7 +2187,7 @@ class _SetBadge extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: done
-          ? const Icon(Icons.check, size: 14, color: Colors.white)
+          ? const Icon(Icons.check, size: 14, color: AppColors.textOnAccent)
           : isWarmup
               ? const Icon(Icons.local_fire_department,
                   size: 14, color: warmupColor)
@@ -2561,7 +2563,7 @@ class _PrBannerState extends State<_PrBanner>
               AppColors.accent,
               Color(0xFFFF9F0A),
               Color(0xFFFF453A),
-              Colors.white,
+              AppColors.textOnAccent,
             ],
           ),
           // Баннер
@@ -2581,7 +2583,7 @@ class _PrBannerState extends State<_PrBanner>
                       borderRadius: BorderRadius.circular(18),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.12),
+                          color: AppColors.textOnAccent.withValues(alpha: 0.12),
                           blurRadius: 6,
                           spreadRadius: 0,
                         ),
@@ -2611,7 +2613,7 @@ class _PrBannerState extends State<_PrBanner>
                               const Text(
                                 'Личный рекорд!',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: AppColors.textOnAccent,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 17,
                                 ),
@@ -2619,8 +2621,9 @@ class _PrBannerState extends State<_PrBanner>
                               if (widget.exerciseName.isNotEmpty)
                                 Text(
                                   '${widget.exerciseName} · ${widget.weightKg % 1 == 0 ? widget.weightKg.toInt() : widget.weightKg.toStringAsFixed(1)} кг',
-                                  style: const TextStyle(
-                                    color: Colors.white70,
+                                  style: TextStyle(
+                                    color: AppColors.textOnAccent
+                                        .withValues(alpha: 0.75),
                                     fontSize: 13,
                                   ),
                                 ),

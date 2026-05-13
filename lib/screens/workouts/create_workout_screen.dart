@@ -13,9 +13,10 @@ import 'package:sportwai/services/workout_service.dart';
 class _SectionData {
   final TextEditingController nameController;
   final Set<int> selectedDays; // workout days
-  final Set<int> restDays;     // rest days
+  final Set<int> restDays; // rest days
   /// Per-day start time set by the user in the time wheel.
   final Map<int, TimeOfDay> dayTimes;
+
   /// Tracks selection order so we can restore the previous day when one is deselected.
   final List<int> _selectionHistory;
 
@@ -62,7 +63,8 @@ class _SectionData {
   /// Converts dayTimes to {"0": "HH:MM", ...} for the DB.
   Map<int, String> get dayTimesForDb => {
         for (final e in dayTimes.entries)
-          e.key: '${e.value.hour.toString().padLeft(2, '0')}:${e.value.minute.toString().padLeft(2, '0')}',
+          e.key:
+              '${e.value.hour.toString().padLeft(2, '0')}:${e.value.minute.toString().padLeft(2, '0')}',
       };
 
   void dispose() => nameController.dispose();
@@ -219,8 +221,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
   Future<void> _createAndNext() async {
     // Multi-section programs need a parent name so the user can find them
     // again on the workouts list (where sections share a card group).
-    if (_sections.length > 1 &&
-        _programNameController.text.trim().isEmpty) {
+    if (_sections.length > 1 && _programNameController.text.trim().isEmpty) {
       setState(() {
         _error = 'Введите название программы';
         _shakeCount++;
@@ -232,8 +233,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     for (int i = 0; i < _sections.length; i++) {
       final s = _sections[i];
       final label = _sections.length > 1 ? ' раздела ${i + 1}' : '';
-      final isRestOnly =
-          s.selectedDays.isEmpty && s.restDays.isNotEmpty;
+      final isRestOnly = s.selectedDays.isEmpty && s.restDays.isNotEmpty;
 
       // Auto-fill "Отдых" for rest-only sections so the user doesn't have to
       // type a name for what's just a recovery day.
@@ -242,11 +242,17 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
       }
 
       if (s.nameController.text.trim().isEmpty) {
-        setState(() { _error = 'Введите название$label'; _shakeCount++; });
+        setState(() {
+          _error = 'Введите название$label';
+          _shakeCount++;
+        });
         return;
       }
       if (s.selectedDays.isEmpty && s.restDays.isEmpty) {
-        setState(() { _error = 'Выберите дни тренировок$label'; _shakeCount++; });
+        setState(() {
+          _error = 'Выберите дни тренировок$label';
+          _shakeCount++;
+        });
         return;
       }
     }
@@ -256,7 +262,10 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     for (final s in _sections) {
       for (final d in s.selectedDays) {
         if (!seen.add(d)) {
-          setState(() { _error = 'Один день не может быть в двух разделах'; _shakeCount++; });
+          setState(() {
+            _error = 'Один день не может быть в двух разделах';
+            _shakeCount++;
+          });
           return;
         }
       }
@@ -278,22 +287,18 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                   dayTimes: s.dayTimesForDb,
                 ))
             .toList(),
-        groupName: _sections.length > 1
-            ? _programNameController.text.trim()
-            : null,
+        groupName:
+            _sections.length > 1 ? _programNameController.text.trim() : null,
       );
 
       // Schedule rest-day notifications for all rest days across sections
-      final allRestDays = _sections
-          .expand((s) => s.restDays)
-          .toSet()
-          .toList();
+      final allRestDays = _sections.expand((s) => s.restDays).toSet().toList();
       if (allRestDays.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
         final hour = prefs.getInt('rest_day_notif_hour') ?? 9;
         final minute = prefs.getInt('rest_day_notif_minute') ?? 0;
-        NotificationService.scheduleRestDayReminders(
-            allRestDays, hour: hour, minute: minute);
+        NotificationService.scheduleRestDayReminders(allRestDays,
+            hour: hour, minute: minute);
       }
 
       if (mounted) {
@@ -374,8 +379,12 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
     final newSections = t.sections.map((ts) {
       final s = _SectionData();
       s.nameController.text = ts.name;
-      for (final d in ts.days) { s.selectDay(d); }
-      for (final d in ts.rest) { s.restDays.add(d); }
+      for (final d in ts.days) {
+        s.selectDay(d);
+      }
+      for (final d in ts.rest) {
+        s.restDays.add(d);
+      }
       return s;
     }).toList();
     setState(() {
@@ -433,8 +442,8 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                               color: AppColors.accent.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Icon(t.icon,
-                                size: 20, color: AppColors.accent),
+                            child:
+                                Icon(t.icon, size: 20, color: AppColors.accent),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -492,7 +501,8 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               onTap: _showTemplates,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 margin: const EdgeInsets.only(bottom: 24),
                 decoration: BoxDecoration(
                   color: AppColors.accent.withValues(alpha: 0.08),
@@ -502,8 +512,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.auto_awesome,
-                        size: 18, color: AppColors.accent),
+                    Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -563,7 +572,8 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               const SizedBox(height: 16),
               _ShakeWidget(
                 trigger: _shakeCount,
-                child: Text(_error!, style: const TextStyle(color: AppColors.error)),
+                child: Text(_error!,
+                    style: const TextStyle(color: AppColors.error)),
               ),
             ],
 
@@ -653,10 +663,10 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             Color textColor;
             if (isWorkout) {
               bgColor = AppColors.accent;
-              textColor = Colors.white;
+              textColor = AppColors.textOnAccent;
             } else if (isRest) {
-              bgColor = const Color(0xFF2A1F0A);
-              textColor = const Color(0xFFD4A454);
+              bgColor = AppColors.warning.withValues(alpha: 0.14);
+              textColor = AppColors.warning;
             } else if (disabled) {
               bgColor = AppColors.surface.withValues(alpha: 0.5);
               textColor = AppColors.textSecondary.withValues(alpha: 0.35);
@@ -724,8 +734,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.hotel_rounded,
-                      color: Color(0xFFD4A454), size: 16),
+                  Icon(Icons.hotel_rounded, color: Color(0xFFD4A454), size: 16),
                   SizedBox(width: 8),
                   Text(
                     'Отметить выбранные как день отдыха',
@@ -890,10 +899,9 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
               const min = 4.0;
               const max = 16.0;
               final sliderVal = _cycleWeeks.clamp(4, 16).toDouble();
-              final trackWidth =
-                  constraints.maxWidth - sliderPadding * 2;
-              final thumbX = sliderPadding +
-                  (sliderVal - min) / (max - min) * trackWidth;
+              final trackWidth = constraints.maxWidth - sliderPadding * 2;
+              final thumbX =
+                  sliderPadding + (sliderVal - min) / (max - min) * trackWidth;
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -904,8 +912,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                         activeTrackColor: AppColors.accent,
                         inactiveTrackColor: AppColors.surface,
                         thumbColor: AppColors.accent,
-                        overlayColor:
-                            AppColors.accent.withValues(alpha: 0.12),
+                        overlayColor: AppColors.accent.withValues(alpha: 0.12),
                       ),
                       child: Slider(
                         value: sliderVal,
@@ -930,7 +937,7 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
                       child: Text(
                         '$_cycleWeeks нед.',
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: AppColors.textOnAccent,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -948,11 +955,11 @@ class _CreateWorkoutScreenState extends State<CreateWorkoutScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('4 нед.',
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textSecondary)),
+                  style:
+                      TextStyle(fontSize: 12, color: AppColors.textSecondary)),
               Text('16 нед.',
-                  style: TextStyle(
-                      fontSize: 12, color: AppColors.textSecondary)),
+                  style:
+                      TextStyle(fontSize: 12, color: AppColors.textSecondary)),
             ],
           ),
         ),

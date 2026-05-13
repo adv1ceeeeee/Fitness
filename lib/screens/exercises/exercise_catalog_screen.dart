@@ -1,12 +1,12 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:sportwai/config/theme.dart';
 import 'package:sportwai/models/exercise.dart';
 import 'package:sportwai/screens/exercises/create_exercise_screen.dart';
 import 'package:sportwai/services/exercise_service.dart';
+import 'package:sportwai/services/image_cache_manager.dart';
 
 /// Category chip data: DB key → display name.
 const _categoryChips = [
@@ -512,12 +512,7 @@ class _ExerciseDetailSheetState extends State<_ExerciseDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaUrls = {
-      if (_exercise.gifUrl != null && _exercise.gifUrl!.trim().isNotEmpty)
-        _exercise.gifUrl!.trim(),
-      if (_exercise.imageUrl != null && _exercise.imageUrl!.trim().isNotEmpty)
-        _exercise.imageUrl!.trim(),
-    }.toList();
+    final mediaUrls = _exercise.mediaUrls;
     final description = _exercise.descriptionRu ?? _exercise.description;
 
     return SingleChildScrollView(
@@ -626,113 +621,31 @@ class _ExerciseMedia extends StatefulWidget {
 
 class _ExerciseMediaState extends State<_ExerciseMedia> {
   static const _height = 260.0;
-  static const _slowLoadDelay = Duration(seconds: 10);
-  static const _imageTimeout = Duration(seconds: 45);
 
   int _index = 0;
-  int _loadToken = 0;
-  Uint8List? _bytes;
-  bool _loading = true;
-  bool _slow = false;
   int _retrySeed = 0;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _startLoad(notify: false);
-  }
 
   @override
   void didUpdateWidget(covariant _ExerciseMedia oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.urls.join('|') == widget.urls.join('|')) return;
     _index = 0;
-    _startLoad();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _startLoad({bool notify = true}) {
-    _timer?.cancel();
-    final token = ++_loadToken;
-
-    void apply() {
-      _bytes = null;
-      _loading = widget.urls.isNotEmpty;
-      _slow = false;
-    }
-
-    if (notify && mounted) {
-      setState(apply);
-    } else {
-      apply();
-    }
-
-    if (widget.urls.isEmpty) return;
-    _timer = Timer(_slowLoadDelay, () {
-      if (!mounted || token != _loadToken || !_loading) return;
-      setState(() => _slow = true);
-    });
-
-    unawaited(_loadBytes(token));
-  }
-
-  Future<void> _loadBytes(int token) async {
-    try {
-      final uri = Uri.tryParse(widget.urls[_index]);
-      if (uri == null) throw const FormatException('Bad image URL');
-
-      final response = await http.get(
-        uri,
-        headers: const {'accept': 'image/*,*/*'},
-      ).timeout(_imageTimeout);
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Image HTTP ${response.statusCode}');
-      }
-      if (response.bodyBytes.isEmpty) {
-        throw Exception('Empty image response');
-      }
-
-      if (!mounted || token != _loadToken) return;
-      _timer?.cancel();
-      setState(() {
-        _bytes = response.bodyBytes;
-        _loading = false;
-        _slow = false;
-      });
-    } catch (_) {
-      _handleError(token);
-    }
-  }
-
-  void _handleError(int token) {
-    if (!mounted || token != _loadToken) return;
-    if (_index + 1 < widget.urls.length) {
-      setState(() {
-        _index += 1;
-      });
-      _startLoad();
-      return;
-    }
-    _timer?.cancel();
-    setState(() {
-      _loading = false;
-      _slow = false;
-      _bytes = null;
-    });
+    _retrySeed = 0;
   }
 
   void _retry() {
-    _timer?.cancel();
-    _index = 0;
-    _retrySeed += 1;
-    _startLoad();
+    setState(() {
+      _index = 0;
+      _retrySeed += 1;
+    });
+  }
+
+  void _tryNextUrl() {
+    if (_index + 1 >= widget.urls.length) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _index + 1 >= widget.urls.length) return;
+      setState(() => _index += 1);
+    });
   }
 
   Widget _box({required Widget child}) {
@@ -775,21 +688,19 @@ class _ExerciseMediaState extends State<_ExerciseMedia> {
 
   Widget _loadingBox() {
     return _box(
-      child: Column(
+      child: const Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const SizedBox(
+          SizedBox(
             width: 34,
             height: 34,
             child: CircularProgressIndicator.adaptive(),
           ),
-          if (_slow) ...[
-            const SizedBox(height: 12),
-            const Text(
-              'Загружаем картинку...',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-            ),
-          ],
+          SizedBox(height: 12),
+          Text(
+            'Загружаем картинку...',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
         ],
       ),
     );
@@ -798,25 +709,22 @@ class _ExerciseMediaState extends State<_ExerciseMedia> {
   @override
   Widget build(BuildContext context) {
     if (widget.urls.isEmpty) return _fallback();
-    if (_loading) return _loadingBox();
-    final bytes = _bytes;
-    if (bytes == null) return _fallback();
+    final url = widget.urls[_index].trim().replaceAll(' ', '%20');
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: Container(
+      child: CachedNetworkImage(
+        key: ValueKey('$url:$_retrySeed'),
+        cacheManager: AppImageCacheManager.instance,
+        imageUrl: url,
         width: double.infinity,
         height: _height,
-        color: AppColors.surface,
-        child: Image.memory(
-          bytes,
-          key: ValueKey('${widget.urls[_index]}:$_retrySeed'),
-          width: double.infinity,
-          height: _height,
-          fit: BoxFit.contain,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => _fallback(),
-        ),
+        fit: BoxFit.contain,
+        placeholder: (_, __) => _loadingBox(),
+        errorWidget: (_, __, ___) {
+          _tryNextUrl();
+          return _index + 1 < widget.urls.length ? _loadingBox() : _fallback();
+        },
       ),
     );
   }

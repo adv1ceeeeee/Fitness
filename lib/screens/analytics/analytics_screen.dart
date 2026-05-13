@@ -874,7 +874,8 @@ class _RangeChips extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                  color: active ? Colors.white : AppColors.textSecondary,
+                  color:
+                      active ? AppColors.textOnAccent : AppColors.textSecondary,
                 ),
               ),
             ),
@@ -1925,7 +1926,7 @@ class _InsightsTab extends StatelessWidget {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: AppColors.textOnAccent,
                         ),
                       )
                     : const Icon(Icons.ios_share_rounded),
@@ -2064,7 +2065,7 @@ class _MonthCalendar extends StatelessWidget {
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                   color: worked
-                                      ? Colors.white
+                                      ? AppColors.textOnAccent
                                       : isFuture
                                           ? AppColors.textSecondary
                                               .withValues(alpha: 0.3)
@@ -2785,8 +2786,9 @@ class _WellnessTrendChartState extends State<_WellnessTrendChart> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color:
-                                active ? Colors.white : AppColors.textSecondary,
+                            color: active
+                                ? AppColors.textOnAccent
+                                : AppColors.textSecondary,
                           ),
                         ),
                       ),

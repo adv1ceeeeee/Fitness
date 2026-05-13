@@ -297,22 +297,21 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color:
-                              const Color(0xFFFFB800).withValues(alpha: 0.15),
+                          color: AppColors.favorite.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.star_rounded,
-                                size: 13, color: Color(0xFFFFB800)),
+                                size: 13, color: AppColors.favorite),
                             SizedBox(width: 4),
                             Text(
                               '\$5',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFFFFB800),
+                                color: AppColors.favorite,
                               ),
                             ),
                           ],
@@ -392,8 +391,8 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                           },
                           style: isPremium
                               ? ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFFB800),
-                                  foregroundColor: Colors.black,
+                                  backgroundColor: AppColors.favorite,
+                                  foregroundColor: AppColors.textOnWarmAccent,
                                 )
                               : null,
                           child: Text(
@@ -447,14 +446,13 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: isPremium
-                        ? const Color(0xFFFFB800).withValues(alpha: 0.15)
+                        ? AppColors.favorite.withValues(alpha: 0.15)
                         : AppColors.accent.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     Icons.list_alt_rounded,
-                    color:
-                        isPremium ? const Color(0xFFFFB800) : AppColors.accent,
+                    color: isPremium ? AppColors.favorite : AppColors.accent,
                     size: 28,
                   ),
                 ),
@@ -511,21 +509,21 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFB800).withValues(alpha: 0.15),
+                      color: AppColors.favorite.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.star_rounded,
-                            size: 11, color: Color(0xFFFFB800)),
+                            size: 11, color: AppColors.favorite),
                         SizedBox(width: 3),
                         Text(
                           'Pro',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFFFFB800),
+                            color: AppColors.favorite,
                           ),
                         ),
                       ],
@@ -583,21 +581,21 @@ class _StandardWorkoutsTabState extends State<StandardWorkoutsTab> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFB800).withValues(alpha: 0.15),
+                  color: AppColors.favorite.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.star_rounded,
-                        size: 11, color: Color(0xFFFFB800)),
+                        size: 11, color: AppColors.favorite),
                     SizedBox(width: 3),
                     Text(
                       'Pro',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFFFB800),
+                        color: AppColors.favorite,
                       ),
                     ),
                   ],
@@ -839,7 +837,7 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(
-                          color: Colors.white,
+                          color: AppColors.textOnAccent,
                           strokeWidth: 2.5,
                         ),
                       )
@@ -848,7 +846,7 @@ class _PaymentScreenState extends State<_PaymentScreen> {
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: AppColors.textOnAccent,
                         ),
                       ),
               ),

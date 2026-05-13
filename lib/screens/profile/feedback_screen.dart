@@ -17,7 +17,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   bool _sent = false;
 
   static const _categories = [
-    ('bug',     'Ошибка / баг'),
+    ('bug', 'Ошибка / баг'),
     ('feature', 'Предложение'),
     ('general', 'Общее'),
   ];
@@ -37,7 +37,11 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       message: msg,
     );
     EventLogger.feedbackSubmitted(category: _category);
-    if (mounted) setState(() { _sending = false; _sent = true; });
+    if (mounted)
+      setState(() {
+        _sending = false;
+        _sent = true;
+      });
     await Future.delayed(const Duration(milliseconds: 1200));
     if (mounted) Navigator.of(context).pop();
   }
@@ -69,8 +73,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                 children: [
                   const Text(
                     'Тема',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13),
+                    style:
+                        TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -86,11 +90,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                         backgroundColor: AppColors.surface,
                         labelStyle: TextStyle(
                           color: selected
-                              ? Colors.white
+                              ? AppColors.textOnAccent
                               : AppColors.textPrimary,
-                          fontWeight: selected
-                              ? FontWeight.w600
-                              : FontWeight.normal,
+                          fontWeight:
+                              selected ? FontWeight.w600 : FontWeight.normal,
                         ),
                         side: BorderSide.none,
                         showCheckmark: false,
@@ -100,8 +103,8 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                   const SizedBox(height: 20),
                   const Text(
                     'Сообщение',
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 13),
+                    style:
+                        TextStyle(color: AppColors.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -129,10 +132,9 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                       onPressed: _sending ? null : _submit,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppColors.textOnAccent,
                         disabledBackgroundColor: AppColors.surface,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -142,11 +144,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                               height: 20,
                               child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white),
+                                  color: AppColors.textOnAccent),
                             )
                           : const Text('Отправить',
-                              style:
-                                  TextStyle(fontWeight: FontWeight.w600)),
+                              style: TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],

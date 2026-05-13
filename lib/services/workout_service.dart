@@ -6,6 +6,7 @@ import 'package:sportwai/models/workout_exercise.dart';
 import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/cache_service.dart';
+import 'package:sportwai/services/workout_exercise_order_store.dart';
 
 class WorkoutService {
   static SupabaseClient get _client => Supabase.instance.client;
@@ -23,6 +24,9 @@ class WorkoutService {
   static String _workoutExerciseCacheKey(String workoutId) =>
       '$_workoutExerciseCachePrefix:$workoutId';
 
+  static String _workoutExerciseDayCachePrefix(String workoutId) =>
+      '${_workoutExerciseCacheKey(workoutId)}:day:';
+
   /// Invalidate all workout-related caches for the current user.
   /// Call after any mutation that affects the user's workout list.
   static Future<void> _invalidateWorkoutsList() async {
@@ -37,7 +41,7 @@ class WorkoutService {
 
   static Future<void> _invalidateWorkoutExercises(String workoutId) async {
     await Future.wait([
-      AppCache.invalidate(_workoutExerciseCacheKey(workoutId)),
+      AppCache.invalidatePrefix(_workoutExerciseCacheKey(workoutId)),
       AppCache.invalidate('workout_exercises:$workoutId'),
       CacheService.clearTodayWorkout(),
     ]);
@@ -291,7 +295,7 @@ class WorkoutService {
 
   static Future<List<WorkoutExercise>> getWorkoutExercises(
       String workoutId) async {
-    return AppCache.get<List<WorkoutExercise>>(
+    final exercises = await AppCache.get<List<WorkoutExercise>>(
       key: _workoutExerciseCacheKey(workoutId),
       ttl: _exercisesTtl,
       fetch: () async {
@@ -299,7 +303,8 @@ class WorkoutService {
             .from('workout_exercises')
             .select(_workoutExerciseSelect)
             .eq('workout_id', workoutId)
-            .order('order');
+            .order('order')
+            .order('created_at');
         return (res as List)
             .map((e) => WorkoutExercise.fromJson(e as Map<String, dynamic>))
             .toList();
@@ -313,6 +318,7 @@ class WorkoutService {
             .toList();
       },
     );
+    return WorkoutExerciseOrderStore.apply(workoutId, exercises);
   }
 
   static Future<Workout?> getWorkout(String id) async {
@@ -369,6 +375,7 @@ class WorkoutService {
     final reordered = [
       for (var i = 0; i < exercises.length; i++) exercises[i].copyWith(order: i)
     ];
+    await WorkoutExerciseOrderStore.save(workoutId, reordered);
 
     // Write the new order to cache up-front so a re-entry to the screen
     // before the DB round-trips finish still sees the new order.
@@ -377,6 +384,7 @@ class WorkoutService {
       value: reordered,
       encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
     );
+    await AppCache.invalidatePrefix(_workoutExerciseDayCachePrefix(workoutId));
 
     // Apply DB updates in parallel — N round-trips, but concurrent.
     await Future.wait([
@@ -395,6 +403,7 @@ class WorkoutService {
       value: reordered,
       encode: (list) => jsonEncode(list.map((w) => w.toJson()).toList()),
     );
+    await AppCache.invalidatePrefix(_workoutExerciseDayCachePrefix(workoutId));
   }
 
   static Future<void> removeExerciseFromWorkout(

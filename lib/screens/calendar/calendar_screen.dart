@@ -1313,7 +1313,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2, color: AppColors.textOnAccent),
                         )
                       : Text(
                           _selected.isEmpty
@@ -1322,7 +1322,7 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: AppColors.textOnAccent,
                           ),
                         ),
                 ),
@@ -1642,7 +1642,7 @@ class _ExerciseItemState extends State<_ExerciseItem> {
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: active
-                                                ? Colors.white
+                                                ? AppColors.textOnAccent
                                                 : AppColors.textSecondary,
                                             fontWeight: active
                                                 ? FontWeight.w600
@@ -1783,7 +1783,7 @@ class _DayCell extends StatelessWidget {
             color: outside
                 ? AppColors.textSecondary.withValues(alpha: 0.4)
                 : isSelected
-                    ? Colors.black
+                    ? AppColors.textOnAccent
                     : AppColors.textPrimary,
           ),
         ),
@@ -1797,7 +1797,8 @@ class _DayCell extends StatelessWidget {
                   width: 5,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.black : AppColors.accent,
+                    color:
+                        isSelected ? AppColors.textOnAccent : AppColors.accent,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -1808,7 +1809,7 @@ class _DayCell extends StatelessWidget {
                   height: 5,
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? Colors.black.withValues(alpha: 0.5)
+                        ? AppColors.textOnAccent.withValues(alpha: 0.65)
                         : hasMissed
                             ? AppColors.error
                             : AppColors.accent.withValues(alpha: 0.5),

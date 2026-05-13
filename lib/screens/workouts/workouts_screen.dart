@@ -60,10 +60,10 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
 
     if (!ProgramGeneratorService.canGenerateFor(profile)) {
       if (!mounted) return;
-      final answers =
-          await QuickProfileWizardSheet.show(context, profile);
+      final answers = await QuickProfileWizardSheet.show(context, profile);
       if (answers == null) return; // user dismissed
-      profile = (profile ?? Profile(
+      profile = (profile ??
+              Profile(
                 id: '',
                 createdAt: DateTime.now(),
                 updatedAt: DateTime.now(),
@@ -135,7 +135,10 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
     // Phase 1: show cache immediately if available
     final cached = await CacheService.loadWorkouts();
     if (cached.isNotEmpty && mounted) {
-      setState(() { _workouts = cached; _loading = false; });
+      setState(() {
+        _workouts = cached;
+        _loading = false;
+      });
     }
     // Phase 2: refresh from network silently
     _refreshWorkouts();
@@ -505,7 +508,10 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     final inactive = _inactiveWorkouts;
     final selected =
         inactive.where((w) => _inactiveSelectedIds.contains(w.id)).toList();
-    if (selected.isEmpty) { _exitInactiveDeleteMode(); return; }
+    if (selected.isEmpty) {
+      _exitInactiveDeleteMode();
+      return;
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -618,8 +624,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить',
-                style: TextStyle(color: AppColors.error)),
+            child:
+                const Text('Удалить', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -659,7 +665,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
 
   String _plural(int n, String one, String few, String many) {
     if (n % 10 == 1 && n % 100 != 11) return one;
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return few;
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20))
+      return few;
     return many;
   }
 
@@ -675,8 +682,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена',
-                style: TextStyle(color: AppColors.accent)),
+            child:
+                const Text('Отмена', style: TextStyle(color: AppColors.accent)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -720,8 +727,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Отмена',
-                style: TextStyle(color: AppColors.accent)),
+            child:
+                const Text('Отмена', style: TextStyle(color: AppColors.accent)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -778,8 +785,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await Future.wait(ids.map((id) =>
-          WorkoutService.updateWorkout(id, days: <int>[])));
+      await Future.wait(
+          ids.map((id) => WorkoutService.updateWorkout(id, days: <int>[])));
     } catch (_) {
       if (mounted) {
         messenger.showSnackBar(
@@ -815,7 +822,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         );
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
+      if (kDebugMode)
+        debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
     }
   }
 
@@ -855,7 +863,9 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     final TrainingSession session;
     try {
       session = await TrainingService.scheduleSession(
-        w.id, picked, plannedTime: pickedTime,
+        w.id,
+        picked,
+        plannedTime: pickedTime,
       );
     } catch (e) {
       if (kDebugMode) debugPrint('[WorkoutsScreen] _scheduleOneTime error: $e');
@@ -882,13 +892,15 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           minutesBefore: minutesBefore,
         );
       } catch (e) {
-        if (kDebugMode) debugPrint('[WorkoutsScreen] notification scheduling failed: $e');
+        if (kDebugMode)
+          debugPrint('[WorkoutsScreen] notification scheduling failed: $e');
       }
     }
 
     if (mounted) {
       widget.onRefresh();
-      final d = '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
+      final d =
+          '${picked.day.toString().padLeft(2, '0')}.${picked.month.toString().padLeft(2, '0')}.${picked.year}';
       final t = pickedTime != null
           ? ' в ${pickedTime.hour.toString().padLeft(2, '0')}:${pickedTime.minute.toString().padLeft(2, '0')}'
           : '';
@@ -997,7 +1009,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
     List<String> sectionIdsOf(Workout repr) {
       final key = repr.groupId ?? repr.id;
       return [
-        for (final w in sorted) if ((w.groupId ?? w.id) == key) w.id,
+        for (final w in sorted)
+          if ((w.groupId ?? w.id) == key) w.id,
       ];
     }
 
@@ -1009,7 +1022,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
       child: RefreshIndicator(
         onRefresh: () async => widget.onRefresh(),
         child: ReorderableListView(
-          padding: EdgeInsets.fromLTRB(24, 0, 24, MediaQuery.of(context).padding.bottom + 100),
+          padding: EdgeInsets.fromLTRB(
+              24, 0, 24, MediaQuery.of(context).padding.bottom + 100),
           buildDefaultDragHandles: false,
           onReorder: _onReorder,
           proxyDecorator: (child, index, animation) => Material(
@@ -1090,70 +1104,73 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(children: [
-                      const Expanded(
-                        child: Text(
-                          'Действующие программы',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                      if (_deleteMode)
-                        GestureDetector(
-                          onTap: _toggleSelectAll,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: _selectedIds.length == sorted.length
-                                    ? AppColors.accent
-                                    : Colors.transparent,
-                                border: Border.all(
-                                  color: _selectedIds.length == sorted.length
-                                      ? AppColors.accent
-                                      : AppColors.textSecondary,
-                                  width: 1.5,
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: _selectedIds.length == sorted.length
-                                  ? const Icon(Icons.check,
-                                      size: 13, color: Colors.white)
-                                  : null,
+                        const Expanded(
+                          child: Text(
+                            'Действующие программы',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: _deleteMode
-                            ? _confirmBulkDelete
-                            : _enterDeleteMode,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          child: Icon(
-                            Icons.delete_outline,
-                            size: 20,
-                            color: _deleteMode && _selectedIds.isNotEmpty
-                                ? AppColors.error
-                                : AppColors.textSecondary,
+                        if (_deleteMode)
+                          GestureDetector(
+                            onTap: _toggleSelectAll,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 2),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                width: 20,
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: _selectedIds.length == sorted.length
+                                      ? AppColors.accent
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: _selectedIds.length == sorted.length
+                                        ? AppColors.accent
+                                        : AppColors.textSecondary,
+                                    width: 1.5,
+                                  ),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: _selectedIds.length == sorted.length
+                                    ? const Icon(Icons.check,
+                                        size: 13, color: AppColors.textOnAccent)
+                                    : null,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      if (_deleteMode)
+                        const SizedBox(width: 8),
                         GestureDetector(
-                          onTap: _exitDeleteMode,
-                          child: const Padding(
-                            padding: EdgeInsets.only(left: 8, top: 2, bottom: 2),
-                            child: Icon(Icons.close,
-                                size: 18, color: AppColors.textSecondary),
+                          onTap: _deleteMode
+                              ? _confirmBulkDelete
+                              : _enterDeleteMode,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
+                            child: Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: _deleteMode && _selectedIds.isNotEmpty
+                                  ? AppColors.error
+                                  : AppColors.textSecondary,
+                            ),
                           ),
                         ),
+                        if (_deleteMode)
+                          GestureDetector(
+                            onTap: _exitDeleteMode,
+                            child: const Padding(
+                              padding:
+                                  EdgeInsets.only(left: 8, top: 2, bottom: 2),
+                              child: Icon(Icons.close,
+                                  size: 18, color: AppColors.textSecondary),
+                            ),
+                          ),
                       ]),
                       const SizedBox(height: 4),
                       const Text(
@@ -1235,10 +1252,14 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                             padding: const EdgeInsets.only(bottom: 12),
                             child: _InactiveWorkoutCard(
                               workout: w,
-                              upcomingDate: widget.upcomingInfo[w.id]?['date'] as String?,
-                              upcomingSessionId: widget.upcomingInfo[w.id]?['session_id'] as String?,
-                              sessionDate: widget.sessionInfo[w.id]?['date'] as String?,
-                              durationSeconds: widget.sessionInfo[w.id]?['duration_seconds'] as int?,
+                              upcomingDate:
+                                  widget.upcomingInfo[w.id]?['date'] as String?,
+                              upcomingSessionId: widget.upcomingInfo[w.id]
+                                  ?['session_id'] as String?,
+                              sessionDate:
+                                  widget.sessionInfo[w.id]?['date'] as String?,
+                              durationSeconds: widget.sessionInfo[w.id]
+                                  ?['duration_seconds'] as int?,
                               onTap: () => widget.onWorkoutTap(w),
                               onDelete: () => _confirmDelete(w),
                               onCopy: () => _duplicateWorkout(w),
@@ -1291,7 +1312,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                                       child: _inactiveSelectedIds.length ==
                                               inactive.length
                                           ? const Icon(Icons.check,
-                                              size: 13, color: Colors.white)
+                                              size: 13,
+                                              color: AppColors.textOnAccent)
                                           : null,
                                     ),
                                   ),
@@ -1366,7 +1388,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                                                     .contains(w.id)
                                                 ? const Icon(Icons.check,
                                                     size: 14,
-                                                    color: Colors.white)
+                                                    color:
+                                                        AppColors.textOnAccent)
                                                 : null,
                                           ),
                                         )
@@ -1407,8 +1430,8 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                       alignment: Alignment.center,
                       child: _deleteMode
                           ? GestureDetector(
-                              onTap: () => _toggleSelectGroup(
-                                  sectionIdsOf(visible[i])),
+                              onTap: () =>
+                                  _toggleSelectGroup(sectionIdsOf(visible[i])),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 width: 22,
@@ -1427,7 +1450,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                                 ),
                                 child: _selectedIds.contains(visible[i].id)
                                     ? const Icon(Icons.check,
-                                        size: 14, color: Colors.white)
+                                        size: 14, color: AppColors.textOnAccent)
                                     : null,
                               ),
                             )
@@ -1446,8 +1469,7 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
                         onOpen: () => _setOpen(visible[i].id),
                         onClose: () => _setOpen(null),
                         onTap: _deleteMode
-                            ? () =>
-                                _toggleSelectGroup(sectionIdsOf(visible[i]))
+                            ? () => _toggleSelectGroup(sectionIdsOf(visible[i]))
                             : () => widget.onWorkoutTap(visible[i]),
                         onLongPress: () =>
                             _showWorkoutHistory(context, visible[i]),
@@ -1487,8 +1509,10 @@ class _SwipeableCard extends StatefulWidget {
   final bool isHidden;
   final bool isOpen;
   final bool inDeleteMode;
+
   /// Total number of sections in this workout's program (1 = standalone).
   final int groupSize;
+
   /// All weekdays covered by the program across its sections (0=Mon…6=Sun).
   /// Empty list = inherit from workout.days only.
   final List<int> groupDays;
@@ -1581,76 +1605,84 @@ class _SwipeableCardState extends State<_SwipeableCard>
           return ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Stack(
-                children: [
-                  // ── Action panel (revealed on swipe) ──────────────────────
-                  Positioned.fill(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: Opacity(
-                        opacity: _anim.value.clamp(0.0, 1.0),
-                        child: _ActionPanel(
-                          width: _actionWidth,
-                          isHidden: widget.isHidden,
-                          onToggleHide: widget.onToggleHide,
-                          onDelete: widget.onDelete,
-                          onCopy: widget.onCopy,
-                          onArchive: widget.onArchive,
-                        ),
+              children: [
+                // ── Action panel (revealed on swipe) ──────────────────────
+                Positioned.fill(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Opacity(
+                      opacity: _anim.value.clamp(0.0, 1.0),
+                      child: _ActionPanel(
+                        width: _actionWidth,
+                        isHidden: widget.isHidden,
+                        onToggleHide: widget.onToggleHide,
+                        onDelete: widget.onDelete,
+                        onCopy: widget.onCopy,
+                        onArchive: widget.onArchive,
                       ),
                     ),
                   ),
+                ),
 
-                  // ── Sliding card (front) ───────────────────────────────────
-                  Transform.translate(
-                    offset: Offset(offset, 0),
-                    child: GestureDetector(
-                      onTap: () {
-                        if (widget.inDeleteMode) {
-                          widget.onTap(); // in delete mode tap = toggle select
-                          return;
-                        }
-                        if (widget.isOpen) {
-                          _ctrl.animateTo(0.0,
-                              duration: const Duration(milliseconds: 200));
-                          widget.onClose();
-                        } else {
-                          widget.onTap();
-                        }
-                      },
-                      onLongPress: widget.inDeleteMode ? null : () {
-                        if (widget.isOpen) {
-                          _ctrl.animateTo(0.0,
-                              duration: const Duration(milliseconds: 200));
-                          widget.onClose();
-                        }
-                        widget.onLongPress();
-                      },
-                      onHorizontalDragUpdate: widget.inDeleteMode ? null : _onDragUpdate,
-                      onHorizontalDragEnd: widget.inDeleteMode ? null : _onDragEnd,
-                      child: Opacity(
-                        opacity: widget.isHidden ? 0.5 : 1.0,
-                        child: _WorkoutCardContent(
-                          workout: widget.workout,
-                          index: widget.index,
-                          groupSize: widget.groupSize,
-                          groupDays: widget.groupDays,
-                          inDeleteMode: widget.inDeleteMode,
-                          onActionsOpen: widget.inDeleteMode ? null : () {
+                // ── Sliding card (front) ───────────────────────────────────
+                Transform.translate(
+                  offset: Offset(offset, 0),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (widget.inDeleteMode) {
+                        widget.onTap(); // in delete mode tap = toggle select
+                        return;
+                      }
+                      if (widget.isOpen) {
+                        _ctrl.animateTo(0.0,
+                            duration: const Duration(milliseconds: 200));
+                        widget.onClose();
+                      } else {
+                        widget.onTap();
+                      }
+                    },
+                    onLongPress: widget.inDeleteMode
+                        ? null
+                        : () {
                             if (widget.isOpen) {
                               _ctrl.animateTo(0.0,
                                   duration: const Duration(milliseconds: 200));
                               widget.onClose();
-                            } else {
-                              _ctrl.animateTo(1.0,
-                                  duration: const Duration(milliseconds: 250));
-                              widget.onOpen();
                             }
+                            widget.onLongPress();
                           },
-                        ),
+                    onHorizontalDragUpdate:
+                        widget.inDeleteMode ? null : _onDragUpdate,
+                    onHorizontalDragEnd:
+                        widget.inDeleteMode ? null : _onDragEnd,
+                    child: Opacity(
+                      opacity: widget.isHidden ? 0.5 : 1.0,
+                      child: _WorkoutCardContent(
+                        workout: widget.workout,
+                        index: widget.index,
+                        groupSize: widget.groupSize,
+                        groupDays: widget.groupDays,
+                        inDeleteMode: widget.inDeleteMode,
+                        onActionsOpen: widget.inDeleteMode
+                            ? null
+                            : () {
+                                if (widget.isOpen) {
+                                  _ctrl.animateTo(0.0,
+                                      duration:
+                                          const Duration(milliseconds: 200));
+                                  widget.onClose();
+                                } else {
+                                  _ctrl.animateTo(1.0,
+                                      duration:
+                                          const Duration(milliseconds: 250));
+                                  widget.onOpen();
+                                }
+                              },
                       ),
                     ),
                   ),
-                ],
+                ),
+              ],
             ),
           );
         },
@@ -1678,7 +1710,12 @@ class _ActionPanel extends StatelessWidget {
     required this.onArchive,
   });
 
-  Widget _btn({required VoidCallback onTap, required IconData icon, required Color bg, Color iconColor = Colors.white}) {
+  Widget _btn({
+    required VoidCallback onTap,
+    required IconData icon,
+    required Color bg,
+    Color iconColor = AppColors.textOnAccent,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1739,10 +1776,12 @@ class _WorkoutCardContent extends StatelessWidget {
   final int index;
   final VoidCallback? onActionsOpen;
   final bool inDeleteMode;
+
   /// Total sections in this workout's program (1 = standalone). When > 1 we
   /// show a "Программа · 6 дней · Пн, Ср, Пт" subtitle so the user can see at
   /// a glance that this card represents a multi-day split.
   final int groupSize;
+
   /// All weekdays covered by the program (across its sections), used to print
   /// the day labels in the subtitle for multi-section programs.
   final List<int> groupDays;
@@ -1760,7 +1799,8 @@ class _WorkoutCardContent extends StatelessWidget {
 
   static String _pluralDays(int n) {
     if (n % 10 == 1 && n % 100 != 11) return 'день';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'дня';
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20))
+      return 'дня';
     return 'дней';
   }
 
@@ -1769,9 +1809,7 @@ class _WorkoutCardContent extends StatelessWidget {
   ///   • single-section → "X тренировок в неделю"
   static String _subtitleFor(Workout w, int groupSize, List<int> groupDays) {
     if (groupSize > 1) {
-      final daySet = (groupDays.isEmpty ? w.days : groupDays)
-          .toSet()
-          .toList()
+      final daySet = (groupDays.isEmpty ? w.days : groupDays).toSet().toList()
         ..sort();
       final dayStr = daySet.map((d) => _dayLabels[d]).join(', ');
       final base = 'Программа · $groupSize ${_pluralDays(groupSize)}';
@@ -1786,8 +1824,8 @@ class _WorkoutCardContent extends StatelessWidget {
     final isUserCreated = !allStandardWorkoutNames.contains(workout.name);
 
     // icon tint: yellow=Pro, purple=user-created, blue=standard free
-    const Color kPremiumColor = Color(0xFFFFB800);
-    const Color kUserColor = Color(0xFFAB7FF8); // purple
+    const Color kPremiumColor = AppColors.favorite;
+    const Color kUserColor = AppColors.metric;
     final Color iconColor = isPremium
         ? kPremiumColor
         : isUserCreated
@@ -1856,7 +1894,8 @@ class _WorkoutCardContent extends StatelessWidget {
                     if (isPremium) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
                         decoration: BoxDecoration(
                           color: kPremiumColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
@@ -1864,7 +1903,8 @@ class _WorkoutCardContent extends StatelessWidget {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.star_rounded, size: 10, color: kPremiumColor),
+                            Icon(Icons.star_rounded,
+                                size: 10, color: kPremiumColor),
                             SizedBox(width: 2),
                             Text(
                               'Pro',
@@ -1885,22 +1925,23 @@ class _WorkoutCardContent extends StatelessWidget {
           ),
           const Icon(Icons.chevron_right, color: AppColors.textSecondary),
           if (!inDeleteMode) ...[
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: onActionsOpen,
-            behavior: HitTestBehavior.opaque,
-            child: ReorderableDragStartListener(
-              index: index,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                child: Icon(
-                  Icons.drag_handle,
-                  color: AppColors.textSecondary.withValues(alpha: 0.7),
-                  size: 22,
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onActionsOpen,
+              behavior: HitTestBehavior.opaque,
+              child: ReorderableDragStartListener(
+                index: index,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Icon(
+                    Icons.drag_handle,
+                    color: AppColors.textSecondary.withValues(alpha: 0.7),
+                    size: 22,
+                  ),
                 ),
               ),
             ),
-          ),
           ], // end if (!inDeleteMode)
         ],
       ),
@@ -1912,8 +1953,8 @@ class _WorkoutCardContent extends StatelessWidget {
 
 class _InactiveWorkoutCard extends StatelessWidget {
   final Workout workout;
-  final String? sessionDate;      // 'yyyy-MM-dd' — last completed session
-  final String? upcomingDate;     // 'yyyy-MM-dd' — next scheduled session
+  final String? sessionDate; // 'yyyy-MM-dd' — last completed session
+  final String? upcomingDate; // 'yyyy-MM-dd' — next scheduled session
   final String? upcomingSessionId; // id of the upcoming session (to cancel)
   final int? durationSeconds;
   final VoidCallback onTap;
@@ -1980,9 +2021,8 @@ class _InactiveWorkoutCard extends StatelessWidget {
                   isUpcoming
                       ? Icons.calendar_today_rounded
                       : Icons.event_note_rounded,
-                  color: isUpcoming
-                      ? AppColors.accent
-                      : AppColors.textSecondary,
+                  color:
+                      isUpcoming ? AppColors.accent : AppColors.textSecondary,
                   size: 26,
                 ),
               ),
@@ -2080,12 +2120,28 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
   Map<int, Map<String, dynamic>> _byDay = {};
 
   static const _dayNames = [
-    'Понедельник', 'Вторник', 'Среда',
-    'Четверг', 'Пятница', 'Суббота', 'Воскресенье',
+    'Понедельник',
+    'Вторник',
+    'Среда',
+    'Четверг',
+    'Пятница',
+    'Суббота',
+    'Воскресенье',
   ];
   static const _monthNames = [
-    '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
-    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+    '',
+    'янв',
+    'фев',
+    'мар',
+    'апр',
+    'май',
+    'июн',
+    'июл',
+    'авг',
+    'сен',
+    'окт',
+    'ноя',
+    'дек',
   ];
 
   @override
@@ -2096,12 +2152,13 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
 
   Future<void> _load() async {
     try {
-      final data = await TrainingService.getWorkoutDayHistory(widget.workout.id);
+      final data =
+          await TrainingService.getWorkoutDayHistory(widget.workout.id);
       if (!mounted) return;
       setState(() {
         _totalSessions = data['totalSessions'] as int;
-        _firstDate     = data['firstDate'] as String?;
-        _byDay         = Map<int, Map<String, dynamic>>.from(
+        _firstDate = data['firstDate'] as String?;
+        _byDay = Map<int, Map<String, dynamic>>.from(
           (data['byDay'] as Map).map((k, v) =>
               MapEntry(k as int, Map<String, dynamic>.from(v as Map))),
         );
@@ -2132,7 +2189,7 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
     if (d == null) return '';
     final days = DateTime.now().difference(d).inDays;
     if (days == 0) return 'Начато сегодня';
-    if (days < 7)  return 'Начато $days дн. назад';
+    if (days < 7) return 'Начато $days дн. назад';
     final weeks = days ~/ 7;
     return 'Начато $weeks нед. назад';
   }
@@ -2157,14 +2214,14 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
           children: [
             const SizedBox(height: 12),
             Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
                 color: AppColors.textSecondary.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 16),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
@@ -2191,7 +2248,6 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
                 ],
               ),
             ),
-
             if (!_loading) ...[
               const SizedBox(height: 12),
               Padding(
@@ -2211,9 +2267,14 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
                               borderRadius: BorderRadius.circular(4),
                               gradient: LinearGradient(
                                 colors: _progressFraction >= 1.0
-                                    ? [AppColors.success, const Color(0xFF00D084)]
-                                    : [AppColors.accent,
-                                       AppColors.accent.withValues(alpha: 0.7)],
+                                    ? [
+                                        AppColors.success,
+                                        const Color(0xFF00D084)
+                                      ]
+                                    : [
+                                        AppColors.accent,
+                                        AppColors.accent.withValues(alpha: 0.7)
+                                      ],
                               ),
                             ),
                           ),
@@ -2238,7 +2299,8 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
                             : Text(
                                 '${(_progressFraction * 100).round()}% от 8 недель',
                                 style: const TextStyle(
-                                    color: AppColors.textSecondary, fontSize: 12)),
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12)),
                       ],
                     ),
                   ],
@@ -2246,7 +2308,6 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
               ),
               const Divider(color: AppColors.surface, height: 24),
             ],
-
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -2258,14 +2319,15 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
                           controller: scrollCtrl,
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
                           itemCount: _activeDays.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (_, i) {
-                            final day  = _activeDays[i];
+                            final day = _activeDays[i];
                             final info = _byDay[day]!;
                             return _DayPanel(
-                              dayName:         _dayNames[day],
-                              sessionDate:     _fmtDate(info['date'] as String),
-                              rpe:             info['rpe'] as int?,
+                              dayName: _dayNames[day],
+                              sessionDate: _fmtDate(info['date'] as String),
+                              rpe: info['rpe'] as int?,
                               durationSeconds: info['durationSeconds'] as int?,
                               exercises: (info['exercises'] as List)
                                   .cast<Map<String, dynamic>>(),
@@ -2339,8 +2401,8 @@ class _DayPanel extends StatelessWidget {
               if (rpe != null) ...[
                 const SizedBox(width: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: _rpeColor(rpe!).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
@@ -2395,12 +2457,11 @@ class _DayPanel extends StatelessWidget {
   }
 
   String _exerciseStr(Map<String, dynamic> ex) {
-    final sets   = ex['setCount']  as int;
-    final reps   = ex['lastReps']  as int;
+    final sets = ex['setCount'] as int;
+    final reps = ex['lastReps'] as int;
     final weight = ex['maxWeight'] as double;
-    final wStr   = weight > 0
-        ? '  ${weight % 1 == 0 ? weight.toInt() : weight} кг'
-        : '';
+    final wStr =
+        weight > 0 ? '  ${weight % 1 == 0 ? weight.toInt() : weight} кг' : '';
     return '$sets × $reps$wStr';
   }
 }

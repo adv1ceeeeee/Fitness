@@ -137,7 +137,8 @@ class _PbBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = weight % 1 == 0 ? weight.toInt().toString() : weight.toStringAsFixed(1);
+    final w =
+        weight % 1 == 0 ? weight.toInt().toString() : weight.toStringAsFixed(1);
     final d = _fmtDate(date);
     final ormStr = oneRepMax != null && oneRepMax! > 0
         ? oneRepMax! % 1 == 0
@@ -150,7 +151,8 @@ class _PbBanner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          const Icon(Icons.emoji_events_rounded, color: Color(0xFFFFB800), size: 20),
+          const Icon(Icons.emoji_events_rounded,
+              color: AppColors.favorite, size: 20),
           const SizedBox(width: 8),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -185,7 +187,8 @@ class _ChartTab extends StatelessWidget {
   final List<Map<String, dynamic>> history;
   final String valueKey;
   final String label;
-  const _ChartTab({required this.history, required this.valueKey, required this.label});
+  const _ChartTab(
+      {required this.history, required this.valueKey, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +201,8 @@ class _ChartTab extends StatelessWidget {
 
     if (points.isEmpty) {
       return const Center(
-        child: Text('Нет данных', style: TextStyle(color: AppColors.textSecondary)),
+        child: Text('Нет данных',
+            style: TextStyle(color: AppColors.textSecondary)),
       );
     }
 
@@ -215,7 +219,8 @@ class _ChartTab extends StatelessWidget {
             padding: const EdgeInsets.only(left: 12, bottom: 8),
             child: Text(
               label,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ),
           Expanded(
@@ -237,22 +242,29 @@ class _ChartTab extends StatelessWidget {
                       showTitles: true,
                       reservedSize: 44,
                       getTitlesWidget: (v, _) => Text(
-                        v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1),
+                        v % 1 == 0
+                            ? v.toInt().toString()
+                            : v.toStringAsFixed(1),
                         style: const TextStyle(
                             color: AppColors.textSecondary, fontSize: 10),
                       ),
                     ),
                   ),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 24,
-                      interval: (points.length / 5).ceilToDouble().clamp(1, double.infinity),
+                      interval: (points.length / 5)
+                          .ceilToDouble()
+                          .clamp(1, double.infinity),
                       getTitlesWidget: (v, _) {
                         final idx = v.toInt();
-                        if (idx < 0 || idx >= history.length) return const SizedBox.shrink();
+                        if (idx < 0 || idx >= history.length)
+                          return const SizedBox.shrink();
                         final date = history[idx]['date'] as String;
                         return Text(
                           _shortDate(date),
@@ -331,7 +343,9 @@ class _SessionList extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    w > 0 ? '${w % 1 == 0 ? w.toInt() : w.toStringAsFixed(1)} кг' : '—',
+                    w > 0
+                        ? '${w % 1 == 0 ? w.toInt() : w.toStringAsFixed(1)} кг'
+                        : '—',
                     style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 13,
@@ -350,8 +364,8 @@ class _SessionList extends StatelessWidget {
                     orm > 0
                         ? '~${orm % 1 == 0 ? orm.toInt() : orm.toStringAsFixed(1)} 1RM'
                         : '—',
-                    style: const TextStyle(
-                        color: AppColors.accent, fontSize: 12),
+                    style:
+                        const TextStyle(color: AppColors.accent, fontSize: 12),
                     textAlign: TextAlign.right,
                   ),
                 ),

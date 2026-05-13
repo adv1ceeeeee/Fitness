@@ -22,7 +22,7 @@ id,name,name_ru,category,description,description_ru,image_url,is_standard,user_i
     required bool includeDetails,
     required bool includeFavorites,
   }) {
-    final cacheVersion = includeDetails ? 'v5_full' : 'v5_light';
+    final cacheVersion = includeDetails ? 'v6_full' : 'v6_light';
     final favoritesSuffix = includeFavorites ? '_fav' : '';
     return 'exercises_all_$cacheVersion$favoritesSuffix:${userId ?? 'anon'}';
   }

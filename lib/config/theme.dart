@@ -21,28 +21,34 @@ extension ResponsiveContext on BuildContext {
 
 class AppColors {
   // ── Backgrounds ─────────────────────────────────────────────────────────────
-  static const Color background = Color(0xFFF8F1DC); // warm Solarized light
-  static const Color card = Color(0xFFE9E2CC); // message-card surface
-  static const Color surface = Color(0xFFDED6BF); // controls inside cards
+  static const Color background = Color(0xFFFBF4E2); // warm Solarized light
+  static const Color card = Color(0xFFEEE8D5); // message-card surface
+  static const Color surface = Color(0xFFE2DAC2); // controls inside cards
+  static const Color surfacePressed = Color(0xFFD6CBB0);
 
   // ── Accent ──────────────────────────────────────────────────────────────────
   static const Color accent = Color(0xFF0066FF); // SportWAI electric blue
-  static const Color accentDark = Color(0xFF338AFF); // lighter variant
-  static const Color accentLight = Color(0xFF0099FF); // gradient end
+  static const Color accentDark = Color(0xFF064FB8);
+  static const Color accentLight = Color(0xFF0A84FF); // gradient end
+  static const Color metric = Color(0xFF6D4CC2); // sets/reps/weight text
+  static const Color favorite = Color(0xFFE8B923);
 
   // ── Text ────────────────────────────────────────────────────────────────────
-  static const Color textPrimary = Color(0xFF073642);
-  static const Color textSecondary = Color(0xFF657B83);
-  static const Color textTertiary = Color(0xFF93A1A1);
+  static const Color textPrimary = Color(0xFF17343A);
+  static const Color textSecondary = Color(0xFF536A70);
+  static const Color textTertiary = Color(0xFF7B8A8E);
+  static const Color textDisabled = Color(0xFFA8A08E);
+  static const Color textOnAccent = Color(0xFFFFFFFF);
+  static const Color textOnWarmAccent = Color(0xFF3A2B00);
 
   // ── Semantic ─────────────────────────────────────────────────────────────────
-  static const Color error = Color(0xFFFF453A); // iOS red
-  static const Color success = Color(0xFF30D158); // iOS green
-  static const Color warning = Color(0xFFFF9F0A); // iOS orange
-  static const Color separator = Color(0xFFD7D0B8);
+  static const Color error = Color(0xFFC33A32);
+  static const Color success = Color(0xFF2F7D46);
+  static const Color warning = Color(0xFFB26A00);
+  static const Color separator = Color(0xFFD8CFB7);
 
   // ── Card border ─────────────────────────────────────────────────────────────
-  static const Color cardBorder = Color(0xFFD9D1B8);
+  static const Color cardBorder = Color(0xFFD4CAB1);
 
   // ── Gradients ───────────────────────────────────────────────────────────────
   static const LinearGradient accentGradient = LinearGradient(
@@ -122,10 +128,10 @@ class AppTheme {
         secondary: AppColors.accent,
         surface: AppColors.card,
         error: AppColors.error,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: AppColors.textOnAccent,
+        onSecondary: AppColors.textOnAccent,
         onSurface: AppColors.textPrimary,
-        onError: Colors.white,
+        onError: AppColors.textOnAccent,
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
@@ -153,7 +159,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.accent,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.textOnAccent,
           minimumSize: const Size(double.infinity, 56),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -239,8 +245,10 @@ class AppTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return Colors.white;
-          return Colors.white;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.textOnAccent;
+          }
+          return AppColors.background;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return AppColors.accent;
@@ -367,10 +375,10 @@ class AppTheme {
         secondary: AppColors.accent,
         surface: AppColors.card,
         error: AppColors.error,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: AppColors.textOnAccent,
+        onSecondary: AppColors.textOnAccent,
         onSurface: AppColors.textPrimary,
-        onError: Colors.white,
+        onError: AppColors.textOnAccent,
       ),
 
       // iOS-style slide transitions for all non-tab routes
@@ -404,7 +412,7 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.accent,
-          foregroundColor: Colors.white,
+          foregroundColor: AppColors.textOnAccent,
           minimumSize: const Size(double.infinity, 56),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -510,7 +518,9 @@ class AppTheme {
       // Switch
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return Colors.white;
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.textOnAccent;
+          }
           return AppColors.textSecondary;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
@@ -647,7 +657,7 @@ class GradientButton extends StatelessWidget {
           child: Center(
             child: DefaultTextStyle.merge(
               style: const TextStyle(
-                color: Colors.white,
+                color: AppColors.textOnAccent,
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
                 letterSpacing: -0.43,
