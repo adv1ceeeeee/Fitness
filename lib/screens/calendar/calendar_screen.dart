@@ -65,8 +65,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
       for (final w in workouts) {
         if (w.days.isEmpty) continue;
+        // Walk from the program's start (or the calendar range start,
+        // whichever is later) up to its cycle end so past planned days
+        // also appear in the events map — that's what powers the red
+        // "Пропущено" dots for days the user no-showed on.
+        final programStart = _dayOnly(w.createdAt);
+        final loopStart =
+            programStart.isAfter(rangeStart) ? programStart : rangeStart;
         final cycleEnd = now.add(Duration(days: w.cycleWeeks * 7));
-        var cursor = now;
+        var cursor = loopStart;
         while (!cursor.isAfter(cycleEnd)) {
           final dayIndex = cursor.weekday - 1;
           if (w.days.contains(dayIndex)) {
@@ -1065,11 +1072,12 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
 
   Future<void> _loadExercises() async {
     final list = await ExerciseService.getExercises();
-    if (mounted)
+    if (mounted) {
       setState(() {
         _exercises = list;
         _loading = false;
       });
+    }
   }
 
   List<Exercise> get _filtered {

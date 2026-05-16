@@ -738,17 +738,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ChoiceChip(
-                    label: const Text('кг'),
+                  _unitChip(
+                    label: 'кг',
                     selected: useKg,
-                    onSelected: (_) =>
+                    onTap: () =>
                         ref.read(useKgProvider.notifier).setUseKg(true),
                   ),
                   const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('фунты'),
+                  _unitChip(
+                    label: 'фунты',
                     selected: !useKg,
-                    onSelected: (_) =>
+                    onTap: () =>
                         ref.read(useKgProvider.notifier).setUseKg(false),
                   ),
                 ],
@@ -762,17 +762,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ChoiceChip(
-                    label: const Text('см'),
+                  _unitChip(
+                    label: 'см',
                     selected: useCm,
-                    onSelected: (_) =>
+                    onTap: () =>
                         ref.read(useCmProvider.notifier).setUseCm(true),
                   ),
                   const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('дюймы'),
+                  _unitChip(
+                    label: 'дюймы',
                     selected: !useCm,
-                    onSelected: (_) =>
+                    onTap: () =>
                         ref.read(useCmProvider.notifier).setUseCm(false),
                   ),
                 ],
@@ -1276,18 +1276,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         return Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            ChoiceChip(
-                              label: const Text('кг'),
+                            _unitChip(
+                              label: 'кг',
                               selected: useKg,
-                              onSelected: (_) => ref
+                              onTap: () => ref
                                   .read(useKgProvider.notifier)
                                   .setUseKg(true),
                             ),
                             const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('фунты'),
+                            _unitChip(
+                              label: 'фунты',
                               selected: !useKg,
-                              onSelected: (_) => ref
+                              onTap: () => ref
                                   .read(useKgProvider.notifier)
                                   .setUseKg(false),
                             ),
@@ -1302,18 +1302,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         return Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            ChoiceChip(
-                              label: const Text('см'),
+                            _unitChip(
+                              label: 'см',
                               selected: useCm,
-                              onSelected: (_) => ref
+                              onTap: () => ref
                                   .read(useCmProvider.notifier)
                                   .setUseCm(true),
                             ),
                             const SizedBox(width: 8),
-                            ChoiceChip(
-                              label: const Text('дюймы'),
+                            _unitChip(
+                              label: 'дюймы',
                               selected: !useCm,
-                              onSelected: (_) => ref
+                              onTap: () => ref
                                   .read(useCmProvider.notifier)
                                   .setUseCm(false),
                             ),
@@ -1993,6 +1993,54 @@ class _StatCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Soft unit-toggle chip used in Settings → Общие. The default ChoiceChip
+/// renders a heavy black border around unselected items in light theme,
+/// which clashes with the surrounding cream background; this version uses
+/// a tinted fill and a low-contrast outline instead.
+Widget _unitChip({
+  required String label,
+  required bool selected,
+  required VoidCallback onTap,
+}) {
+  return GestureDetector(
+    onTap: onTap,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: selected
+            ? AppColors.accent.withValues(alpha: 0.18)
+            : AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: selected
+              ? AppColors.accent.withValues(alpha: 0.55)
+              : AppColors.textSecondary.withValues(alpha: 0.18),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (selected) ...[
+            const Icon(Icons.check_rounded,
+                size: 14, color: AppColors.accent),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.accent : AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _SettingsRow extends StatelessWidget {
