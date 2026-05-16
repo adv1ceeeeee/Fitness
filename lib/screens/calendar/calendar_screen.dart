@@ -65,15 +65,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
       for (final w in workouts) {
         if (w.days.isEmpty) continue;
-        // Walk from the program's start (or the calendar range start,
-        // whichever is later) up to its cycle end so past planned days
-        // also appear in the events map — that's what powers the red
-        // "Пропущено" dots for days the user no-showed on.
-        final programStart = _dayOnly(w.createdAt);
-        final loopStart =
-            programStart.isAfter(rangeStart) ? programStart : rangeStart;
+        // Walk from the start of the visible range (not from the program's
+        // createdAt) so the weekday pattern also paints retroactively. That
+        // means days the user no-showed on this week show up as red
+        // "Пропущено" even on freshly-created programs — that's what users
+        // expect when they look at the calendar history.
         final cycleEnd = now.add(Duration(days: w.cycleWeeks * 7));
-        var cursor = loopStart;
+        var cursor = rangeStart;
         while (!cursor.isAfter(cycleEnd)) {
           final dayIndex = cursor.weekday - 1;
           if (w.days.contains(dayIndex)) {

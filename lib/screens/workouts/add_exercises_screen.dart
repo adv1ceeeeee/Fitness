@@ -2070,7 +2070,13 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
             ),
         ],
       ),
-      body: Column(
+      body: Builder(builder: (context) {
+        // Rest-only section: skip the entire search/catalog UI — there's
+        // nothing to add to a rest day. Show a centred breathing icon instead.
+        final isRestOnlySection = workout != null &&
+            workout.days.isEmpty &&
+            (workout.restDays.isNotEmpty || workout.groupId != null);
+        return Column(
         children: [
           // ── Day/section tabs (multi-section programs) ─────────────────────
           if (_groupSections.length > 1)
@@ -2204,6 +2210,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
               ),
             ),
 
+          // ── Rest-day branch — replaces the whole catalog ────────────────────
+          if (isRestOnlySection) ...[
+            const Expanded(child: _RestDayPlaceholder()),
+          ] else ...[
           // ── Поиск ───────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -2601,8 +2611,10 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
                 ],
               ),
             ),
+          ], // end of isRestOnlySection ? ... : <full catalog>
         ],
-      ),
+      );
+      }),
     );
   }
 
@@ -3013,6 +3025,102 @@ class _ProgramExerciseCard extends StatelessWidget {
           else
             const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+}
+
+/// Placeholder shown in place of the exercises catalog when the user opens a
+/// rest-only section ("Отдых"). Looped, low-key pulse so the screen reads as
+/// "nothing to do here — recover".
+class _RestDayPlaceholder extends StatefulWidget {
+  const _RestDayPlaceholder();
+
+  @override
+  State<_RestDayPlaceholder> createState() => _RestDayPlaceholderState();
+}
+
+class _RestDayPlaceholderState extends State<_RestDayPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _ctrl,
+              builder: (_, __) {
+                final scale = 0.92 + 0.16 * _ctrl.value;
+                final glow = 0.10 + 0.10 * _ctrl.value;
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.accent.withValues(alpha: glow),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 86,
+                        height: 86,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.accent.withValues(alpha: 0.18),
+                        ),
+                        child: const Icon(
+                          Icons.nightlight_round,
+                          size: 40,
+                          color: AppColors.accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'День отдыха',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Восстанавливайся — сегодня без тренировки.\nСон, питание и лёгкая активность сделают своё.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary.withValues(alpha: 0.85),
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
