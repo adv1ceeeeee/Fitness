@@ -2163,8 +2163,17 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
 
   Future<void> _load() async {
     try {
-      final data =
-          await TrainingService.getWorkoutDayHistory(widget.workout.id);
+      // For multi-section programs (group_id), aggregate history across ALL
+      // sections — the sheet header shows the parent program name, so its
+      // numbers should reflect the whole program, not just the one section
+      // the user happened to long-press.
+      final ids = widget.workout.groupId == null
+          ? <String>[widget.workout.id]
+          : (await WorkoutService.getSectionsByGroupId(widget.workout.groupId!))
+              .map((w) => w.id)
+              .toList();
+      final data = await TrainingService.getWorkoutDayHistory(
+          ids.isEmpty ? widget.workout.id : ids);
       if (!mounted) return;
       setState(() {
         _totalSessions = data['totalSessions'] as int;
@@ -2239,7 +2248,14 @@ class _WorkoutHistorySheetState extends State<_WorkoutHistorySheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      widget.workout.name,
+                      // Prefer the parent program name for multi-section
+                      // programs — the bottom sheet represents the whole
+                      // program's history, not just the picked section.
+                      widget.workout.groupName?.isNotEmpty == true
+                          ? widget.workout.groupName!
+                          : widget.workout.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 18,

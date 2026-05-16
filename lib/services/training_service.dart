@@ -899,15 +899,25 @@ class TrainingService {
 
   /// Returns per-weekday training history for a workout program.
   ///
+  /// Accepts a list of workout IDs so multi-section programs (sections sharing
+  /// a group_id) can be aggregated into one history view. Pass `[workoutId]`
+  /// for single-section programs to preserve the original behaviour.
+  ///
   /// Result map keys:
   ///   'totalSessions' → int
   ///   'firstDate'     → String? ('yyyy-MM-dd')
   ///   'byDay'         → Map<int, Map> where key is 0-based weekday (0=Mon…6=Sun)
   ///                     each value: {date, rpe, durationSeconds, exercises:[{name,setCount,maxWeight,lastReps}]}
   static Future<Map<String, dynamic>> getWorkoutDayHistory(
-      String workoutId) async {
+      Object workoutIdOrIds) async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) {
+      return {'totalSessions': 0, 'firstDate': null, 'byDay': <int, Map>{}};
+    }
+    final workoutIds = workoutIdOrIds is List<String>
+        ? workoutIdOrIds
+        : <String>[workoutIdOrIds as String];
+    if (workoutIds.isEmpty) {
       return {'totalSessions': 0, 'firstDate': null, 'byDay': <int, Map>{}};
     }
 
@@ -915,7 +925,7 @@ class TrainingService {
     final sessRes = await _client
         .from('training_sessions')
         .select('id, date, session_rpe, duration_seconds')
-        .eq('workout_id', workoutId)
+        .inFilter('workout_id', workoutIds)
         .eq('user_id', userId)
         .eq('completed', true)
         .order('date', ascending: false)
