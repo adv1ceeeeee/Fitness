@@ -82,6 +82,10 @@ class TrainingService {
             .select()
             .eq('user_id', userId)
             .eq('is_standard', false)
+            // Without this filter, soft-deleted workouts keep showing up as
+            // "сегодня" on Home (deleteWorkout just stamps deleted_at, the
+            // row stays in the table).
+            .isFilter('deleted_at', null)
             .timeout(_networkTimeout);
 
         for (final row in res as List) {
@@ -728,6 +732,7 @@ class TrainingService {
               .from('workouts')
               .select('id, name, days, cycle_weeks, is_standard')
               .eq('user_id', userId)
+              .isFilter('deleted_at', null)
               .not('days', 'eq', '{}');
           final workouts = (rows as List)
               .map((r) => Workout.fromJson(r as Map<String, dynamic>))

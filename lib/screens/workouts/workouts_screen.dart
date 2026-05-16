@@ -385,12 +385,19 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
   }
 
   // Inactive workouts that have an upcoming (future, non-skipped) session
-  /// Rest-only sections live as separate workouts in the DB (so the
-  /// notification system can pick up their rest days), but they should never
-  /// appear as standalone cards anywhere in the list — they belong to their
-  /// parent program.
+  /// Rest-only / no-active-days sections live as separate workouts in the DB
+  /// (so the notification system can pick up their rest days), but they
+  /// should never appear as standalone cards anywhere in the list — they
+  /// belong to their parent program.
+  ///
+  /// Two ways a section can be a "rest companion":
+  ///   1. days=[] AND restDays != [] (explicit rest day)
+  ///   2. days=[] AND groupId != null (orphan section of a group, name like
+  ///      "Отдых"). This catches the case the user just hit, where neither
+  ///      array carries useful state but the row still belongs to a group.
   bool _isRestOnlySection(Workout w) =>
-      w.days.isEmpty && w.restDays.isNotEmpty && w.groupId != null;
+      w.days.isEmpty &&
+      (w.restDays.isNotEmpty || w.groupId != null);
 
   List<Workout> get _upcomingWorkouts {
     return widget.workouts
@@ -665,8 +672,9 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
 
   String _plural(int n, String one, String few, String many) {
     if (n % 10 == 1 && n % 100 != 11) return one;
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20))
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
       return few;
+    }
     return many;
   }
 
@@ -822,8 +830,9 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
         );
       }
     } catch (e) {
-      if (kDebugMode)
+      if (kDebugMode) {
         debugPrint('[WorkoutsScreen] _cancelUpcomingSession error: $e');
+      }
     }
   }
 
@@ -892,8 +901,9 @@ class _MyProgramsTabState extends State<_MyProgramsTab> {
           minutesBefore: minutesBefore,
         );
       } catch (e) {
-        if (kDebugMode)
+        if (kDebugMode) {
           debugPrint('[WorkoutsScreen] notification scheduling failed: $e');
+        }
       }
     }
 
@@ -1799,8 +1809,9 @@ class _WorkoutCardContent extends StatelessWidget {
 
   static String _pluralDays(int n) {
     if (n % 10 == 1 && n % 100 != 11) return 'день';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20))
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
       return 'дня';
+    }
     return 'дней';
   }
 
@@ -2000,7 +2011,7 @@ class _InactiveWorkoutCard extends StatelessWidget {
       color: AppColors.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppColors.cardBorder, width: 1),
+        side: const BorderSide(color: AppColors.cardBorder, width: 1),
       ),
       child: InkWell(
         onTap: onTap,

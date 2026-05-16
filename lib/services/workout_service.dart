@@ -492,6 +492,15 @@ class WorkoutService {
     await _invalidateWorkoutsList();
     await _invalidateWorkout(id);
     await _invalidateWorkoutExercises(id);
+    // Bust per-user "today / next" caches too — otherwise the Home screen
+    // keeps surfacing a deleted workout as "сегодня" for up to TTL minutes.
+    final userId = AuthService.currentUser?.id;
+    if (userId != null) {
+      await Future.wait([
+        AppCache.invalidate('today_workout:$userId'),
+        AppCache.invalidate('next_scheduled:$userId'),
+      ]);
+    }
   }
 
   /// Creates a copy of a workout with all its exercises.
