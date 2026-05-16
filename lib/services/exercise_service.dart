@@ -7,7 +7,12 @@ import 'package:sportwai/services/app_cache.dart';
 
 class ExerciseService {
   static SupabaseClient get _client => Supabase.instance.client;
-  static const _networkTimeout = Duration(seconds: 8);
+  // 15s — Supabase free tier can take a few seconds to wake from cold state,
+  // and the catalog OR-query (`is_standard OR user_id = ...`) doesn't always
+  // pick the right index plan. Background refetch failure isn't user-facing
+  // so a generous timeout costs nothing and removes "Future not completed"
+  // noise from the console.
+  static const _networkTimeout = Duration(seconds: 15);
 
   static const _lightColumns = '''
 id,name,name_ru,category,image_url,is_standard,user_id,gif_url
