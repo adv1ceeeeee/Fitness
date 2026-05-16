@@ -153,7 +153,18 @@ class AppCache {
     fetch().then((value) async {
       await _store(prefs, key, encode(value));
     }).catchError((e) {
-      if (kDebugMode) debugPrint('[AppCache] background refetch error for "$key": $e');
+      // Transient network errors (Wi-Fi blip, TLS handshake interrupt,
+      // request timeout) are noise for a background revalidation — UI
+      // already has cached data and the next call will retry. Suppress
+      // them in debug to keep the console signal-to-noise high.
+      final msg = e.toString();
+      final isTransient = msg.contains('HandshakeException') ||
+          msg.contains('TimeoutException') ||
+          msg.contains('SocketException') ||
+          msg.contains('Connection closed');
+      if (kDebugMode && !isTransient) {
+        debugPrint('[AppCache] background refetch error for "$key": $e');
+      }
     });
   }
 

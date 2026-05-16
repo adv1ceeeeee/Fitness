@@ -3075,8 +3075,24 @@ class AnalyticsService {
           .eq('user_id', userId);
       return (res as List).length;
     } catch (e) {
-      if (kDebugMode) debugPrint('[AnalyticsService] getTotalBodyMetrics error: $e');
+      _logIfNotTransient('getTotalBodyMetrics', e);
       return 0;
+    }
+  }
+
+  /// Skip log spam for well-known transient network errors (Wi-Fi drop,
+  /// TLS handshake interrupt, supabase rejecting a connection). They're
+  /// not actionable — UI already has cached data or will retry on next
+  /// call. Only logs in debug.
+  static void _logIfNotTransient(String label, Object e) {
+    if (!kDebugMode) return;
+    final msg = e.toString();
+    final isTransient = msg.contains('HandshakeException') ||
+        msg.contains('TimeoutException') ||
+        msg.contains('SocketException') ||
+        msg.contains('Connection closed');
+    if (!isTransient) {
+      debugPrint('[AnalyticsService] $label error: $e');
     }
   }
 
