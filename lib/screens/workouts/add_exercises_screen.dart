@@ -72,6 +72,11 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   bool _favoritesOnly = false;
   bool _loading = true;
   bool _catalogLoading = false;
+  // Guards _openWorkoutExerciseSettings against double-fire. The handler is
+  // async (it may fetch the full exercise before opening the sheet), so a
+  // quick second tap on the title / edit icon used to stack two identical
+  // bottom sheets on top of each other.
+  bool _openingExerciseSheet = false;
   String? _catalogLoadError;
   String? _loadError;
   Timer? _searchDebounce;
@@ -1753,20 +1758,33 @@ class _AddExercisesScreenState extends State<AddExercisesScreen> {
   }
 
   Future<void> _openWorkoutExerciseSettings(WorkoutExercise we) async {
-    var exercise = we.exercise;
-    if (exercise != null &&
-        ((exercise.descriptionRu == null || exercise.descriptionRu!.isEmpty) &&
-            (exercise.description == null || exercise.description!.isEmpty))) {
-      try {
-        final detailed = await ExerciseService.getExercise(
-          exercise.id,
-          includeDetails: true,
-        ).timeout(const Duration(seconds: 8));
-        if (detailed != null) exercise = detailed;
-      } catch (_) {}
-    }
+    if (_openingExerciseSheet) return;
+    _openingExerciseSheet = true;
+    try {
+      var exercise = we.exercise;
+      if (exercise != null &&
+          ((exercise.descriptionRu == null ||
+                  exercise.descriptionRu!.isEmpty) &&
+              (exercise.description == null ||
+                  exercise.description!.isEmpty))) {
+        try {
+          final detailed = await ExerciseService.getExercise(
+            exercise.id,
+            includeDetails: true,
+          ).timeout(const Duration(seconds: 8));
+          if (detailed != null) exercise = detailed;
+        } catch (_) {}
+      }
 
-    if (!mounted) return;
+      if (!mounted) return;
+      await _showSettingsAndAwaitClose(exercise, we);
+    } finally {
+      _openingExerciseSheet = false;
+    }
+  }
+
+  Future<void> _showSettingsAndAwaitClose(
+      Exercise? exercise, WorkoutExercise we) async {
     _showExerciseSettingsSheet(
       title: exercise?.displayName ?? '?',
       gifUrl: exercise?.primaryMediaUrl,
@@ -2772,7 +2790,12 @@ class _ProgramExerciseCard extends StatelessWidget {
           ? we.dropSetWeightForWeek(currentWeek)
           : we.weightForWeek(currentWeek),
     );
-    return weight.isEmpty ? '${we.sets}X$reps' : '${we.sets}X${reps}X$weight';
+    // Old format "3X8-16X10" was ambiguous — the dash in the rep range
+    // collided visually with the X separator. New format:
+    //   "3 × 8-16 · 10 кг"   when weight is set
+    //   "3 × 8-16"           bodyweight / no target weight
+    final base = '${we.sets} × $reps';
+    return weight.isEmpty ? base : '$base · $weight кг';
   }
 
   @override
