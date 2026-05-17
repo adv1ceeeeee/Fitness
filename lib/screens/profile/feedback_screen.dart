@@ -37,13 +37,16 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       message: msg,
     );
     EventLogger.feedbackSubmitted(category: _category);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _sending = false;
         _sent = true;
       });
+    }
     await Future.delayed(const Duration(milliseconds: 1200));
-    if (mounted) Navigator.of(context).pop();
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override

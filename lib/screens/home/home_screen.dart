@@ -487,8 +487,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _maybeShowDeloadSuggestion() async {
     if (AppStorage.deloadActive) return; // уже включён
     final today = DateTime.now().toIso8601String().split('T')[0];
-    if (AppStorage.lastDeloadSuggestionDate == today)
+    if (AppStorage.lastDeloadSuggestionDate == today) {
       return; // уже показывали сегодня
+    }
     final suggest = await AnalyticsService.shouldSuggestDeload();
     if (!suggest || !mounted) return;
     await AppStorage.setLastDeloadSuggestionDate(today);
@@ -887,8 +888,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   metric: _goalMetric,
                   currentValue: () {
                     for (final m in _bodyMetricsHistory.reversed) {
-                      if (m[_goalMetric] != null)
+                      if (m[_goalMetric] != null) {
                         return (m[_goalMetric] as num).toDouble();
+                      }
                     }
                     return null;
                   }(),
@@ -2686,7 +2688,7 @@ class _ActionCard extends StatelessWidget {
       color: AppColors.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppColors.cardBorder, width: 1),
+        side: const BorderSide(color: AppColors.cardBorder, width: 1),
       ),
       child: InkWell(
         onTap: onTap,
@@ -3131,9 +3133,12 @@ class _WeeklyGoalCard extends StatelessWidget {
   }
 
   String _workoutWord(int n) {
-    if (n % 10 == 1 && n % 100 != 11) return 'тренировка';
-    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20))
+    if (n % 10 == 1 && n % 100 != 11) {
+      return 'тренировка';
+    }
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) {
       return 'тренировки';
+    }
     return 'тренировок';
   }
 }
@@ -3480,14 +3485,16 @@ class _WeeklySummarySheetState extends State<_WeeklySummarySheet>
 
   String _motivationText() {
     final goal = widget.weeklyGoal;
-    if (goal > 0 && _workouts >= goal)
+    if (goal > 0 && _workouts >= goal) {
       return 'Цель недели выполнена! Отличная работа!';
+    }
     if (_workouts == 0) return 'На этой неделе ещё есть время начать. Вперёд!';
     if (goal > 0 && _workouts < goal) {
       return 'Ещё ${goal - _workouts} тренировки до цели — ты справишься!';
     }
-    if (_streak >= 7)
+    if (_streak >= 7) {
       return 'Серия $_streak дней — это уже настоящая привычка!';
+    }
     if (_prs > 0) return '$_prs личных рекорда за неделю — огонь!';
     return 'Хорошая неделя, продолжай в том же духе!';
   }

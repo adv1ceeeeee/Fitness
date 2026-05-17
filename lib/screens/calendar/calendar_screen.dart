@@ -1119,8 +1119,13 @@ class _ExerciseBuilderSheetState extends State<_ExerciseBuilderSheet> {
         [],
         cycleWeeks: 0,
       );
+      // Index the catalog once so each iteration is O(1) and we can defend
+      // against the (rare) case where an exercise was deleted between the
+      // user picking it and tapping Save — skip instead of crashing.
+      final byId = {for (final e in _exercises) e.id: e};
       for (final entry in _selected.entries) {
-        final exercise = _exercises.firstWhere((e) => e.id == entry.key);
+        final exercise = byId[entry.key];
+        if (exercise == null) continue;
         final isCardio = exercise.category == 'cardio';
         await WorkoutService.addExerciseToWorkout(
           workout.id,

@@ -263,8 +263,9 @@ class _ChartTab extends StatelessWidget {
                           .clamp(1, double.infinity),
                       getTitlesWidget: (v, _) {
                         final idx = v.toInt();
-                        if (idx < 0 || idx >= history.length)
+                        if (idx < 0 || idx >= history.length) {
                           return const SizedBox.shrink();
+                        }
                         final date = history[idx]['date'] as String;
                         return Text(
                           _shortDate(date),
