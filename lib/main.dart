@@ -86,6 +86,7 @@ Future<void> _bootstrap() async {
 
   // Warm caches on cold start when the user is already authenticated.
   // Fire-and-forget — errors fall back to normal on-demand fetches.
+  // prefetchOnLogin also bumps the per-device profile (DeviceProfileService).
   if (Supabase.instance.client.auth.currentSession != null) {
     AuthService.prefetchOnLogin();
   }

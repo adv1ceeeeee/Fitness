@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/services/device_profile_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/image_cache_manager.dart';
 import 'package:sportwai/services/profile_service.dart';
@@ -23,6 +24,9 @@ class AuthService {
       if (kDebugMode) debugPrint('[AuthService.prefetchOnLogin] error: $e');
       return <dynamic>[];
     });
+    // Also bump device profile so analytics / support sees the latest
+    // OS / model / app version row for this user. Fire-and-forget.
+    DeviceProfileService.upsertOnAppStart();
   }
 
   /// Wipe per-user caches so that data never leaks across accounts.
