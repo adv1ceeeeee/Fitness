@@ -10,6 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sportwai/config/theme.dart';
+import 'package:sportwai/data/volume_landmarks.dart';
 import 'package:sportwai/models/profile.dart';
 import 'package:sportwai/services/achievement_service.dart';
 import 'package:sportwai/services/analytics_service.dart';
@@ -18,7 +19,10 @@ import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/body_metrics_service.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/services/profile_service.dart';
-import 'package:sportwai/services/recsys_service.dart';
+// Hide VolumeZone here because data/volume_landmarks.dart owns the public
+// per-muscle landmarks enum that the analytics UI displays. RecSys has its
+// own internal VolumeZone for the deload heuristic; the two don't overlap.
+import 'package:sportwai/services/recsys_service.dart' hide VolumeZone;
 import 'package:sportwai/services/streak_freeze_service.dart';
 import 'package:sportwai/utils/twemoji.dart';
 import 'package:sportwai/widgets/skeleton.dart';
@@ -98,6 +102,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   List<Map<String, dynamic>> _weeklyVolume = [];
   Map<String, int> _muscleBalance = {};
   Map<String, double> _muscleFrequency = {};
+  List<MuscleVolumeStatus> _volumeLandmarks = const [];
   List<Map<String, dynamic>> _caloriesPerSession = [];
   ({
     double volumeThisWeek,
@@ -321,6 +326,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         AnalyticsService.getStagnantExercises(),
         AnalyticsService.getWellnessPerformanceCorrelation(),
         AnalyticsService.getBestStreak(),
+        AnalyticsService.getWeeklyVolumeLandmarks(),
       ]);
 
       if (mounted) {
@@ -354,6 +360,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
           _stagnantExercises = results[21] as List<Map<String, dynamic>>;
           _wellnessCorrelation = results[22] as List<Map<String, dynamic>>;
           _bestStreak = results[23] as int;
+          _volumeLandmarks = results[24] as List<MuscleVolumeStatus>;
           _loading = false;
         });
         // Load deload metrics independently (doesn't block main render).
@@ -627,6 +634,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     communityAvgExerciseWeight: _communityAvgExerciseWeight,
                     loadingChart: _loadingChart,
                     muscleBalance: _muscleBalance,
+                    volumeLandmarks: _volumeLandmarks,
                     muscleFrequency: _muscleFrequency,
                     caloriesPerSession: _caloriesPerSession,
                     heatmapData: _heatmapData,
@@ -956,6 +964,7 @@ class _WorkoutsTab extends StatefulWidget {
   final double? communityAvgExerciseWeight;
   final bool loadingChart;
   final Map<String, int> muscleBalance;
+  final List<MuscleVolumeStatus> volumeLandmarks;
   final Map<String, double> muscleFrequency;
   final List<Map<String, dynamic>> caloriesPerSession;
   final void Function(Map<String, dynamic>?) onExerciseChanged;
@@ -975,6 +984,7 @@ class _WorkoutsTab extends StatefulWidget {
     required this.communityAvgExerciseWeight,
     required this.loadingChart,
     required this.muscleBalance,
+    required this.volumeLandmarks,
     required this.muscleFrequency,
     required this.caloriesPerSession,
     required this.onExerciseChanged,
@@ -1289,6 +1299,24 @@ class _WorkoutsTabState extends State<_WorkoutsTab>
               ),
               const SizedBox(height: 12),
               _MuscleFrequencyChart(frequency: widget.muscleFrequency),
+            ],
+            if (widget.volumeLandmarks.isNotEmpty) ...[
+              const SizedBox(height: 28),
+              const Text(
+                'Зоны объёма',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Подходы за эту неделю vs. научные пороги MEV / MAV / MRV',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              _VolumeLandmarksCard(items: widget.volumeLandmarks),
             ],
             const SizedBox(height: 28),
             const Text(
@@ -4695,6 +4723,169 @@ class _VolumeBarChart extends StatelessWidget {
           ),
         ),
       );
+}
+
+// ─── Volume landmarks (MEV / MAV / MRV) ──────────────────────────────────────
+
+class _VolumeLandmarksCard extends StatelessWidget {
+  final List<MuscleVolumeStatus> items;
+
+  const _VolumeLandmarksCard({required this.items});
+
+  static Color _zoneColor(VolumeZone z) {
+    switch (z) {
+      case VolumeZone.underMev:
+        return const Color(0xFFFF453A); // red
+      case VolumeZone.belowOptimal:
+        return const Color(0xFFFF9F0A); // orange
+      case VolumeZone.optimal:
+        return const Color(0xFF30D158); // green
+      case VolumeZone.aboveOptimal:
+        return const Color(0xFFFF9F0A); // orange
+      case VolumeZone.overMrv:
+        return const Color(0xFFFF453A); // red
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < items.length; i++) ...[
+            if (i > 0) const SizedBox(height: 16),
+            _VolumeRow(status: items[i], color: _zoneColor(items[i].zone)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _VolumeRow extends StatelessWidget {
+  final MuscleVolumeStatus status;
+  final Color color;
+
+  const _VolumeRow({required this.status, required this.color});
+
+  static const Map<String, String> _ruLabels = {
+    'chest': 'Грудь',
+    'back': 'Спина',
+    'shoulders': 'Плечи',
+    'arms': 'Руки',
+    'legs': 'Ноги',
+    'core': 'Пресс',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final L = status.landmarks;
+    // Bar runs from 0 to MRV + buffer so the MRV tick isn't right at the
+    // edge and over-MRV values still have space to render visually.
+    final maxScale = (L.mrv + 4).toDouble();
+    final fillFraction = (status.weeklySets / maxScale).clamp(0.0, 1.0);
+    final muscleName = _ruLabels[status.category] ?? status.category;
+
+    return Tooltip(
+      message: '${L.mev}/${L.mavLow}-${L.mavHigh}/${L.mrv} '
+          '(MEV / MAV / MRV)\n${volumeZoneAdvice(status.zone)}',
+      preferBelow: false,
+      triggerMode: TooltipTriggerMode.tap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  muscleName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '${status.weeklySets} · ${volumeZoneLabel(status.zone)}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          LayoutBuilder(
+            builder: (ctx, c) {
+              final barWidth = c.maxWidth;
+              // X positions of the MEV / MAV-high / MRV ticks on the bar.
+              final mevX = (L.mev / maxScale) * barWidth;
+              final mavHighX = (L.mavHigh / maxScale) * barWidth;
+              final mrvX = (L.mrv / maxScale) * barWidth;
+              return SizedBox(
+                height: 10,
+                child: Stack(
+                  children: [
+                    // Track
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ),
+                    // Fill
+                    FractionallySizedBox(
+                      widthFactor: fillFraction,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ),
+                    // MEV tick (start of growth zone)
+                    Positioned(
+                      left: mevX - 1,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                          width: 2, color: AppColors.textSecondary
+                              .withValues(alpha: 0.5)),
+                    ),
+                    // MAV-high tick (start of overload zone)
+                    Positioned(
+                      left: mavHighX - 1,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                          width: 2, color: AppColors.textSecondary
+                              .withValues(alpha: 0.5)),
+                    ),
+                    // MRV tick (overtraining ceiling)
+                    Positioned(
+                      left: mrvX - 1,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(width: 2, color: AppColors.error),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Muscle balance chart ─────────────────────────────────────────────────────

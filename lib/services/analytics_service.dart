@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/data/volume_landmarks.dart';
 import 'package:sportwai/services/app_cache.dart';
 import 'package:sportwai/services/auth_service.dart';
 import 'package:sportwai/services/recsys_service.dart';
@@ -59,6 +60,7 @@ class AnalyticsService {
       AppCache.invalidatePrefix('energy_state:$userId'),
       AppCache.invalidatePrefix('1rm:$userId'),
       AppCache.invalidatePrefix('muscle_trend:$userId'),
+      AppCache.invalidatePrefix('muscle_balance_week:$userId'),
       AppCache.invalidatePrefix('inter_session_days:$userId'),
       AppCache.invalidatePrefix('user_state:$userId'),
     ]);
@@ -1255,6 +1257,40 @@ class AnalyticsService {
       if (subCat != null) balance[subCat] = (balance[subCat] ?? 0) + 1;
     }
     return balance;
+  }
+
+  /// Weekly working-set count per top-level muscle group, wrapped with
+  /// RP volume landmarks (MEV / MAV / MRV). Powers the "Volume zones"
+  /// card on the analytics screen — shows whether each muscle is
+  /// under-trained / optimal / overtrained for the current week.
+  ///
+  /// Returns one [MuscleVolumeStatus] per landmark-defined group
+  /// (chest, back, shoulders, arms, legs, core). Groups with zero
+  /// weekly sets still appear so the user sees their gap.
+  static Future<List<MuscleVolumeStatus>> getWeeklyVolumeLandmarks() async {
+    final userId = AuthService.currentUser?.id;
+    if (userId == null) return const [];
+    final balance = await AppCache.get<Map<String, int>>(
+      key: 'muscle_balance_week:$userId',
+      ttl: const Duration(minutes: 10),
+      fetch: () => _fetchMuscleGroupBalance(userId, 7),
+      encode: (v) => jsonEncode(v),
+      decode: (s) => s == null
+          ? <String, int>{}
+          : (jsonDecode(s) as Map<String, dynamic>)
+              .map((k, v) => MapEntry(k, (v as num).toInt())),
+    );
+    return [
+      for (final entry in kMuscleVolumeLandmarks.entries)
+        MuscleVolumeStatus(
+          category: entry.key,
+          // _fetchMuscleGroupBalance includes both top-level keys and
+          // 'cat:subcat' sub-keys — read only the top-level for landmarks.
+          weeklySets: balance[entry.key] ?? 0,
+          landmarks: entry.value,
+          zone: zoneFor(balance[entry.key] ?? 0, entry.value),
+        ),
+    ];
   }
 
   /// Derives a fine-grained sub-category key from exercise metadata.
