@@ -146,3 +146,18 @@
 **Что нужно:**
 - `supabase db push` в CI/CD pipeline после merge в main
 - Секрет `SUPABASE_ACCESS_TOKEN` в GitHub Actions
+
+### Apple Health / Google Health Connect синхронизация
+**Где:** новый `lib/services/health_sync_service.dart`
+**Текущее состояние:** Нет синка с системными health-провайдерами.
+**Что нужно:**
+- Пакет `health: ^11.x` (поддерживает Apple HealthKit + Android Health Connect — заменил Google Fit с 2024)
+- Permissions: `NSHealthShareUsageDescription` / `NSHealthUpdateUsageDescription` в `Info.plist`,
+  health-permissions + Health Connect intent-filter в `AndroidManifest.xml`
+- **Чтение** (Health → нам): вес → `body_metrics.weight_kg`, сон → `wellness_logs.sleep_hours`
+- **Запись** (мы → Health): завершённая `training_sessions` (длительность + `kcal_estimated`),
+  кардио-сеты с `distance_m`
+- Шаги / HR / active minutes пока показывать **live из API** без сохранения в БД (виджет
+  на главной «Сегодня прошёл N шагов»). Для исторического анализа потом завести
+  `daily_activity (user_id, date, steps, active_minutes, kcal_burned, resting_hr)`
+- UI: переключатель в Профиль → Настройки → Интеграции
