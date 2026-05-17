@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/config/app_config.dart';
 import 'package:sportwai/services/device_profile_service.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/image_cache_manager.dart';
@@ -27,6 +29,25 @@ class AuthService {
     // Also bump device profile so analytics / support sees the latest
     // OS / model / app version row for this user. Fire-and-forget.
     DeviceProfileService.upsertOnAppStart();
+    // Tag Sentry events with the current user id so crash reports group
+    // by user. We pass id only — no email/PII — to keep `sendDefaultPii: false`
+    // honest.
+    _syncSentryUser();
+  }
+
+  /// Push the current Supabase user into Sentry's scope so subsequent
+  /// crashes / performance events are attributed to them. Pass nothing to
+  /// clear (e.g. on sign-out). Safe no-op when Sentry isn't initialised.
+  static Future<void> _syncSentryUser() async {
+    if (AppConfig.sentryDsn.isEmpty) return;
+    final user = currentUser;
+    await Sentry.configureScope((scope) {
+      if (user == null) {
+        scope.setUser(null);
+      } else {
+        scope.setUser(SentryUser(id: user.id));
+      }
+    });
   }
 
   /// Wipe per-user caches so that data never leaks across accounts.
@@ -84,6 +105,7 @@ class AuthService {
   static Future<void> signOut() async {
     await _clearUserCaches();
     await _client.auth.signOut();
+    await _syncSentryUser(); // currentUser is now null → clears Sentry scope
   }
 
   /// Permanently deletes the current user account and all associated data.
@@ -92,6 +114,7 @@ class AuthService {
     await _client.functions.invoke('delete-account', method: HttpMethod.post);
     await _clearUserCaches();
     await _client.auth.signOut();
+    await _syncSentryUser();
   }
 
   static Stream<AuthState> get authStateChanges =>

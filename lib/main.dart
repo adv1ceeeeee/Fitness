@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:sportwai/config/app_config.dart';
@@ -113,10 +114,31 @@ void main() async {
     await _bootstrap();
     return;
   }
+  // Read release version up-front so it's available inside the Sentry init
+  // callback (init runs once at app start, package_info is fast & cached).
+  WidgetsFlutterBinding.ensureInitialized();
+  final pkg = await PackageInfo.fromPlatform();
   await SentryFlutter.init(
     (options) {
       options.dsn = AppConfig.sentryDsn;
-      options.tracesSampleRate = 0.2;
+      // Sampling: 100% in debug for easy local inspection, ~10% in release
+      // so a free-tier Sentry project (10k transactions/month) survives a
+      // few thousand daily-active users.
+      options.tracesSampleRate = kDebugMode ? 1.0 : 0.1;
+      // ignore: experimental_member_use
+      options.profilesSampleRate = kDebugMode ? 1.0 : 0.1;
+      // Tag every event so Sentry groups crashes / perf data by version
+      // and we can filter by environment in the dashboard.
+      options.release = 'sportify@${pkg.version}+${pkg.buildNumber}';
+      options.environment = kDebugMode ? 'debug' : 'production';
+      // Attach screenshots / view hierarchy on errors — invaluable when
+      // a user reports "the button didn't work" but no stack trace exists.
+      options.attachScreenshot = true;
+      // ignore: experimental_member_use
+      options.attachViewHierarchy = true;
+      // Privacy: do not send IP / user-agent by default. We set the user
+      // explicitly (id only) inside AuthService after sign-in.
+      options.sendDefaultPii = false;
     },
     appRunner: _bootstrap,
   );

@@ -35,6 +35,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _useKg = true;
 
   @override
+  void initState() {
+    super.initState();
+    // Log step 0 explicitly — PageView.onPageChanged does not fire for the
+    // initial page, so without this the funnel would skip step 0 entirely.
+    EventLogger.onboardingStepViewed(0);
+  }
+
+  @override
   void dispose() {
     _pageController.dispose();
     _ageController.dispose();
@@ -249,7 +257,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Expanded(
               child: PageView(
                 controller: _pageController,
-                onPageChanged: (i) => setState(() => _currentPage = i),
+                onPageChanged: (i) {
+                  setState(() => _currentPage = i);
+                  EventLogger.onboardingStepViewed(i);
+                },
                 children: [
                   _Page1(
                     gender: _gender,

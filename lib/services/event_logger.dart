@@ -223,6 +223,12 @@ class EventLogger {
 
   static void onboardingSkipped() => log('onboarding_skipped');
 
+  /// Fired every time the user advances to (or swipes onto) a new onboarding
+  /// page. `step` is the zero-based page index. Powers the onboarding_funnel
+  /// SQL view that shows where users drop off.
+  static void onboardingStepViewed(int step) =>
+      log('onboarding_step_viewed', props: {'step': step});
+
   // ─── Programs ────────────────────────────────────────────────────────────
 
   static void programAdded({required String programName}) =>

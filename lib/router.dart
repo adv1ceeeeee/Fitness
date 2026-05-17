@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:sportwai/config/app_config.dart';
 import 'package:sportwai/services/event_logger.dart';
 import 'package:sportwai/screens/auth/welcome_screen.dart';
 import 'package:sportwai/screens/auth/login_screen.dart';
@@ -121,7 +123,13 @@ class AppRouter {
 
   static final router = GoRouter(
     navigatorKey: _rootNavigatorKey,
-    observers: [_ScreenViewObserver()],
+    observers: [
+      _ScreenViewObserver(),
+      // Sentry route tracking only when DSN is configured. Otherwise the
+      // observer tries to attach to a Sentry hub that was never initialised
+      // (in debug runs without SENTRY_DSN) and emits noisy warnings.
+      if (AppConfig.sentryDsn.isNotEmpty) SentryNavigatorObserver(),
+    ],
     initialLocation: '/',
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
