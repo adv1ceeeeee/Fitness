@@ -34,14 +34,30 @@ import 'package:sportwai/services/gamification_service.dart';
 
 // ─── Metric options for body progress panel ───────────────────────────────────
 
+/// Parity-mirror of the "Добавить замер" sheet in body_metrics_screen so
+/// the user can graph any column they bothered to log. Order matches the
+/// add-sheet's visual grouping (basics → trunk → arms → legs) so two
+/// related screens stay mentally aligned.
 const _metricOptions = <String, (String label, String unit)>{
-  'weight_kg': ('Вес', 'кг'),
-  'body_fat_pct': ('% жира', '%'),
-  'waist_cm': ('Талия', 'см'),
-  'chest_cm': ('Грудь', 'см'),
-  'hips_cm': ('Бёдра', 'см'),
-  'right_arm_cm': ('Бицепс', 'см'),
-  'shoulders_cm': ('Плечи', 'см'),
+  // Basics
+  'weight_kg':         ('Вес',                 'кг'),
+  'body_fat_pct':      ('% жира',              '%'),
+  // Trunk
+  'neck_cm':           ('Шея',                 'см'),
+  'shoulders_cm':      ('Плечи',               'см'),
+  'chest_cm':          ('Грудь',               'см'),
+  'waist_cm':          ('Талия',               'см'),
+  'hips_cm':           ('Бёдра',               'см'),
+  // Arms
+  'right_arm_cm':      ('Бицепс (правый)',     'см'),
+  'left_arm_cm':       ('Бицепс (левый)',      'см'),
+  'right_forearm_cm':  ('Предплечье (пр.)',    'см'),
+  'left_forearm_cm':   ('Предплечье (лев.)',   'см'),
+  // Legs
+  'right_thigh_cm':    ('Бедро (правое)',      'см'),
+  'left_thigh_cm':     ('Бедро (левое)',       'см'),
+  'right_calf_cm':     ('Голень (правая)',     'см'),
+  'left_calf_cm':      ('Голень (левая)',      'см'),
 };
 
 // ─── Pure helpers (top-level for testability) ─────────────────────────────────
