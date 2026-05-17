@@ -462,8 +462,25 @@ class UserStateService {
     // Sort by priority descending
     scored.sort((a, b) => b.priority.compareTo(a.priority));
 
+    // Subjective-energy ceiling on the displayed reserve. computeEnergyStart
+    // already nudges recovery via wellnessMod, but with high physical reserve
+    // (e.g. 95) and low reported energy (3/10) the headline label still ends
+    // up "Хорошо 79%" — which contradicts the "Энергия низкая" warning
+    // banner right below. Cap the displayed reserve at the user's reported
+    // bucket so the two read-outs agree. Only triggers when subjective ≤ 4;
+    // higher subjective never restricts the physical model.
+    final subjective = (todayWellness?['energy'] as num?)?.toInt();
+    EnergyState shownEnergy = energyState;
+    if (subjective != null && subjective <= 4) {
+      // Map subjective bucket → ceiling: 1→16, 2→27, 3→38, 4→49.
+      final ceiling = (subjective * 11 + 5).toDouble();
+      if (energyState.reserve > ceiling) {
+        shownEnergy = EnergyState(reserve: ceiling);
+      }
+    }
+
     return UserState(
-      energyState:             energyState,
+      energyState:             shownEnergy,
       wellnessRec:             wellnessRec,
       todayWellness:           todayWellness,
       userGoal:                profile?.goal,

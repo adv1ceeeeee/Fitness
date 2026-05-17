@@ -169,6 +169,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _streak = 0;
   Workout? _nextScheduledWorkout;
   bool _isRestDay = false;
+  bool _hasActiveProgram = false;
 
   // Countdown to next planned workout
   DateTime? _todayPlannedTime;
@@ -458,6 +459,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _daysSinceLastWorkout = daysSince;
         _nextScheduledWorkout = nextWorkout;
         _isRestDay = isRestDay;
+        _hasActiveProgram = hasAnySchedule;
         _todayPlannedTime = plannedTime;
         _streak = streak;
       });
@@ -802,6 +804,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _TodayCard(
                   workout: _overrideWorkout ?? _todayWorkout,
                   loading: _loadingWorkout,
+                  isRestDay: _isRestDay,
+                  hasActiveProgram: _hasActiveProgram,
                   onTap: _startDisplayedWorkout,
                   onCreateProgram: _showChangeProgramSheet,
                   onQuickStart: () => showModalBottomSheet<void>(
@@ -830,11 +834,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
 
-                // ── Rest day card ─────────────────────────────────────────
-                if (_isRestDay) ...[
-                  const SizedBox(height: 16),
-                  const _RestDayCard(),
-                ],
+                // _RestDayCard was removed — the empty state inside
+                // _TodayCard now carries the "Сегодня день отдыха" message
+                // when the user has an active program but today is unscheduled.
+                // Without this, the home screen showed two stacked
+                // contradicting messages on rest days.
 
                 // ── Inactivity suggestion ─────────────────────────────────
                 if (_daysSinceLastWorkout >= 2 &&
@@ -2190,6 +2194,13 @@ class _TodayCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onCreateProgram;
   final VoidCallback? onQuickStart;
+  /// Today is a rest day according to the user's program — used to swap
+  /// the empty-state "Создать программу" CTA for a rest message.
+  final bool isRestDay;
+  /// User already has at least one active program. Without this we would
+  /// otherwise nag a returning user with the "Начни своё первое занятие"
+  /// onboarding card every time the day is unscheduled.
+  final bool hasActiveProgram;
 
   const _TodayCard({
     required this.workout,
@@ -2197,6 +2208,8 @@ class _TodayCard extends StatelessWidget {
     required this.onTap,
     this.onCreateProgram,
     this.onQuickStart,
+    this.isRestDay = false,
+    this.hasActiveProgram = false,
   });
 
   @override
@@ -2223,8 +2236,101 @@ class _TodayCard extends StatelessWidget {
     }
     final hasWorkout = workout != null;
 
-    // ── Empty state for new users ──────────────────────────────────────────────
+    // ── Empty state: branch on who the user is and why we have no workout ────
     if (!hasWorkout) {
+      // Returning user with a program but today is rest / unscheduled —
+      // don't nag them with "Создай программу", offer a recovery message
+      // and the option to override with a one-time session.
+      if (hasActiveProgram) {
+        final title = isRestDay
+            ? 'Сегодня день отдыха 🛏'
+            : 'Тренировки на сегодня нет';
+        final subtitle = isRestDay
+            ? 'Восстанавливайся — это часть прогресса. Если хочется тренироваться, начни разовую сессию.'
+            : 'По плану сегодня выходной. Можно начать разовую тренировку или открыть программу.';
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppColors.cardBorder,
+              width: 1,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isRestDay ? Icons.bedtime_rounded : Icons.event_busy_rounded,
+                  size: 36,
+                  color: AppColors.accent,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onQuickStart,
+                  icon: const Icon(Icons.flash_on_rounded, size: 18),
+                  label: const Text('Разовая тренировка'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.accent,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    side: BorderSide(
+                      color: AppColors.accent.withValues(alpha: 0.45),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: onCreateProgram,
+                  child: const Text(
+                    'Изменить программу',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      // True first-time user — no programs at all yet.
       return Container(
         decoration: BoxDecoration(
           color: AppColors.card,
@@ -3244,63 +3350,6 @@ class _InactivityCard extends StatelessWidget {
       return 'дня';
     }
     return 'дней';
-  }
-}
-
-// ─── Rest day card ────────────────────────────────────────────────────────────
-
-class _RestDayCard extends StatelessWidget {
-  const _RestDayCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A1F0A),
-        borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: const Color(0xFFD4A454).withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFD4A454).withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.hotel_rounded,
-                color: Color(0xFFD4A454), size: 24),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Сегодня день отдыха 🛏',
-                  style: TextStyle(
-                    color: Color(0xFFD4A454),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Восстановитесь и наберитесь сил',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
