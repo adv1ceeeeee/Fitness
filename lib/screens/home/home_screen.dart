@@ -2965,14 +2965,26 @@ class _QuickWeightCardState extends State<_QuickWeightCard> {
         final logs = await BodyMetricsService.getTodayWeightLogs();
         if (mounted) setState(() => _todayWeightLogs = logs);
       } else {
+        // Dispatch by metric key — keep in sync with _metricOptions above.
+        // Earlier this only covered 7 of 15 keys, so logging a forearm /
+        // calf / left-side measurement silently sent all nulls to upsert
+        // and the value disappeared.
         await BodyMetricsService.upsert(
-          weightKg: widget.metric == 'weight_kg' ? v : null,
-          bodyFatPct: widget.metric == 'body_fat_pct' ? v : null,
-          waistCm: widget.metric == 'waist_cm' ? v : null,
-          chestCm: widget.metric == 'chest_cm' ? v : null,
-          hipsCm: widget.metric == 'hips_cm' ? v : null,
-          rightArmCm: widget.metric == 'right_arm_cm' ? v : null,
-          shouldersCm: widget.metric == 'shoulders_cm' ? v : null,
+          weightKg:        widget.metric == 'weight_kg'        ? v : null,
+          bodyFatPct:      widget.metric == 'body_fat_pct'     ? v : null,
+          neckCm:          widget.metric == 'neck_cm'          ? v : null,
+          shouldersCm:     widget.metric == 'shoulders_cm'     ? v : null,
+          chestCm:         widget.metric == 'chest_cm'         ? v : null,
+          waistCm:         widget.metric == 'waist_cm'         ? v : null,
+          hipsCm:          widget.metric == 'hips_cm'          ? v : null,
+          rightArmCm:      widget.metric == 'right_arm_cm'     ? v : null,
+          leftArmCm:       widget.metric == 'left_arm_cm'      ? v : null,
+          rightForearmCm:  widget.metric == 'right_forearm_cm' ? v : null,
+          leftForearmCm:   widget.metric == 'left_forearm_cm'  ? v : null,
+          rightThighCm:    widget.metric == 'right_thigh_cm'   ? v : null,
+          leftThighCm:     widget.metric == 'left_thigh_cm'    ? v : null,
+          rightCalfCm:     widget.metric == 'right_calf_cm'    ? v : null,
+          leftCalfCm:      widget.metric == 'left_calf_cm'     ? v : null,
         );
       }
       // Fire-and-forget authoritative refresh so the parent can reconcile.
