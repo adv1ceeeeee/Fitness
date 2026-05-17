@@ -1,0 +1,22 @@
+# Jekyll config for legal/ pages on GitHub Pages.
+# Enable: Settings → Pages → Build & deployment → Source: "Deploy from a branch",
+#         Branch: "main" / folder: "/ (root)" with the `legal/` path.
+# Or use the path-based subdirectory pattern.
+
+title: Sportify — Юридические документы
+description: Privacy Policy and Terms of Service for the Sportify fitness app
+theme: minima
+
+# So URLs are stable for App Store reviewers
+permalink: pretty
+
+# Markdown rendering
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+# Don't ship junk to the site
+exclude:
+  - README.md
+  - _config.yml

@@ -68,3 +68,6 @@ builds/**/*.ipa
 *.local.md
 *.local.txt
 *.local.json
+
+# Marketing screenshots — kept in cloud storage, not in repo
+releases/store-listing/screenshots/
