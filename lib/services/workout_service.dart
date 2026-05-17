@@ -496,9 +496,12 @@ class WorkoutService {
     // keeps surfacing a deleted workout as "сегодня" for up to TTL minutes.
     final userId = AuthService.currentUser?.id;
     if (userId != null) {
+      // today_workout / next_scheduled live under day-keyed prefixes now
+      // (see TrainingService._todayKey). Drop the whole prefix so stale
+      // rows from earlier in the week are gone too.
       await Future.wait([
-        AppCache.invalidate('today_workout:$userId'),
-        AppCache.invalidate('next_scheduled:$userId'),
+        AppCache.invalidatePrefix('today_workout:$userId'),
+        AppCache.invalidatePrefix('next_scheduled:$userId'),
       ]);
     }
   }

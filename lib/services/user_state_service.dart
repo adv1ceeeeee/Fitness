@@ -194,9 +194,13 @@ class UserStateService {
     if (userId == null) {
       return const UserState(energyState: EnergyState(reserve: 100));
     }
-
+    // Cache key includes today's date so a snapshot from yesterday
+    // automatically misses on the next calendar day — previously the
+    // 30-min TTL + stale-while-revalidate kept showing yesterday's
+    // wellness-logged state on cold opens at midnight, hiding the
+    // "Как самочувствие?" card and locking in stale energy %.
     return AppCache.get<UserState>(
-      key: 'user_state:$userId',
+      key: 'user_state:$userId:${_todayKey()}',
       ttl: const Duration(minutes: 30),
       fetch: () => _fetch(userId),
       encode: (s) => jsonEncode(s.toJson()),
@@ -206,9 +210,16 @@ class UserStateService {
     );
   }
 
+  static String _todayKey() {
+    final d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   static Future<void> invalidate() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
+    // Wipe every day's snapshot so stale ones from earlier in the week
+    // can never resurface after a wellness/profile/training change.
     await AppCache.invalidatePrefix('user_state:$userId');
   }
 

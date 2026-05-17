@@ -418,11 +418,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final daysSince = results[5] as int;
       final streak = results[6] as int;
       final userState = results[7] as UserState;
-      // Check if today is a rest day in any active workout
+      // Today is "rest" if any active workout explicitly marks it as a rest
+      // day OR if no active workout schedules anything for this weekday at
+      // all. Without the second condition a user with a Mon-Sat split would
+      // see "next workout in 6 days" on Sunday — confusing, since Sunday is
+      // their de-facto rest day.
       final todayAppDay = DateTime.now().weekday - 1; // 0=Mon…6=Sun
       final allWorkouts = await WorkoutService.getMyWorkouts();
-      final isRestDay =
+      final hasAnySchedule = allWorkouts.any((w) => w.days.isNotEmpty);
+      final isExplicitRest =
           allWorkouts.any((w) => w.restDays.contains(todayAppDay));
+      final isUnscheduled = hasAnySchedule &&
+          !allWorkouts.any((w) => w.days.contains(todayAppDay));
+      final isRestDay = isExplicitRest || isUnscheduled;
       // Load next scheduled workout if inactive for 2+ days
       Workout? nextWorkout;
       if (daysSince >= 2 && !isRestDay) {

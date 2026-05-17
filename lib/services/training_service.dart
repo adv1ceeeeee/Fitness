@@ -36,14 +36,26 @@ class TrainingService {
 
   static int _appDayIndex(DateTime date) => date.weekday - 1;
 
+  /// Stable yyyy-MM-dd local-date string used to suffix day-bound cache
+  /// keys (today_workout, next_scheduled). Forces stale-while-revalidate
+  /// to miss when the calendar day rolls over instead of silently
+  /// returning yesterday's snapshot.
+  static String _todayKey() {
+    final d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   /// Invalidate every cache entry related to training sessions for a user.
   /// Called after any session mutation (create, complete, skip, delete).
   static Future<void> _invalidateSessionCaches() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
     await Future.wait([
-      AppCache.invalidate('today_workout:$userId'),
-      AppCache.invalidate('next_scheduled:$userId'),
+      // today_workout / next_scheduled are now day-keyed
+      // (today_workout:$userId:yyyy-MM-dd) so we drop the whole prefix
+      // rather than a single static key.
+      AppCache.invalidatePrefix('today_workout:$userId'),
+      AppCache.invalidatePrefix('next_scheduled:$userId'),
       AppCache.invalidate('days_since_last:$userId'),
       AppCache.invalidate('open_session:$userId'),
       AppCache.invalidatePrefix('sessions_range:$userId'),
@@ -70,8 +82,12 @@ class TrainingService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
 
+    // Day-keyed: yesterday's snapshot must NOT bleed into today via
+    // stale-while-revalidate. Without this, opening the app on Sunday
+    // returned Saturday's "Кор" as still-current, painted with a
+    // bogus "ЧЕРЕЗ 6 ДН." badge.
     return AppCache.get<Workout?>(
-      key: 'today_workout:$userId',
+      key: 'today_workout:$userId:${_todayKey()}',
       ttl: _shortTtl,
       fetch: () async {
         final weekday = DateTime.now().weekday;
@@ -724,7 +740,9 @@ class TrainingService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return null;
     return AppCache.get<Workout?>(
-      key: 'next_scheduled:$userId',
+      // Day-keyed for the same reason as getTodayWorkout — "next scheduled"
+      // shifts every midnight relative to today's weekday.
+      key: 'next_scheduled:$userId:${_todayKey()}',
       ttl: _shortTtl,
       fetch: () async {
         try {
