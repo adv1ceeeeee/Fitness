@@ -199,8 +199,12 @@ class UserStateService {
     // 30-min TTL + stale-while-revalidate kept showing yesterday's
     // wellness-logged state on cold opens at midnight, hiding the
     // "Как самочувствие?" card and locking in stale energy %.
+    //
+    // v2 bump: cap-by-subjective-energy logic (below) changed the
+    // computation, so any user_state:* entries written by the
+    // previous build must not be reused.
     return AppCache.get<UserState>(
-      key: 'user_state:$userId:${_todayKey()}',
+      key: 'user_state_v2:$userId:${_todayKey()}',
       ttl: const Duration(minutes: 30),
       fetch: () => _fetch(userId),
       encode: (s) => jsonEncode(s.toJson()),
@@ -218,9 +222,13 @@ class UserStateService {
   static Future<void> invalidate() async {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return;
-    // Wipe every day's snapshot so stale ones from earlier in the week
-    // can never resurface after a wellness/profile/training change.
-    await AppCache.invalidatePrefix('user_state:$userId');
+    // Wipe every day's snapshot AND the v1 prefix so stale ones from
+    // earlier in the week (or the previous build version) can never
+    // resurface after a wellness/profile/training change.
+    await Future.wait([
+      AppCache.invalidatePrefix('user_state:$userId'),
+      AppCache.invalidatePrefix('user_state_v2:$userId'),
+    ]);
   }
 
   static Future<UserState> _fetch(String userId) async {

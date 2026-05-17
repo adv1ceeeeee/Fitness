@@ -61,19 +61,26 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   String _selectedBodyMetric = 'weight_kg';
   bool _bodyDailyAvg = false; // false = last measurement, true = average
 
+  // Mirror of home_screen._metricOptions plus body_fat_pct (analytics-only —
+  // we don't surface % fat on the home progress card). When adding a new
+  // body_metrics column, update BOTH maps; otherwise a user can log a
+  // measurement on home that never appears in the analytics chart.
   static const _bodyMetricOptions = <String, String>{
-    'weight_kg': 'Вес (кг)',
-    'neck_cm': 'Шея (см)',
-    'shoulders_cm': 'Плечи (см)',
-    'chest_cm': 'Грудь (см)',
-    'waist_cm': 'Талия (см)',
-    'hips_cm': 'Бёдра (см)',
-    'left_thigh_cm': 'Бедро лев. (см)',
-    'right_thigh_cm': 'Бедро пр. (см)',
-    'left_calf_cm': 'Голень лев. (см)',
-    'right_calf_cm': 'Голень пр. (см)',
-    'left_forearm_cm': 'Предплечье лев. (см)',
+    'weight_kg':        'Вес (кг)',
+    'body_fat_pct':     '% жира',
+    'neck_cm':          'Шея (см)',
+    'shoulders_cm':     'Плечи (см)',
+    'chest_cm':         'Грудь (см)',
+    'waist_cm':         'Талия (см)',
+    'hips_cm':          'Бёдра (см)',
+    'right_arm_cm':     'Бицепс пр. (см)',
+    'left_arm_cm':      'Бицепс лев. (см)',
     'right_forearm_cm': 'Предплечье пр. (см)',
+    'left_forearm_cm':  'Предплечье лев. (см)',
+    'right_thigh_cm':   'Бедро пр. (см)',
+    'left_thigh_cm':    'Бедро лев. (см)',
+    'right_calf_cm':    'Голень пр. (см)',
+    'left_calf_cm':     'Голень лев. (см)',
   };
 
   Map<String, double> get _bodyMetricData {

@@ -2453,8 +2453,15 @@ class AnalyticsService {
     final userId = AuthService.currentUser?.id;
     if (userId == null) return const EnergyState(reserve: 100);
 
+    final now = DateTime.now();
+    final dayKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     return AppCache.get<EnergyState>(
-      key: 'energy_state:$userId',
+      // Day-keyed so yesterday's blend doesn't bleed into today via
+      // stale-while-revalidate. Without this, the readiness % at midnight
+      // kept showing yesterday's subjective wellness (e.g. "Хорошо 79%"
+      // after the user just logged 3/10 today).
+      key: 'energy_state:$userId:$dayKey',
       ttl: const Duration(minutes: 30),
       fetch: () async {
         final now       = DateTime.now();
