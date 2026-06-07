@@ -132,15 +132,20 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
   }
 
   Future<void> _loadWorkouts() async {
-    // Phase 1: show cache immediately if available
-    final cached = await CacheService.loadWorkouts();
-    if (cached.isNotEmpty && mounted) {
-      setState(() {
-        _workouts = cached;
-        _loading = false;
-      });
+    // Phase 1 (disk cache) only when state is empty — i.e. cold start.
+    // Re-loading the cache while we already have a fresh in-memory list
+    // would briefly resurrect rows the caller just removed (e.g. after
+    // an optimistic delete) before phase 2 overwrites again, producing
+    // a visible flicker.
+    if (_workouts.isEmpty) {
+      final cached = await CacheService.loadWorkouts();
+      if (cached.isNotEmpty && mounted) {
+        setState(() {
+          _workouts = cached;
+          _loading = false;
+        });
+      }
     }
-    // Phase 2: refresh from network silently
     _refreshWorkouts();
   }
 
@@ -216,7 +221,7 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                       // Optimistic: drop the row from the in-memory list
                       // immediately so the user sees the card disappear
                       // before the network round-trip completes. If the
-                      // delete fails, _loadWorkouts() at the end re-syncs.
+                      // delete fails, a network refresh at the end re-syncs.
                       final messenger = ScaffoldMessenger.of(context);
                       final removed =
                           _workouts.where((w) => w.id == id).toList();
@@ -241,7 +246,12 @@ class _WorkoutsScreenState extends State<WorkoutsScreen>
                           );
                         }
                       }
-                      await _loadWorkouts();
+                      // Skip the disk-cache phase here — CacheService still
+                      // has the deleted row and would briefly re-insert it
+                      // before the network call removes it again, producing
+                      // a visible flicker. Network refresh alone is enough
+                      // since the optimistic setState already settled the UI.
+                      _refreshWorkouts();
                     },
                     onCreateTap: () async {
                       await context.push('/workouts/create');
