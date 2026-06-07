@@ -5,16 +5,35 @@ import 'package:sportwai/models/workout.dart';
 import 'package:sportwai/services/exercise_service.dart';
 import 'package:sportwai/services/workout_service.dart';
 
+/// One exercise as it was added to a generated workout — display data only,
+/// used by the review sheet so the user can expand a day and see what's
+/// inside before saving.
+class GeneratedExerciseInfo {
+  final String name;
+  final int sets;
+  final String reps;
+
+  const GeneratedExerciseInfo({
+    required this.name,
+    required this.sets,
+    required this.reps,
+  });
+}
+
 /// Returned after a successful generation.
 class GeneratedProgram {
   final List<Workout> workouts;
   final String programName;
   final List<String> notFoundExercises;
+  /// Per-workout-id list of exercises that ended up in the program — used
+  /// by the review sheet for the expandable "what's inside" view.
+  final Map<String, List<GeneratedExerciseInfo>> exercisesByWorkoutId;
 
   const GeneratedProgram({
     required this.workouts,
     required this.programName,
     required this.notFoundExercises,
+    this.exercisesByWorkoutId = const {},
   });
 
   Workout get firstWorkout => workouts.first;
@@ -85,6 +104,10 @@ class ProgramGeneratorService {
   ) async {
     final notFound = <String>[];
     final created = <Workout>[];
+    // workout.id → exercises chosen for that workout, in DB insertion order.
+    // Captured during _addExercisesTo so the review sheet can render the
+    // "what's inside" expansion without an extra DB round-trip.
+    final byWorkoutId = <String, List<GeneratedExerciseInfo>>{};
     final sections = program['sections'] as List?;
 
     if (sections != null && sections.isNotEmpty) {
@@ -99,7 +122,7 @@ class ProgramGeneratorService {
         await WorkoutService.setGroupId(firstWorkout.id, groupId);
       }
       await _addExercisesTo(firstWorkout.id, first['exercises'] as List,
-          allExercises, notFound);
+          allExercises, notFound, byWorkoutId);
       created.add(firstWorkout);
 
       for (final s in sections.skip(1)) {
@@ -110,7 +133,7 @@ class ProgramGeneratorService {
           groupId: groupId,
         );
         await _addExercisesTo(
-            w.id, sec['exercises'] as List, allExercises, notFound);
+            w.id, sec['exercises'] as List, allExercises, notFound, byWorkoutId);
         created.add(w);
       }
     } else {
@@ -119,8 +142,8 @@ class ProgramGeneratorService {
         program['name'] as String,
         (program['days'] as List).cast<int>(),
       );
-      await _addExercisesTo(
-          w.id, program['exercises'] as List, allExercises, notFound);
+      await _addExercisesTo(w.id, program['exercises'] as List, allExercises,
+          notFound, byWorkoutId);
       created.add(w);
     }
 
@@ -128,6 +151,7 @@ class ProgramGeneratorService {
       workouts: created,
       programName: program['name'] as String,
       notFoundExercises: notFound,
+      exercisesByWorkoutId: byWorkoutId,
     );
   }
 
@@ -136,7 +160,9 @@ class ProgramGeneratorService {
     List exercises,
     List<Exercise> allExercises,
     List<String> notFound,
+    Map<String, List<GeneratedExerciseInfo>> byWorkoutId,
   ) async {
+    final bucket = byWorkoutId.putIfAbsent(workoutId, () => []);
     for (final ex in exercises) {
       final name = ex['name'] as String;
       final found = _findExercise(name, allExercises);
@@ -144,6 +170,11 @@ class ProgramGeneratorService {
         notFound.add(name);
         continue;
       }
+      bucket.add(GeneratedExerciseInfo(
+        name: found.nameRu?.isNotEmpty == true ? found.nameRu! : found.name,
+        sets: ex['sets'] as int? ?? 3,
+        reps: ex['reps'] as String? ?? '8-12',
+      ));
       await WorkoutService.addExerciseToWorkout(
         workoutId,
         found.id,

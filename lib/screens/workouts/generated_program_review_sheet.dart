@@ -85,65 +85,25 @@ class GeneratedProgramReviewSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          // Section list (collapsed: just names + days)
+          // Section list — each row is tappable to expand and reveal the
+          // exercises the generator chose for that day.
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              itemCount: result.workouts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) {
-                final w = result.workouts[i];
-                final dayStr = w.days.map((d) => _dayLabels[d]).join(', ');
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.fitness_center_rounded,
-                            color: AppColors.accent, size: 16),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              w.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            if (dayStr.isNotEmpty)
-                              Text(
-                                dayStr,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  for (int i = 0; i < result.workouts.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    _SectionTile(
+                      workout: result.workouts[i],
+                      dayLabels: _dayLabels,
+                      exercises: result
+                              .exercisesByWorkoutId[result.workouts[i].id] ??
+                          const [],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           if (result.notFoundExercises.isNotEmpty) ...[
@@ -220,5 +180,146 @@ class GeneratedProgramReviewSheet extends StatelessWidget {
     if (n % 10 == 1 && n % 100 != 11) return 'день';
     if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'дня';
     return 'дней';
+  }
+}
+
+/// One day inside the review sheet — collapsed shows section name + days,
+/// expanded reveals the exercises the generator chose with their sets/reps.
+class _SectionTile extends StatefulWidget {
+  const _SectionTile({
+    required this.workout,
+    required this.dayLabels,
+    required this.exercises,
+  });
+
+  final dynamic workout; // Workout — typed as dynamic to keep this file
+                        // free of model imports we don't otherwise need.
+  final List<String> dayLabels;
+  final List<GeneratedExerciseInfo> exercises;
+
+  @override
+  State<_SectionTile> createState() => _SectionTileState();
+}
+
+class _SectionTileState extends State<_SectionTile> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = widget.workout;
+    final dayStr = (w.days as List)
+        .cast<int>()
+        .map((d) => widget.dayLabels[d])
+        .join(', ');
+    final hasExercises = widget.exercises.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: hasExercises ? () => setState(() => _open = !_open) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.fitness_center_rounded,
+                        color: AppColors.accent, size: 16),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          w.name as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        if (dayStr.isNotEmpty)
+                          Text(
+                            hasExercises
+                                ? '$dayStr · ${widget.exercises.length} упр.'
+                                : dayStr,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (hasExercises)
+                    Icon(
+                      _open
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.textSecondary,
+                      size: 22,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_open && hasExercises)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              child: Column(
+                children: [
+                  Container(
+                    height: 1,
+                    color: AppColors.textSecondary.withValues(alpha: 0.12),
+                    margin: const EdgeInsets.only(bottom: 6),
+                  ),
+                  for (final ex in widget.exercises)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              ex.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${ex.sets} × ${ex.reps}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
